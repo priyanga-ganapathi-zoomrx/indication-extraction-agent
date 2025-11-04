@@ -24,12 +24,15 @@ class LangfuseConfig(BaseModel):
     )
 
 
-def get_langfuse_config() -> LangfuseConfig:
+def get_langfuse_config() -> LangfuseConfig | None:
     """Get Langfuse configuration from environment settings.
 
     Returns:
-        LangfuseConfig: Configured Langfuse settings
+        LangfuseConfig: Configured Langfuse settings, or None if not configured
     """
+    if not settings.langfuse.LANGFUSE_PUBLIC_KEY or not settings.langfuse.LANGFUSE_SECRET_KEY:
+        return None
+
     return LangfuseConfig(
         public_key=settings.langfuse.LANGFUSE_PUBLIC_KEY,
         secret_key=settings.langfuse.LANGFUSE_SECRET_KEY,

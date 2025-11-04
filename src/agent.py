@@ -1,6 +1,6 @@
-"""Calculator Agent using LangGraph.
+"""Indication Extraction Agent using LangGraph.
 
-This module implements a calculator agent using the LangGraph framework with proper
+This module implements an indication extraction agent using the LangGraph framework with proper
 error handling for LLM output, parsing, and tool calling, following patterns from
 the galen-fastapi-server repository.
 """
@@ -19,11 +19,12 @@ from typing_extensions import TypedDict
 from src.config import settings
 from src.langfuse_config import get_langfuse_config
 from src.llm_handler import LLMConfig, create_llm
-from src.tools import get_calculator_tools
+from src.prompts import get_system_prompt
+from src.tools import get_tools
 
 
 class MessagesState(TypedDict):
-    """State schema for the calculator agent.
+    """State schema for the indication extraction agent.
 
     Attributes:
         messages: List of messages in the conversation, using operator.add to append
@@ -34,29 +35,29 @@ class MessagesState(TypedDict):
     llm_calls: int
 
 
-class CalculatorAgent:
-    """Calculator Agent that performs arithmetic operations using LLM and tools.
+class IndicationExtractionAgent:
+    """Indication Extraction Agent that extracts medical indications using LLM and tools.
 
     This agent uses LangGraph to create a stateful conversation flow that can:
-    - Understand user requests for arithmetic operations
-    - Call appropriate tools (add, multiply, divide)
+    - Extract medical indications from research abstract and session titles
+    - Call appropriate tools to retrieve clinical rules
     - Handle errors gracefully
     - Trace all operations with Langfuse
     """
 
-    def __init__(self, agent_name: str = "CalculatorAgent"):
-        """Initialize the Calculator Agent.
+    def __init__(self, agent_name: str = "IndicationExtractionAgent"):
+        """Initialize the Indication Extraction Agent.
 
         Args:
             agent_name: Name of the agent for identification and logging
         """
         self.agent_name = agent_name
-        self.tools = get_calculator_tools()
+        self.tools = get_tools()
         self.tools_by_name = {tool.name: tool for tool in self.tools}
 
         # Initialize Langfuse
         self.langfuse_config = get_langfuse_config()
-        self.langfuse = self._initialize_langfuse()
+        self.langfuse = self._initialize_langfuse() if self.langfuse_config else None
 
         # Initialize LLM
         self.llm_config = self._get_llm_config()
@@ -75,6 +76,10 @@ class CalculatorAgent:
         Returns:
             Langfuse client instance or None if initialization fails
         """
+        if not self.langfuse_config:
+            print(f"ℹ Langfuse not configured for {self.agent_name}")
+            return None
+
         try:
             langfuse = Langfuse(
                 public_key=self.langfuse_config.public_key,
@@ -107,27 +112,15 @@ class CalculatorAgent:
         )
 
     def _get_system_prompt(self) -> str:
-        """Get the system prompt for the calculator agent.
+        """Get the system prompt for the indication extraction agent.
 
         Returns:
             str: System prompt content
         """
-        return """You are a helpful assistant tasked with performing arithmetic operations.
-
-When the user asks you to perform calculations:
-1. Use the available tools (add, multiply, divide) to compute the result
-2. Show your work step by step if multiple operations are needed
-3. Always provide clear, accurate answers
-
-Available tools:
-- add(a, b): Adds two numbers
-- multiply(a, b): Multiplies two numbers
-- divide(a, b): Divides the first number by the second
-
-Important: Always use tools to perform calculations. Do not compute answers directly."""
+        return get_system_prompt()
 
     def _build_graph(self) -> StateGraph:
-        """Build the LangGraph state graph for the calculator agent.
+        """Build the LangGraph state graph for the indication extraction agent.
 
         Returns:
             StateGraph: Compiled state graph ready for execution
@@ -216,11 +209,12 @@ Important: Always use tools to perform calculations. Do not compute answers dire
         # Otherwise, we're done
         return END
 
-    def invoke(self, user_message: str) -> dict:
-        """Invoke the calculator agent with a user message.
+    def invoke(self, abstract_title: str, session_title: str = "") -> dict:
+        """Invoke the indication extraction agent with abstract and session titles.
 
         Args:
-            user_message: The user's input message
+            abstract_title: The abstract title to extract indication from
+            session_title: The session title (optional)
 
         Returns:
             dict: Final state containing all messages and metadata
@@ -228,9 +222,12 @@ Important: Always use tools to perform calculations. Do not compute answers dire
         from langchain_core.messages import HumanMessage
         import os
 
+        # Format the input message with the titles
+        input_content = f"Extract the medical indication from the following:\n\nsession_title: {session_title}\nabstract_title: {abstract_title}"
+
         # Create initial state
         initial_state = {
-            "messages": [HumanMessage(content=user_message)],
+            "messages": [HumanMessage(content=input_content)],
             "llm_calls": 0,
         }
 
@@ -258,15 +255,15 @@ Important: Always use tools to perform calculations. Do not compute answers dire
             print(f"✗ Error during agent invocation: {e}")
             return {
                 "messages": [
-                    HumanMessage(content=user_message),
+                    HumanMessage(content=input_content),
                     AIMessage(
-                        content=f"I encountered an error: {str(e)}. Please try again."
+                        content=f"I encountered an error during indication extraction: {str(e)}. Please try again."
                     ),
                 ],
                 "llm_calls": initial_state.get("llm_calls", 0),
             }
 
-    def visualize(self, output_path: str = "calculator_agent_graph.png"):
+    def visualize(self, output_path: str = "indication_extraction_agent_graph.png"):
         """Visualize the agent's graph structure.
 
         Args:

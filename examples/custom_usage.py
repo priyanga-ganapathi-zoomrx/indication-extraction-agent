@@ -1,19 +1,26 @@
-"""Examples of custom usage patterns for the Calculator Agent."""
+"""Examples of custom usage patterns for the Indication Extraction Agent."""
 
-from src.agent import CalculatorAgent
+from src.agent import IndicationExtractionAgent
 
 
 def example_1_basic_usage():
-    """Example 1: Basic usage of the calculator agent."""
+    """Example 1: Basic usage of the indication extraction agent."""
     print("=" * 80)
-    print("Example 1: Basic Usage")
+    print("Example 1: Basic Indication Extraction")
     print("=" * 80)
 
     # Initialize the agent
-    agent = CalculatorAgent(agent_name="BasicCalculator")
+    agent = IndicationExtractionAgent(agent_name="BasicExtractor")
 
-    # Invoke with a simple calculation
-    result = agent.invoke("What is 25 plus 75?")
+    # Example abstract title
+    abstract_title = "Brentuximab Vedotin-Based Regimens for Elderly Patients with Newly Diagnosed Classical Hodgkin Lymphoma"
+    session_title = ""
+
+    print(f"Abstract Title: {abstract_title}")
+    print(f"Session Title: {session_title}")
+
+    # Invoke the agent
+    result = agent.invoke(abstract_title=abstract_title, session_title=session_title)
 
     # Print all messages
     print("\nConversation:")
@@ -24,17 +31,21 @@ def example_1_basic_usage():
     print(f"\nTotal LLM calls: {result['llm_calls']}")
 
 
-def example_2_error_handling():
-    """Example 2: Error handling in the calculator agent."""
+def example_2_multiple_diseases():
+    """Example 2: Multiple diseases in one title."""
     print("\n" + "=" * 80)
-    print("Example 2: Error Handling")
+    print("Example 2: Multiple Diseases")
     print("=" * 80)
 
-    agent = CalculatorAgent(agent_name="ErrorHandlingCalculator")
+    agent = IndicationExtractionAgent(agent_name="MultiDiseaseExtractor")
 
-    # Try division by zero
-    print("\nTrying division by zero:")
-    result = agent.invoke("Divide 100 by 0")
+    # Title with multiple diseases
+    abstract_title = "Clinical Outcomes in Severe Refractory Asthma with Cardiovascular Risk"
+    session_title = ""
+
+    print(f"Abstract Title: {abstract_title}")
+
+    result = agent.invoke(abstract_title=abstract_title, session_title=session_title)
 
     print("\nAgent response:")
     for message in result["messages"]:
@@ -44,19 +55,21 @@ def example_2_error_handling():
             print(f"{role}: {content}")
 
 
-def example_3_multiple_operations():
-    """Example 3: Multiple operations in sequence."""
+def example_3_rule_retrieval():
+    """Example 3: Demonstrating rule retrieval during extraction."""
     print("\n" + "=" * 80)
-    print("Example 3: Multiple Operations")
+    print("Example 3: Rule Retrieval in Action")
     print("=" * 80)
 
-    agent = CalculatorAgent(agent_name="MultiOpCalculator")
+    agent = IndicationExtractionAgent(agent_name="RuleBasedExtractor")
 
-    # Complex calculation requiring multiple tool calls
-    query = "First multiply 10 by 5, then add 25 to that result, and finally divide by 5"
-    print(f"\nQuery: {query}")
+    # Complex title requiring multiple rules
+    abstract_title = "Therapies for PD-L1 ≥ 50% Non-Small Cell Lung Cancer in Previously Treated Smokers"
+    session_title = ""
 
-    result = agent.invoke(query)
+    print(f"Abstract Title: {abstract_title}")
+
+    result = agent.invoke(abstract_title=abstract_title, session_title=session_title)
 
     print("\nTool calls made:")
     tool_call_count = 0
@@ -68,7 +81,7 @@ def example_3_multiple_operations():
                     f"  {tool_call_count}. {tool_call['name']}({tool_call['args']})"
                 )
 
-    print(f"\nFinal answer: {result['messages'][-1].content}")
+    print(f"\nFinal result: {result['messages'][-1].content}")
     print(f"Total LLM calls: {result['llm_calls']}")
 
 
@@ -78,9 +91,10 @@ def example_4_accessing_state():
     print("Example 4: Accessing Agent State")
     print("=" * 80)
 
-    agent = CalculatorAgent(agent_name="StateAnalyzer")
+    agent = IndicationExtractionAgent(agent_name="StateAnalyzer")
 
-    result = agent.invoke("What is 144 divided by 12?")
+    abstract_title = "Overall and Progression-Free Survival in Patients Treated with Fedratinib as First-Line Myelofibrosis"
+    result = agent.invoke(abstract_title=abstract_title, session_title="")
 
     # Analyze the state
     print("\nState Analysis:")
@@ -113,7 +127,7 @@ def example_5_custom_model_config():
     # You can customize the LLM config by modifying config.py or .env
     # Here we show how the agent uses the configuration
 
-    agent = CalculatorAgent(agent_name="CustomConfigCalculator")
+    agent = IndicationExtractionAgent(agent_name="CustomConfigExtractor")
 
     print(f"\nAgent Configuration:")
     print(f"  Model: {agent.llm_config.model}")
@@ -122,8 +136,8 @@ def example_5_custom_model_config():
     print(f"  Provider: {agent.llm_config.provider}")
     print(f"  Base URL: {agent.llm_config.base_url}")
 
-    # Run a calculation
-    result = agent.invoke("Add 100 and 200")
+    # Run an extraction
+    result = agent.invoke(abstract_title="Chronic Lymphocytic Leukemia After Prior Ibrutinib", session_title="")
     print(f"\nResult: {result['messages'][-1].content}")
 
 
@@ -134,33 +148,33 @@ def example_6_reusing_agent():
     print("=" * 80)
 
     # Create one agent instance
-    agent = CalculatorAgent(agent_name="ReusableCalculator")
+    agent = IndicationExtractionAgent(agent_name="ReusableExtractor")
 
     # Use it multiple times - the LLM instance is cached
-    queries = [
-        "What is 50 times 2?",
-        "Now divide that by 10",
-        "Add 5 to the result",
+    titles = [
+        "Acute Myeloid Leukemia in Pediatric Patients",
+        "Metastatic Breast Cancer Treatment",
+        "Early Stage Non-Small Cell Lung Cancer",
     ]
 
-    print("\nRunning multiple calculations with the same agent:")
-    for i, query in enumerate(queries, 1):
-        print(f"\n{i}. Query: {query}")
-        result = agent.invoke(query)
+    print("\nRunning multiple extractions with the same agent:")
+    for i, title in enumerate(titles, 1):
+        print(f"\n{i}. Title: {title}")
+        result = agent.invoke(abstract_title=title, session_title="")
         # Note: Each invoke is independent, but LLM instance is reused
-        print(f"   Answer: {result['messages'][-1].content}")
+        print(f"   Result: {result['messages'][-1].content}")
 
 
 def main():
     """Run all examples."""
     print("\n")
     print("█" * 80)
-    print("  CALCULATOR AGENT - CUSTOM USAGE EXAMPLES")
+    print("  INDICATION EXTRACTION AGENT - CUSTOM USAGE EXAMPLES")
     print("█" * 80)
 
     example_1_basic_usage()
-    example_2_error_handling()
-    example_3_multiple_operations()
+    example_2_multiple_diseases()
+    example_3_rule_retrieval()
     example_4_accessing_state()
     example_5_custom_model_config()
     example_6_reusing_agent()
