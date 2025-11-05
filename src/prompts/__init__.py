@@ -1,19 +1,68 @@
 """Prompts package for indication extraction."""
 
 import os
+from typing import Optional
+
+from langfuse import Langfuse
 
 
-def get_system_prompt() -> str:
-    """Load the system prompt from the markdown file.
+def get_system_prompt(
+    langfuse_client: Optional[Langfuse] = None,
+    prompt_name: str = "MEDICAL_INDICATION_EXTRACTION_SYSTEM_PROMPT",
+    fallback_to_file: bool = True,
+) -> str:
+    """Load the system prompt from Langfuse or fallback to local file.
+
+    Args:
+        langfuse_client: Optional Langfuse client instance. If not provided, will create one using env vars.
+        prompt_name: Name of the prompt in Langfuse (default: "MEDICAL_INDICATION_EXTRACTION_SYSTEM_PROMPT")
+        fallback_to_file: If True, fallback to reading from system_prompt.md if Langfuse fetch fails
 
     Returns:
-        str: The system prompt content from system_prompt.md
+        str: The system prompt content from Langfuse or local file
+
+    Raises:
+        Exception: If Langfuse fetch fails and fallback_to_file is False
     """
-    # Get the directory of this file
-    prompt_dir = os.path.dirname(os.path.abspath(__file__))
-    prompt_file = os.path.join(prompt_dir, "system_prompt.md")
-
-    with open(prompt_file, 'r', encoding='utf-8') as f:
-        content = f.read()
-
-    return content.strip()
+    # Try to fetch from Langfuse
+    try:
+        # Use provided client or create a new one
+        client = langfuse_client or Langfuse()
+        
+        # Fetch the prompt from Langfuse
+        print(f"ℹ Fetching prompt '{prompt_name}' from Langfuse...")
+        langfuse_prompt = client.get_prompt(prompt_name)
+        
+        # Get the prompt content
+        if hasattr(langfuse_prompt, 'prompt'):
+            content = langfuse_prompt.prompt
+        elif hasattr(langfuse_prompt, 'get_langchain_prompt'):
+            content = langfuse_prompt.get_langchain_prompt()
+        else:
+            content = str(langfuse_prompt)
+        
+        print(f"✓ Successfully fetched prompt from Langfuse (version: {langfuse_prompt.version})")
+        return content.strip()
+        
+    except Exception as e:
+        print(f"✗ Error fetching prompt from Langfuse: {e}")
+        
+        if not fallback_to_file:
+            raise
+        
+        # Fallback to local file
+        print("ℹ Falling back to local system_prompt.md file...")
+        try:
+            prompt_dir = os.path.dirname(os.path.abspath(__file__))
+            prompt_file = os.path.join(prompt_dir, "system_prompt.md")
+            
+            with open(prompt_file, 'r', encoding='utf-8') as f:
+                content = f.read()
+            
+            print("✓ Successfully loaded prompt from local file")
+            return content.strip()
+        except Exception as file_error:
+            raise Exception(
+                f"Failed to fetch prompt from Langfuse and local file: "
+                f"Langfuse error: {e}, File error: {file_error}"
+            )

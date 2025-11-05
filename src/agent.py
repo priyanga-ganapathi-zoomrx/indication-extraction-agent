@@ -114,10 +114,16 @@ class IndicationExtractionAgent:
     def _get_system_prompt(self) -> str:
         """Get the system prompt for the indication extraction agent.
 
+        Fetches the prompt from Langfuse if configured, otherwise falls back to local file.
+
         Returns:
             str: System prompt content
         """
-        return get_system_prompt()
+        return get_system_prompt(
+            langfuse_client=self.langfuse,
+            prompt_name="MEDICAL_INDICATION_EXTRACTION_SYSTEM_PROMPT",
+            fallback_to_file=True,
+        )
 
     def _build_graph(self) -> StateGraph:
         """Build the LangGraph state graph for the indication extraction agent.
