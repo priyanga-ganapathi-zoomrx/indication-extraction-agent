@@ -6,7 +6,7 @@ from langchain_core.tools import tool
 
 
 @tool
-def getRule(category: str, subcategories: List[str]) -> str:
+def get_indication_rules(category: str, subcategories: List[str]) -> str:
     """Retrieves clinical rules for indication extraction based on category and subcategories.
 
     This tool searches the indication extraction rules database to find relevant rules
@@ -80,4 +80,4 @@ def get_indication_tools():
     Returns:
         list: List of indication extraction tool functions
     """
-    return [getRule]
+    return [get_indication_rules]
