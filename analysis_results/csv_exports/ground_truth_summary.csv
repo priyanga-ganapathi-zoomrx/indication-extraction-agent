@@ -1,0 +1,2 @@
+Model,Total_Successful,GT_Comparisons,Exact_Matches,Exact_Match_Rate_%,Avg_Text_Similarity,Avg_BLEU_Score,Avg_Cosine_Similarity,Avg_Length_Ratio,Avg_Word_Overlap
+default_model,500,432,260,60.2,0.884,0.468,0.866,1.225,0.888
