@@ -192,7 +192,8 @@ def process_single_abstract(abstract: Dict, agent: IndicationExtractionAgent,
         # Invoke the agent
         result = agent.invoke(
             abstract_title=abstract['abstract_title'],
-            session_title=abstract['session_title']
+            session_title=abstract['session_title'],
+            abstract_id=abstract['abstract_id']
         )
 
         # Extract indication and additional fields

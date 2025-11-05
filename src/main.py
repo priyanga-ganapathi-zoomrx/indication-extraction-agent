@@ -105,7 +105,11 @@ def run_example_extractions(num_abstracts=5, randomize=False):
         print(f"Ground Truth: {ground_truth}")
         print(f"Expected Indication: {indication}")
 
-        result = agent.invoke(abstract_title=abstract_title, session_title=session_title)
+        result = agent.invoke(
+            abstract_title=abstract_title,
+            session_title=session_title,
+            abstract_id=abstract_id
+        )
         print_messages(result["messages"])
         print(f"Total LLM calls for this abstract: {result['llm_calls']}")
         total_llm_calls += result['llm_calls']
@@ -151,7 +155,11 @@ def run_interactive_mode():
             print(f"Abstract Title: {abstract_title}")
             print(f"Session Title: {session_title}")
 
-            result = agent.invoke(abstract_title=abstract_title, session_title=session_title)
+            result = agent.invoke(
+                abstract_title=abstract_title,
+                session_title=session_title,
+                abstract_id="interactive"
+            )
             print_messages(result["messages"])
             print(f"\nTotal LLM calls: {result['llm_calls']}")
             print_separator()

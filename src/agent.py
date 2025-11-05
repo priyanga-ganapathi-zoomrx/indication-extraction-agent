@@ -119,11 +119,14 @@ class IndicationExtractionAgent:
         Returns:
             str: System prompt content
         """
-        return get_system_prompt(
+        prompt_content, prompt_version = get_system_prompt(
             langfuse_client=self.langfuse,
             prompt_name="MEDICAL_INDICATION_EXTRACTION_SYSTEM_PROMPT",
             fallback_to_file=True,
         )
+        # Store the prompt version for tagging
+        self.prompt_version = prompt_version
+        return prompt_content
 
     def _build_graph(self) -> StateGraph:
         """Build the LangGraph state graph for the indication extraction agent.
@@ -215,18 +218,26 @@ class IndicationExtractionAgent:
         # Otherwise, we're done
         return END
 
-    def invoke(self, abstract_title: str, session_title: str = "") -> dict:
+    def invoke(self, abstract_title: str, session_title: str = "", abstract_id: str = None) -> dict:
         """Invoke the indication extraction agent with abstract and session titles.
 
         Args:
             abstract_title: The abstract title to extract indication from
             session_title: The session title (optional)
+            abstract_id: The abstract ID for tracking in Langfuse (optional)
 
         Returns:
             dict: Final state containing all messages and metadata
         """
         from langchain_core.messages import HumanMessage
         import os
+
+        # Build tags for Langfuse tracing
+        tags = [
+            f"abstract_id:{abstract_id or 'unknown'}",
+            f"prompt_version:{getattr(self, 'prompt_version', 'unknown')}",
+            f"model:{self.llm_config.model}",
+        ]
 
         # Format the input message with the titles
         input_content = f"Extract the medical indication from the following:\n\nsession_title: {session_title}\nabstract_title: {abstract_title}"
@@ -243,7 +254,7 @@ class IndicationExtractionAgent:
             os.environ["LANGFUSE_SECRET_KEY"] = self.langfuse_config.secret_key
             os.environ["LANGFUSE_HOST"] = self.langfuse_config.host
 
-        # Configure with Langfuse tracing
+        # Configure with Langfuse tracing and tags
         config = RunnableConfig(
             recursion_limit=100,
             callbacks=(
@@ -251,6 +262,7 @@ class IndicationExtractionAgent:
                 if self.langfuse
                 else []
             ),
+            metadata={"langfuse_tags": tags} if self.langfuse else {},
         )
 
         # Invoke the graph

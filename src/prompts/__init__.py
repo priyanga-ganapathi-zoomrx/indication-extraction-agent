@@ -10,7 +10,7 @@ def get_system_prompt(
     langfuse_client: Optional[Langfuse] = None,
     prompt_name: str = "MEDICAL_INDICATION_EXTRACTION_SYSTEM_PROMPT",
     fallback_to_file: bool = True,
-) -> str:
+) -> tuple[str, str]:
     """Load the system prompt from Langfuse or fallback to local file.
 
     Args:
@@ -19,7 +19,7 @@ def get_system_prompt(
         fallback_to_file: If True, fallback to reading from system_prompt.md if Langfuse fetch fails
 
     Returns:
-        str: The system prompt content from Langfuse or local file
+        tuple[str, str]: A tuple of (prompt_content, prompt_version)
 
     Raises:
         Exception: If Langfuse fetch fails and fallback_to_file is False
@@ -41,8 +41,11 @@ def get_system_prompt(
         else:
             content = str(langfuse_prompt)
         
-        print(f"✓ Successfully fetched prompt from Langfuse (version: {langfuse_prompt.version})")
-        return content.strip()
+        # Get the version
+        version = str(langfuse_prompt.version) if hasattr(langfuse_prompt, 'version') else "unknown"
+        
+        print(f"✓ Successfully fetched prompt from Langfuse (version: {version})")
+        return content.strip(), version
         
     except Exception as e:
         print(f"✗ Error fetching prompt from Langfuse: {e}")
@@ -60,7 +63,7 @@ def get_system_prompt(
                 content = f.read()
             
             print("✓ Successfully loaded prompt from local file")
-            return content.strip()
+            return content.strip(), "local"
         except Exception as file_error:
             raise Exception(
                 f"Failed to fetch prompt from Langfuse and local file: "
