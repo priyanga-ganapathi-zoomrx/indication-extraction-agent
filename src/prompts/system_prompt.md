@@ -27,16 +27,56 @@ You will receive:
 
 ## SINGLE-SOURCE EXTRACTION PRINCIPLE
 
-**CRITICAL**: An indication must be built exclusively from EITHER the abstract title OR the session title, never from a mix of both.
+**CRITICAL**:
+An indication must be built exclusively from either the abstract title or the session title — never both, and never fallback to session if the abstract title already contains a disease term. If neither title contains a valid disease, disorder, or medical condition term, do not generate any indication and avoid adding irrelevant terms.
 
-### Preference Order:
-1. **Abstract Title first**: Use abstract title if it contains a disease/condition term
-2. **Session Title fallback**: Use ONLY if abstract title contains NO disease/condition term
-3. **Never merge**: Do not combine disease from one title with patient subgroup (PSUB) from another
+**Strict Preference Order**
 
-### Handling Orphan PSUBs:
-- If the chosen title supplies **no disease term**, that title is **discarded**, even if it contains a PSUB
-- Evaluate the other title; if it contains a disease term, build indication from that disease term **alone**
+1. Abstract Title (Primary Source)
+   - If the abstract title contains any valid disease, disorder, or medical condition term,
+     → Use only the abstract title for indication extraction.
+     → Completely ignore the session title, even if it also contains disease-related terms or more detail.
+   - The session title may not be used to refine, supplement, or replace any part of the indication.
+
+2. Session Title (Fallback Source)
+   - Use the session title only when the abstract title contains no disease or condition term at all.
+   - In such cases, extract solely from the session title following the same generic and category-specific rules.
+
+3. Never Merge Sources
+   - Do not combine disease terms from one title with subgroup, treatment context, or biomarker terms from the other.
+   - Any mixed-source indication is automatically invalid.
+
+4. No Indication Case
+   - If no valid disease, disorder, or medical condition term is present in either title, return an empty indication.
+   - Avoid generating any unrelated or irrelevant terms.
+
+Examples
+
+- Input:
+  - Abstract Title: “Safety of MK-1084 in Patients With KRAS-Mutated Advanced Solid Tumors”
+  - Session Title: “Targeted Therapies in Oncology”
+  - Correct: Use Abstract Title Only → KRAS-Mutated Advanced Solid Tumor
+
+- Input:
+  - Abstract Title: “Efficacy of CAR-T Therapy: A Multicenter Study”
+  - Session Title: “Non-Hodgkin Lymphoma”
+  - Correct: Use Session Title Only (Fallback) → Non-Hodgkin Lymphoma
+
+- Invalid Case (Mixing Sources):
+  - Wrong: CAR-T-Treated Non-Hodgkin Lymphoma (disease from session, treatment from abstract)
+
+- No Indication Case:
+  - Abstract Title: “Exploratory Study on Treatment Approaches”
+  - Session Title: “General Oncology Updates”
+  - Correct: No indication generated
+
+Implementation Reminder
+
+Before extraction:
+- Check abstract title → If a disease keyword is found, lock the source to “abstract_title”.
+- Skip session title entirely during component scanning and reasoning.
+- Only if no disease is detected in the abstract title → switch to session title as fallback.
+- If neither title contains a valid disease, return an empty indication.
 
 ---
 
@@ -92,10 +132,34 @@ These rules apply to ALL indication extractions:
 #### Second Primary
 - **Include as qualifier**: "Second Primary" + disease name (e.g., "Second Primary Esophageal Cancer")
 - **Normalize disease terms**: Convert to standard nomenclature (e.g., "esophagus cancer" → "Esophageal Cancer")
+ 
+### **Gene and Biomarker Integrity Rule**
+
+- **Do not infer, assume, or generalize gene alterations or biomarker states.**
+- Always capture **biomarker status or gene alteration terms exactly as they appear** in the title.
+  - If the title says **“Runx1 Expressing”**, retain it as `"RUNX1 Expressing" and follow the corresponding category-specific rule — do **not** interpret or normalize it to `"RUNX1-Mutated"` or any other alteration form.
+- Never mix up between **different alteration types** (mutation, amplification, deletion, translocation, variant, rearrangement, overexpression, etc.).
+  - Each alteration type must retain its original descriptor exactly as stated.
+- Do not perform **cross-type substitution or assumption** — e.g.:
+  - ✗ Wrong: “Runx1 Expressing” → “Runx1-Mutated”  
+  - ✓ Correct: “RUNX1 Expressing”
+  - ✗ Wrong: “EGFR Amplification” → “EGFR-Mutated”  
+  - ✓ Correct: “EGFR Amplification”
+
+**Rationale:**  
+Gene alteration terms often convey **distinct molecular mechanisms**. Changing or generalizing them can distort clinical meaning. Maintain literal representation for accurate downstream mapping to variant and molecular databases.
+
+### Treatment Phrase Integrity Rule
+
+- **Include "Previously Treated" only if it appears verbatim (or a direct synonym) in the title.**
+  - Example:
+    - Input: "Chronic Lymphocytic Leukemia After Prior Ibrutinib" → Generated indication: "Chronic Lymphocytic Leukemia"
+      - Rationale: The phrase "Previously Treated" does not appear verbatim; "After Prior Ibrutinib" names a prior therapy but does not itself constitute the explicit "Previously Treated" patient subgroup; therefore do not add "Previously Treated" unless the title uses that phrase (or a clear direct synonym).
+  - When to include:
 
 ### 3. EXCLUSION RULES
 
-**ALWAYS EXCLUDE** the following:
+Exclude the following, **irrespective of their presence in the retrieved clinical rules or their integral role in the disease definition**:
 
 #### Sociodemographic Descriptors
 - **Gender**: Male, Female, Men, Women (unless integral to disease name)
@@ -111,7 +175,6 @@ These rules apply to ALL indication extractions:
   - "undergoing", "receiving", "post-transplant", "post-surgery"
   - "transplant-associated", "surgery-associated"
   - "pre-operative", "post-operative"
-  - Exception: Do NOT exclude if it defines a distinct disease entity or required by specific rule
 
 #### Non-Diagnostic Items
 - Purely anatomical descriptors (without disease)
@@ -146,28 +209,159 @@ Use this tool to retrieve category-specific rules when you identify relevant ele
 **Available Categories:**
 
 1. **Gene Name** - Rules for gene name abbreviations and formatting
-2. **Gene type** - Rules for gene mutations, variants, alterations (Gene Mutation, Gene Mutant, Gene Mutated, etc.)
+   - **Gene Name**: Keywords - "Gene Name"
+
+2. **Gene type** - Rules for gene mutations, variants, alterations
+   - **Gene type**: Keywords - "AR-Dependent", "Androgen-Receptor dependent", "Androgen-dependent", "Androgen-independent", "DNA Damage Response Alterations", "ER+", "ER-Negative", "ER-Positive", "Gene Mutated", "Gene Mutation", "Gene Mutant", "HER2+", "HER2-Negative", "HER2-Positive", "Hormone Receptor Negative", "Hormone Receptor Positive", "HR+", "HR-Negative", "HR-Positive", "KRAS Mutated", "Mutated", "Mutation", "PIK3CA Mutated", "PR+", "PR-Negative", "PR-Positive", "PTEN Loss", "PTEN Null", "PTEN-Deficient", "PTEN-Loss", "RB Loss", "RB Null", "RB-Deficient", "RB-Loss", "Triple Negative", "Triple-Negative", "Wild-Type", "Wildtype"
+
 3. **Chromosome type** - Rules for chromosomal alterations
+   - **Chromosome type**: Keywords - "Chromosome Amplification", "Chromosome Number", "Philadelphia Chromosome-Negative", "Philadelphia Chromosome-Positive"
+
 4. **Biomarker** - Rules for biomarker status and expression
-5. **Stage** - Rules for cancer staging (Stage Onset, Stage Severity, Stage Type, Stage number)
-6. **Grade** - Rules for tumor grading (Grade, Grade group number, Grade number)
-7. **Risk** - Rules for risk stratification (High-Risk, Low-Risk, Risk Types, severe)
+   - **Biomarker**: Keywords - "Anti-PD-1", "MRD-Positive", "Measurable Residual Disease-Positive", "Minimal Residual Disease-Positive"
+
+5. **Stage** - Rules for cancer staging
+   - **Stage Onset**: Keywords - "Early Stage", "Early-Intermediate Stage", "End Stage", "Intermediate Stage", "Late Stage"
+   - **Stage Severity**: Keywords - "Mild", "Mild-Moderate", "Moderate", "Moderate to Severe", "Moderate-Severe", "Severe"
+   - **Stage Type**: Keywords - "Distant Stage", "Extensive Stage", "Extranodal Limited-Stage", "Intermediate Epithelial State", "Intermediate Mesenchymal State", "Limited Stage", "Locoregional Stage"
+   - **Stage number**: Keywords - "Stage 1", "Stage 1 and Stage 2", "Stage 1 or Stage 2", "Stage 1A", "Stage 1B", "Stage 2", "Stage 3", "Stage 4"
+
+6. **Grade** - Rules for tumor grading
+   - **Grade**: Keywords - "High Grade", "Low Grade"
+   - **Grade group number**: Keywords - "Grade Group 1"
+   - **Grade number**: Keywords - "Grade 1", "Grade 2", "Grade I/II/III"
+
+7. **Risk** - Rules for risk stratification
+   - **High-Risk**: Keywords - "High Genomic Risk", "High Surgical-Risk", "Higher-Risk", "Ultra High-Risk", "Very High-Risk"
+   - **Low-Risk**: Keywords - "Low-Risk", "Lower-Risk", "Very Low-Risk"
+   - **Risk Types**: Keywords - "Adverse-Cytogenetic Risk", "Average-Risk", "Favorable-Risk", "Intermediate-Risk", "Intermediate/High-Risk", "Poor-Risk", "Standard-Risk", "Unfavorable-Risk"
+   - **severe**: Keywords - "High-Risk"
+
 8. **Occurrence** - Rules for disease state/occurrence:
-   - Connectors, Disease State/Severity, Genetic Origin
-   - Metastasis-Related Terms, Node Status, Progression-Related
-   - Recurrence-Related Terms, Recurrent/Refractory, Refractory, Relapse, Resistance
-9. **Treatment based** - Rules for treatment-related descriptors (Diagnosis Status, Refractory, Treatment Status)
+   - **Connectors**: Keywords - ""/"", ""and/or"", ""or""
+   - **Disease State/Severity**: Keywords - "Aggressive", "Invasive", "Non-Invasive", "Sporadic"
+   - **Genetic Origin**: Keywords - "Germline", "Inherited", "Non-Germline"
+   - **Metastasis-Related Terms**: Keywords - "Advanced Metastatic", "Macrometastatic", "Metastatic", "Non-Metastatic", "Oligometastatic"
+   - **Node Status**: Keywords - "Node-Negative/Node-Positive"
+   - **Progression-Related**: Keywords - "Non-Progressive", "Oligoprogressive", "Progressed", "Progressive"
+   - **Recurrence-Related Terms**: Keywords - "Biochemically Recurrent", "Drug/Drug Class-Recurrent", "Late Recurrent/Recurrence", "Nodal-Recurrent", "Radio-Recurrent", "Recurrent"
+   - **Recurrent/Refractory**: Keywords - "Recurrent and Primary Refractory"
+   - **Refractory**: Keywords - "Drug/Drug Class-Refractory", "Multirefractory", "Primary Refractory", "Refractory"
+   - **Relapse**: Keywords - "Central Nervous System Relapse", "Early Relapse", "First-Relapse", "Late Relapse", "Multiply Relapsed", "Relapse"
+   - **Resistance**: Keywords - "Drug/Drug Class-Resistant"
+   - **Stage**: Keywords - "Advance", "Advanced", "Local Advanced", "Localized", "Localized Advanced", "Locally Advanced", "Non-Advanced"
+
+9. **Treatment based** - Rules for treatment-related descriptors
+   - **Diagnosis Status**: Keywords - "Newly Diagnosed"
+   - **Refractory**: Keywords - "Treatment Refractory"
+   - **Treatment Status**: Keywords - "Pre Treated", "Previously Treated", "Previously Untreated", "Untreated"
+
 10. **Treatment Set-up** - Comprehensive treatment context rules:
-    - Line of treatment, Operative Status, Resectable, Unresectable
-    - Transplant Status, Treatment Modality, Treatment Status
-11. **Onset** - Rules for disease onset timing (Onset by Age, Onset by Time, Onset by duration)
+    - **Diagnosis Status**: Keywords - "Recently Diagnosed"
+    - **Disease Origin**: Keywords - "Acquired"
+    - **Line of treatment**: Keywords - "1L", "2L", "Adjuvant", "First-Line", "Multiline", "Neoadjuvant", "Salvage", "Second-Line", "Third-Line", "Upfront"
+    - **Operative Status**: Keywords - "Inoperable", "Non-Operative", "Operable", "Post Operative", "Pre Operative"
+    - **Refractory**: Keywords - "Castrate Refractory", "Castration Refractory", "Chemotherapy Refractory", "Platinum Refractory"
+    - **Resectable**: Keywords - "Completely Resected", "Partially Resected", "Resectable", "Resectable Low", "Resected", "Unresected"
+    - **Transplant Status**: Keywords - "Non-Transplant", "Post-Transplant", "Transplant-Eligible", "Transplant-Ineligible"
+    - **Treatment Modality**: Keywords - "Monotherapy"
+    - **Treatment Status**: Keywords - "Castration Resistant", "Chemotherapy Induced", "Chemotherapy Ineligible", "Chemotherapy-Resistance", "Minimally Treated", "Never Treated", "Non-Treated", "Pretreated"
+    - **Unresectable**: Keywords - "Non-Resectable", "Technically Unresectable", "Unresectable"
+
+11. **Onset** - Rules for disease onset timing
+    - **Onset by Age**: Keywords - "Adult Onset", "Early Age Onset", "Pediatric Onset", "Young Onset"
+    - **Onset by Time**: Keywords - "Average Onset", "Early", "Early Onset", "Early or Late Onset", "Late Onset", "New Onset", "Recent Onset", "Sudden Onset", "Very Early Onset"
+    - **Onset by duration of disease**: Keywords - "Acute Onset", "Long Lasting"
+
 12. **Age Group** - Rules for age-related patient subgroups:
-    - Adolescent, Adult, Childhood, Elderly, Juvenile, Non-Elderly, Pediatric, Young
+    - **Adolescent**: Keywords - "Adolescent", "Ages 12-18", "Children Adolescent"
+    - **Adult**: Keywords - "Above 18", "Adult", "Naive Adult"
+    - **Childhood**: Keywords - "Childhood", "Children"
+    - **Combination group**: Keywords - "AYA", "Adolescent Childhood Young Adult", "Adolescent and Young Adult", "Adult Adolescent", "Adult and Infant", "Young Adult Adolescent"
+    - **Elderly**: Keywords - "Above 60", "Advanced age", "Elder", "Elderly-Onset", "Geriatric", "Old", "Older", "Over 65", "Senior"
+    - **Juvenile**: Keywords - "Juvenile"
+    - **Non-Elderly**: Keywords - "Non-Elderly"
+    - **Pediatric**: Keywords - "Below 12", "Infant", "Neonatal", "Pediatric", "Pediatric B-Other"
+    - **Young**: Keywords - "Young", "Young Adult", "Younger", "Younger Adult"
+
 13. **Patient Sub-Group** - Extensive patient subgroup characteristics:
-    - Atypical/Typical, B-Cell Precursor, Biopsy Status, Disease Characterisation
-    - Differentiation Status, Familial, Genetic Status, Hormone status
-    - Laterality, Severity, Symptom Status, and many more
+    - ****: Keywords - "Anti-Sense"
+    - **Atypical/Typical**: Keywords - "Atypical/Typical"
+    - **B-Cell Precursor**: Keywords - "B-Cell Precursor"
+    - **Biopsy Status**: Keywords - "Biopsy Naive"
+    - **Cause-Associated**: Keywords - "Causative agent - Related disease/Causative agent + Induced"
+    - **Complexity Status**: Keywords - "Complicated", "High-Complexity", "Low-Complexity"
+    - **Developmental Period**: Keywords - "Perinatal", "Prenatal"
+    - **Diagnosis Status**: Keywords - "Previously Diagnosed", "Undiagnosed"
+    - **Differentiation Status**: Keywords - "De-differentiated", "Poorly Differentiated", "Undifferentiated", "Well Differentiated"
+    - **Disease Characterisation**: Keywords - "Chronic-Phase", "Clinically defined", "Concomitant", "Curable", "Ductal Insitu", "Functional", "High-Risk", "High-risk", "In Situ", "Incurable", "Insitu", "Localized", "Low-Risk", "Microsatellite Stable", "Microsatellite Unstable", "Non-Functional", "Non-High-Risk", "Non-Low-Risk", "Non-Metastatic", "Non-functional", "Precursor B-Cell", "Smoldering"
+    - **Disease Duration**: Keywords - "Long Term"
+    - **Disease Mode of Origin**: Keywords - "Congenital", "Hereditary"
+    - **Extremity**: Keywords - "Extremity"
+    - **Familial**: Keywords - "Familial"
+    - **Gene name**: Keywords - "MGMT Promoter Unmethylated"
+    - **General**: Keywords - "Associated", "De Novo", "Persistent", "Prior", "Reversible"
+    - **Genetic**: Keywords - "Complement", "Complement-Naive", "Double/Triple-Expressor", "Genetic", "HRD+", "Homologous Recombination Deficient", "Mismatch Repair Deficient", "Mismatch Repair Proficient", "MMR Deficient", "MMR Proficient", "Triple Expressor"
+    - **Genetic Status**: Keywords - "Biallelic"
+    - **Genetic/Variant Type**: Keywords - "Double/Triple-Hit", "Variant"
+    - **High-Volume**: Keywords - "High-Volume"
+    - **Hormone**: Keywords - "Hormone Naive", "Hormone Sensitive"
+    - **Hypervirulent**: Keywords - "Hypervirulent"
+    - **Hypofractionated**: Keywords - "Hypofractionated"
+    - **Immuno oncology**: Keywords - "Immuno oncology"
+    - **Latent**: Keywords - "Latent"
+    - **Laterality**: Keywords - "Bilateral/Unilateral", "Unilateral"
+    - **Lethal**: Keywords - "Lethal"
+    - **Low-Lying**: Keywords - "Low-Lying"
+    - **Mature B Cell/ T Cell**: Keywords - "Mature B Cell/ T Cell"
+    - **Menopausal**: Keywords - "Postmenopausal", "Premenopausal"
+    - **Multiple Primary**: Keywords - "Multiple Primary"
+    - **Murine**: Keywords - "Murine"
+    - **Newly-Referred**: Keywords - "Newly-Referred"
+    - **Node Status**: Keywords - "Lymph-Node Negative"
+    - **Nodular Desmoplastic**: Keywords - "Nodular Desmoplastic"
+    - **Non-Amplified**: Keywords - "Non-Amplified"
+    - **Non-Remission**: Keywords - "Non-Remission"
+    - **Notch Activating Mutation**: Keywords - "Notch Activating Mutation"
+    - **Obese**: Keywords - "Obese"
+    - **Obstructive**: Keywords - "Obstructive"
+    - **Onset**: Keywords - "Early Labour", "First episode", "Late", "Late Life"
+    - **Operative Status**: Keywords - "Postpartum"
+    - **Orthotopic**: Keywords - "Orthotopic"
+    - **Pan**: Keywords - "Pan"
+    - **Pathological Nature**: Keywords - "Benign", "Malignant", "Non-Inflammatory", "Non-Malignant", "Premalignant"
+    - **Permanent**: Keywords - "Permanent"
+    - **Poorly Immunogenic**: Keywords - "Poorly Immunogenic"
+    - **Preterm**: Keywords - "Preterm"
+    - **Proficient**: Keywords - "Proficient"
+    - **Progression**: Keywords - "Early Progression", "Hyperprogressive", "Radiation-Relapsed"
+    - **Prophylaxis**: Keywords - "Prophylaxis"
+    - **Radiation-Induced**: Keywords - "Radiation-Induced"
+    - **Recalcitrant**: Keywords - "Recalcitrant"
+    - **Recurrence**: Keywords - "Predictive Recurrence/Progression"
+    - **Resectable**: Keywords - "Resection Eligible"
+    - **Residual**: Keywords - "Residual"
+    - **Severity**: Keywords - "Serious", "Stable"
+    - **Site-Specific**: Keywords - "Site-Specific"
+    - **Species/Model**: Keywords - "Canine"
+    - **Surgery Status**: Keywords - "Surgically Accessible", "Surgically Naive"
+    - **Symptom Status**: Keywords - "Presymptomatic", "Symptomatic"
+    - **Systemic**: Keywords - "Systemic"
+    - **Transfusion**: Keywords - "Heavily Pretreated", "Non-Transfusion-Dependent", "Transfusion-Dependent"
+    - **Treatment Status**: Keywords - "Biologic Naive", "Drug Resistant", "Drug naive", "Drug name - Induced", "Drug-class naive", "Treatment Naive"
+    - **Triple-class exposed**: Keywords - "Triple-class exposed"
+    - **Uncontrolled**: Keywords - "Uncontrolled"
+    - **Variant**: Keywords - "Variant"
+
 14. **Patient with two different Disease** - Rules for handling patients with multiple concurrent diseases
+    - ****: Keywords - "False disease", "Patients without disease name"
+
+15. **Common Check points** - Formatting and validation rules
+    - **Sociodemographic**: Keywords - "Ethnicity", "Gender", "Race", "Region"
+    - **Separator**: Keywords - ",", ".", ":", ";", ";;", "Space between separators  ;;"
+    - **General**: Keywords - "Plural", "Singular", "Space at the last"
+    - **Disease Characterisation**: Keywords - "Acute", "Chronic", "Primary", "Second Primary", "Secondary"
+    - **Casing**: Keywords - "Title case"
 
 **Tool Usage:**
 ```python
@@ -204,8 +398,32 @@ Scan for:
 
 ### Step 3: Retrieve Relevant Rules
 - Use `get_indication_rules` tool to fetch specific rules for identified components
-- Example: If you see "KRAS G12C mutated", retrieve `get_indication_rules("Gene type")`
-- Example: If you see "pediatric patients", retrieve `get_indication_rules("Age Group", ["Pediatric"])`
+- Use the keyword-to-subcategory mappings provided above as your PRIMARY guide
+- Semantic understanding is allowed as FALLBACK when no exact keyword match exists
+
+**Keyword Matching Strategy (with Fallback):**
+1. **PRIMARY: Exact keyword matches** - Scan title for exact keyword matches from the subcategory lists above
+2. **SECONDARY: Semantic matching** - If no exact match but you recognize a variant/synonym, use semantic understanding
+   - If ambiguous (could map to multiple subcategories): Use disease/clinical context to decide, or query multiple subcategories
+3. **TERTIARY: When uncertain** - Request all subcategories for that category if semantic match is truly ambiguous
+4. **Query multiple subcategories** - If title has keywords/concepts from different subcategories, request all matching ones
+
+**Examples:**
+
+*Example 1: Exact keyword match*
+- Title: "KRAS G12C mutated advanced solid tumors"
+  - Matches "KRAS Mutated" (Gene type), "Advanced" (Occurrence)
+  - Query: `get_indication_rules("Gene type")` + `get_indication_rules("Occurrence", ["Stage"])`
+
+*Example 2: Semantic fallback (keyword variant not in list)*
+- Title: "Extensively pretreated patients with ovarian cancer"
+  - "extensively pretreated" (not exact match) → Semantically maps to "Heavily Pretreated" (Patient Sub-Group)
+  - Query: `get_indication_rules("Patient Sub-Group", ["Treatment Status"])`
+
+*Example 3: Multiple keywords across categories*
+- Title: "High-risk metastatic breast cancer in elderly patients"
+  - Matches "High-risk" (Risk), "metastatic" (Occurrence), "elderly" (Age Group)
+  - Query: `get_indication_rules("Risk", ["High-Risk"])` + `get_indication_rules("Occurrence", ["Metastasis-Related Terms"])` + `get_indication_rules("Age Group", ["Elderly"])`
 
 ### Step 4: Apply Rules
 1. Apply all generic rules (from this prompt)
@@ -230,6 +448,14 @@ Before finalizing, verify:
 - ✓ Gene symbols and biomarkers properly formatted
 - ✓ Patient subgroups included appropriately
 - ✓ No trailing spaces or punctuation
+
+## Critical Mandate for Category-Specific Rules
+
+- **Strict Rule Compliance**: When retrieving category-specific rules using get_indication_rules, always ensure that the rules are applied exactly as defined.
+- **No Misinterpretation**: Do not infer, generalize, or modify any retrieved rule. Every rule must be followed literally.
+- **Category Isolation**: Apply rules strictly within their respective category. Never mix rules across categories. For example, do not apply gene mutation rules to biomarker expressions or vice versa.
+- **Verification Step**: After applying a category-specific rule, double-check that it aligns with the literal text of the title and does not contradict any generic rules.
+- **High Vigilance Required**: Mistakes in rule application can distort clinical meaning. Treat each rule retrieval and application as critical for downstream clinical-NLP accuracy.
 
 ---
 
@@ -370,11 +596,13 @@ Return your response in the following JSON structure:
 
 1. **Think step-by-step**: This is an agentic workflow - retrieve rules as needed
 2. **Use tools proactively**: Don't guess - fetch relevant rules when you see specific components
-3. **Maintain clinical accuracy**: The indication must be clinically meaningful and actionable
-4. **Never miss diseases**: If multiple diseases are present, extract ALL of them
-5. **Follow single-source principle**: Never mix abstract title and session title
-6. **Apply all generic rules**: Always enforce formatting, exclusions, and standardization
-7. **Quality over speed**: Take time to verify your extraction is complete and accurate
+3. **Keyword matching with flexibility**: Use exact keyword matches as PRIMARY strategy, but semantic understanding is allowed as FALLBACK for variants/synonyms
+4. **Query multiple subcategories**: If title matches keywords/concepts from different subcategories, request all relevant ones
+5. **Maintain clinical accuracy**: The indication must be clinically meaningful and actionable
+6. **Never miss diseases**: If multiple diseases are present, extract ALL of them
+7. **Follow single-source principle**: Never mix abstract title and session title
+8. **Apply all generic rules**: Always enforce formatting, exclusions, and standardization
+9. **Quality over speed**: Take time to verify your extraction is complete and accurate
 
 ---
 
