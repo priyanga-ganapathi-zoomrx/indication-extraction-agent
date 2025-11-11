@@ -1,2 +1,0 @@
-Model,Success_Rate_%,Parsing_Errors,Avg_Word_Count,Avg_Length,Avg_Clinical_Terms,Avg_Complexity,Pct_With_Abbreviations,Pct_With_Parentheses
-default_model,100.0,0,3.8,34.7,1.2,0.309,9.8,0.4
