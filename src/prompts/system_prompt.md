@@ -187,12 +187,12 @@ If the title merely mentions a **gene name** without specifying any **alteration
 
 ### 3. EXCLUSION RULES
 
-Exclude the following, **irrespective of their presence in the retrieved clinical rules or their integral role in the disease definition**:
+### Exclude the following, irrespective of their presence in the retrieved clinical rules or their integral role in the disease definition:
 
 #### Sociodemographic Descriptors
 - **Gender**: Male, Female, Men, Women (unless integral to disease name)
-  - `Male Breast Cancer` → `Breast Cancer`
-  - `Female Urinary Incontinence` → `Urinary Incontinence`
+  - Example: `Male Breast Cancer` → `Breast Cancer`
+  - Example: `Female Urinary Incontinence` → `Urinary Incontinence`
 - **Ethnicity**: Chinese, Asian, Black, White, etc.
 - **Race**: Any race-based descriptors
 - **Region**: Geographic descriptors
@@ -203,19 +203,69 @@ Exclude the following, **irrespective of their presence in the retrieved clinica
   - "transplant-associated", "surgery-associated"
   - "pre-operative", "post-operative"
 
-#### Non-Diagnostic Items
-- Purely anatomical descriptors (without disease)
-- Isolated symptoms
-- Complications or adverse effects
-- Exposures
-- Study methodologies
-- Physiologic processes
-- Microbial, infectious, or disease-causing agents (e.g., bacteria, viruses, fungi, parasites) should not be considered if they appear standalone and are not associated with any disease.
-Example: 
-“Influenza virus” → Exclude (standalone agent)
-“Influenza virus infection” → Include (associated with disease)
-"HPV-related cancer"→ Include (associated with disease)
+#### Drug-Related / Drug-Induced Terms
+Exclude and do **not** consider **drug-related, drug-associated, drug-induced, medication-induced, therapy-related, or treatment-associated** terms as part of the disease indication.  
+The goal is to **retain only the underlying disease** and **omit the drug or treatment reference**.
 
+- If a disease is mentioned in association with a drug, **include only the disease name**.  
+- **Do not capture the drug name or treatment agent** as part of the indication.  
+
+**Examples:**
+- `Drug-Induced Cancer` → Include `Cancer` (omit `Drug-Induced`)
+- `Chemotherapy-Associated Myelosuppression` → Exclude (adverse effect, not a disease)
+- `Chemotherapy-Induced Myelodysplastic Syndrome` → Include `Myelodysplastic Syndrome`
+- `Cisplatin-Associated Nephrotoxicity` → Exclude (toxic effect, not a disease)
+- `Antibiotic-Induced Diarrhea` → Include `Diarrhea` (omit drug association)
+- `Immune Checkpoint Inhibitor–Associated Colitis` → Include `Colitis` (omit drug association)
+- `Doxorubicin-associated Acute Myeloid Leukemia` → Include `Acute Myeloid Leukemia` (omit `Doxorubicin-associated`)
+
+> **Note:** The above examples are for reference. Apply this rule **to all similar drug- or therapy-associated terms**.  
+> Always focus on capturing the **disease entity** itself, not the causative drug or treatment context.
+
+
+#### Non-Diagnostic Items
+Exclude **biological processes, pathophysiologic processes, predispositions, complications, symptoms, adverse events, incidents, exposures, laboratory findings, physiologic states, anatomical descriptors, rejection events, or study-related terms**, even if they appear in clinical rules or are integral to disease mechanisms.
+
+These represent physiological or procedural outcomes — **not diagnostic disease entities.**
+You must **exclude and not consider them as diseases** under any circumstance.
+
+**Examples of items to exclude:**
+- **Biological/Pathophysiologic Processes**: `Mitochondrial Dysfunction`, `Endoplasmic Reticulum Stress`, `Oxidative Injury`, `Immune Overactivation`, `Cytotoxicity`, `Hypoxia-Induced Stress`
+- **Predispositions/Risk States**: `Prothrombotic State`, `Increased Infection Susceptibility`, `Obesity Risk` ,`Genetic Predisposition`, `Allergic Tendency`
+- **Complications/Secondary Manifestations**: `Septic Shock`, `Renal Failure`
+- **Symptoms/Clinical Signs**: `Skin Rash`, `Swelling`, `Dizziness`, `Fatigue`, `Nausea`
+- **Adverse Events/Drug Reactions**: `Infusion Reaction`, `Myelosuppression`, `Drug-Induced Liver Injury`, `Allergic Reaction`
+- **Rejection Events**: `Kidney Transplant Rejection`, `Liver Graft Rejection`, `Cardiac Allograft Rejection`, `Post-Transplant Rejection Episode`
+- **Incidents/Exposures**: `Occupational Chemical Exposure`, `Accidental Needle Stick`, `Bloodborne Pathogen Splash`
+- **Laboratory/Imaging Findings**: `Elevated Liver Enzymes`, `Abnormal ECG`, `Low Hemoglobin`, `Proteinuria`
+- **Physiologic States/Normal Variations**: `Pregnancy`, `Puberty`, `Menopause`, `Aging`, `Stress Response`
+- **Anatomical/Morphological Descriptors**: `Bone Marrow`, `Left Ventricle`, `Renal Cortex`, `Lymph Node Enlargement`
+- **Study/Experimental Context**: `Control Group`, `Treatment Arm`, `Dose Escalation`, `Responder Group`
+- **Standalone Microbial or Infectious Agents**:
+  - `Influenza Virus` → Exclude (agent alone)
+  - `H. pylori` → Exclude (agent alone)
+
+> **Note:** The examples listed above are provided **for reference only**. You must exclude **all such terms and any similar or related terms** that represent processes, risks, findings, or events rather than true disease entities.
+
+---
+
+**Include only when these are clearly part of a defined disease entity.**
+
+**Examples of valid inclusion:**
+- `Mitochondrial Myopathy` → Include (disease entity incorporating mitochondrial dysfunction)
+- `Oxidative Stress–Related Cardiomyopathy` → Include (disease incorporating oxidative injury)
+- `Thrombotic Microangiopathy` → Include (recognized disease entity)
+- `Allergic Contact Dermatitis` → Include (disease incorporating allergic reaction)
+- `Immune Thrombocytopenia` → Include (disease involving immune-mediated process)
+- `Necrotizing Enterocolitis` → Include (disease including necrosis as part of its pathology)
+- `Hypoxic-Ischemic Encephalopathy` → Include (disease entity linked to hypoxia)
+- `Radiation-Induced Pneumonitis` → Include (disease with defined etiology)
+
+---
+
+ **Summary Rule**
+> Only retain **clearly defined diagnostic disease entities** (e.g., “Chronic Myeloid Leukemia”, “Parkinson’s Disease”, “Crohn’s Disease”).
+> **Exclude and do not consider** any **state, process, event, predisposition, exposure, or procedural outcome (such as rejection)** that is **not a standalone diagnosable disease**.
 
 
 ### 4. MULTIPLE DISEASES
