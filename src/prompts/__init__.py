@@ -16,7 +16,7 @@ def get_system_prompt(
     Args:
         langfuse_client: Optional Langfuse client instance. If not provided, will create one using env vars.
         prompt_name: Name of the prompt in Langfuse (default: "MEDICAL_INDICATION_EXTRACTION_SYSTEM_PROMPT")
-        fallback_to_file: If True, fallback to reading from system_prompt.md if Langfuse fetch fails
+        fallback_to_file: If True, fallback to reading from local file (prompt_name.md) if Langfuse fetch fails
 
     Returns:
         tuple[str, str]: A tuple of (prompt_content, prompt_version)
@@ -54,10 +54,11 @@ def get_system_prompt(
             raise
         
         # Fallback to local file
-        print("ℹ Falling back to local system_prompt.md file...")
+        prompt_filename = f"{prompt_name}.md"
+        print(f"ℹ Falling back to local {prompt_filename} file...")
         try:
             prompt_dir = os.path.dirname(os.path.abspath(__file__))
-            prompt_file = os.path.join(prompt_dir, "system_prompt.md")
+            prompt_file = os.path.join(prompt_dir, prompt_filename)
             
             with open(prompt_file, 'r', encoding='utf-8') as f:
                 content = f.read()
