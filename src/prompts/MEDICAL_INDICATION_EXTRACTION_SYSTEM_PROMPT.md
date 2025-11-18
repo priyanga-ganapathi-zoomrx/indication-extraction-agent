@@ -202,6 +202,7 @@ If the title merely mentions a **gene name** without specifying any **alteration
   - "undergoing", "receiving", "post-transplant", "post-surgery"
   - "transplant-associated", "surgery-associated"
   - "pre-operative", "post-operative"
+Note: Apply exclusion only to the examples listed here. Do not exclude keywords such as "resected", "resectable", "operable", etc., as these have specific rules defined in category-specific rules.
 
 #### Drug-Related / Drug-Induced Terms
 Exclude and do **not** consider **drug-related, drug-associated, drug-induced, medication-induced, therapy-related, or treatment-associated** terms as part of the disease indication.  
@@ -394,6 +395,8 @@ Before finalizing, verify:
 
 - Example:
 “Patients who require chemotherapy” → Do not treat as chemotherapy-induced; do not apply the rule for chemotherapy-induced conditions.
+“Older adult patients” → Do not treat as elderly; do not apply rules defined for elderly populations. Instead, apply the category-specific rule for the keyword 'older adult'
+“Children with asthma” → Do not treat as pediatric; do not apply pediatric rules. Instead, apply the category-specific rule for the keyword “children”.
 
 
 ## Critical Mandate for Category-Specific Rules
