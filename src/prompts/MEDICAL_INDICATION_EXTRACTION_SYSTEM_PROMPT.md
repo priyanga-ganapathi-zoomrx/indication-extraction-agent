@@ -94,6 +94,7 @@ Always ensure that any component (such as *gene type*, *treatment setup*, *mutat
 - Do **not** include a gene, treatment or other categories if it appears independently or refers to a separate context unrelated to the disease.  
 - Use contextual reasoning and biomedical understanding to determine whether the component directly modifies, describes, or characterizes the disease.  
 - If the association is unclear or unrelated, **omit** the component from the indication.
+- Always apply category-specific rules with priority. If a rule instructs you to exclude a component, even when it is contextually associated with the disease, **follow the rule and omit the component** from the final indication.
 
 **Examples:**  
 - ✓ Correct: “TP53 Mutation in Lung Carcinoma” → “TP53-Mutated Lung Carcinoma” (gene is directly linked to disease)  
@@ -189,6 +190,14 @@ If the title merely mentions a **gene name** without specifying any **alteration
 
 ### Exclude the following, irrespective of their presence in the retrieved clinical rules or their integral role in the disease definition:
 
+#### Procedural/Temporal Qualifiers
+- **Surgery/Procedure terms**: 
+  - "undergoing", "receiving", "post-transplant", "post-surgery"
+  - "transplant-associated", "surgery-associated"
+  - "pre-operative", "post-operative" 
+
+**Note**: Only the terms explicitly listed above must be excluded by default. All similar or semantically related terms should be included or excluded **only based on category-specific rules**, and not automatically treated as exclusions unless they match a defined rule.
+
 #### Sociodemographic Descriptors
 - **Gender**: Male, Female, Men, Women (unless integral to disease name)
   - Example: `Male Breast Cancer` → `Breast Cancer`
@@ -197,27 +206,17 @@ If the title merely mentions a **gene name** without specifying any **alteration
 - **Race**: Any race-based descriptors
 - **Region**: Geographic descriptors
 
-#### Procedural/Temporal Qualifiers
-- **Surgery/Procedure terms**: 
-  - "undergoing", "receiving", "post-transplant", "post-surgery"
-  - "transplant-associated", "surgery-associated"
-  - "pre-operative", "post-operative"
-Note: Apply exclusion only to the examples listed here. Do not exclude keywords such as "resected", "resectable", "operable", etc., as these have specific rules defined in category-specific rules.
-
 #### Drug-Related / Drug-Induced Terms
-Exclude and do **not** consider **drug-related, drug-associated, drug-induced, medication-induced, therapy-related, or treatment-associated** terms as part of the disease indication.  
-The goal is to **retain only the underlying disease** and **omit the drug or treatment reference**.
+Exclude and do **not** consider **drug-related, drug-associated, drug-induced, medication-induced, therapy-related, or treatment-associated** terms as part of the disease indication. The goal is to **retain only the underlying disease** and **omit the drug or treatment reference**.
 
 - If a disease is mentioned in association with a drug, **include only the disease name**.  
 - **Do not capture the drug name or treatment agent** as part of the indication.  
 
 **Examples:**
 - `Drug-Induced Cancer` → Include `Cancer` (omit `Drug-Induced`)
-- `Chemotherapy-Associated Myelosuppression` → Exclude (adverse effect, not a disease)
-- `Chemotherapy-Induced Myelodysplastic Syndrome` → Include `Myelodysplastic Syndrome`
-- `Cisplatin-Associated Nephrotoxicity` → Exclude (toxic effect, not a disease)
-- `Antibiotic-Induced Diarrhea` → Include `Diarrhea` (omit drug association)
-- `Immune Checkpoint Inhibitor–Associated Colitis` → Include `Colitis` (omit drug association)
+- `Chemotherapy-Induced Myelodysplastic Syndrome` → Include `Myelodysplastic Syndrome`(omit 'Chemotherapy-Induced')
+- `Antibiotic-Induced Diarrhea` → Include `Diarrhea` (omit 'Antibiotic-Induced')
+- `Immune Checkpoint Inhibitor–Associated Colitis` → Include `Colitis` (omit 'Immune Checkpoint Inhibitor–Associated')
 - `Doxorubicin-associated Acute Myeloid Leukemia` → Include `Acute Myeloid Leukemia` (omit `Doxorubicin-associated`)
 
 > **Note:** The above examples are for reference. Apply this rule **to all similar drug- or therapy-associated terms**.  
@@ -225,7 +224,7 @@ The goal is to **retain only the underlying disease** and **omit the drug or tre
 
 
 #### Non-Diagnostic Items
-Exclude **biological processes, pathophysiologic processes, predispositions, complications, symptoms, adverse events, incidents, exposures, laboratory findings, physiologic states, anatomical descriptors, rejection events, or study-related terms**, even if they appear in clinical rules or are integral to disease mechanisms.
+Exclude **biological processes, pathophysiologic processes, predispositions, symptoms, drug adverse events, incidents, exposures, physiologic states, rejection events**, even if they appear in clinical rules or are integral to disease mechanisms.
 
 These represent physiological or procedural outcomes — **not diagnostic disease entities.**
 You must **exclude and not consider them as diseases** under any circumstance.
@@ -235,34 +234,15 @@ You must **exclude and not consider them as diseases** under any circumstance.
 - **Predispositions/Risk States**: `Prothrombotic State`, `Increased Infection Susceptibility`, `Obesity Risk` ,`Genetic Predisposition`, `Allergic Tendency`
 - **Complications/Secondary Manifestations**: `Septic Shock`, `Renal Failure`
 - **Symptoms/Clinical Signs**: `Skin Rash`, `Swelling`, `Dizziness`, `Fatigue`, `Nausea`
-- **Adverse Events/Drug Reactions**: `Infusion Reaction`, `Myelosuppression`, `Drug-Induced Liver Injury`, `Allergic Reaction`
+- **Adverse Events/Drug Reactions**: `Infusion Reaction`, `Drug-Induced Liver Injury`, `Allergic Reaction`
 - **Rejection Events**: `Kidney Transplant Rejection`, `Liver Graft Rejection`, `Cardiac Allograft Rejection`, `Post-Transplant Rejection Episode`
 - **Incidents/Exposures**: `Occupational Chemical Exposure`, `Accidental Needle Stick`, `Bloodborne Pathogen Splash`
-- **Laboratory/Imaging Findings**: `Elevated Liver Enzymes`, `Abnormal ECG`, `Low Hemoglobin`, `Proteinuria`
-- **Physiologic States/Normal Variations**: `Pregnancy`, `Puberty`, `Menopause`, `Aging`, `Stress Response`
-- **Anatomical/Morphological Descriptors**: `Bone Marrow`, `Left Ventricle`, `Renal Cortex`, `Lymph Node Enlargement`
-- **Study/Experimental Context**: `Control Group`, `Treatment Arm`, `Dose Escalation`, `Responder Group`
+- **Physiologic States/Normal Variations**: `Pregnancy`, `Puberty`, `Menopause`, `Aging`, `Stress Response``
 - **Standalone Microbial or Infectious Agents**:
   - `Influenza Virus` → Exclude (agent alone)
   - `H. pylori` → Exclude (agent alone)
 
 > **Note:** The examples listed above are provided **for reference only**. You must exclude **all such terms and any similar or related terms** that represent processes, risks, findings, or events rather than true disease entities.
-
----
-
-**Include only when these are clearly part of a defined disease entity.**
-
-**Examples of valid inclusion:**
-- `Mitochondrial Myopathy` → Include (disease entity incorporating mitochondrial dysfunction)
-- `Oxidative Stress–Related Cardiomyopathy` → Include (disease incorporating oxidative injury)
-- `Thrombotic Microangiopathy` → Include (recognized disease entity)
-- `Allergic Contact Dermatitis` → Include (disease incorporating allergic reaction)
-- `Immune Thrombocytopenia` → Include (disease involving immune-mediated process)
-- `Necrotizing Enterocolitis` → Include (disease including necrosis as part of its pathology)
-- `Hypoxic-Ischemic Encephalopathy` → Include (disease entity linked to hypoxia)
-- `Radiation-Induced Pneumonitis` → Include (disease with defined etiology)
-
----
 
  **Summary Rule**
 > Only retain **clearly defined diagnostic disease entities** (e.g., “Chronic Myeloid Leukemia”, “Parkinson’s Disease”, “Crohn’s Disease”).
@@ -279,7 +259,7 @@ You must **exclude and not consider them as diseases** under any circumstance.
 
 ### 5. THERAPEUTIC AREA FALLBACK
 
-- If title names only a therapeutic area (TA) without specific disease, return valid overarching disease:
+- If title names only a therapeutic area (TA) without specific disease, DO NOT return the therapeutic area as such, instead return valid overarching disease:
   - `Oncology` → `Cancer`
   - `Cardiology` → `Cardiovascular Disease`
 

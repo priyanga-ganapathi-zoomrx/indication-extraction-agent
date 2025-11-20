@@ -66,7 +66,8 @@ def extract_indication_from_response(result: Dict) -> Dict[str, Any]:
         result: Agent invocation result
 
     Returns:
-        Dictionary with extracted fields: indication, success, selected_source, reasoning, rules_retrieved, components_identified
+        Dictionary with extracted fields: indication, success, selected_source, reasoning, 
+        confidence_score, rules_retrieved, components_identified, and quality_metrics
     """
     try:
         # Get the final message from the agent
@@ -77,8 +78,13 @@ def extract_indication_from_response(result: Dict) -> Dict[str, Any]:
                 'success': False,
                 'selected_source': '',
                 'reasoning': '',
+                'confidence_score': None,
                 'rules_retrieved': [],
-                'components_identified': []
+                'components_identified': [],
+                'quality_metrics_completeness': None,
+                'quality_metrics_rule_adherence': None,
+                'quality_metrics_clinical_accuracy': None,
+                'quality_metrics_formatting_compliance': None
             }
 
         final_message = messages[-1]
@@ -90,8 +96,13 @@ def extract_indication_from_response(result: Dict) -> Dict[str, Any]:
                 'success': False,
                 'selected_source': '',
                 'reasoning': '',
+                'confidence_score': None,
                 'rules_retrieved': [],
-                'components_identified': []
+                'components_identified': [],
+                'quality_metrics_completeness': None,
+                'quality_metrics_rule_adherence': None,
+                'quality_metrics_clinical_accuracy': None,
+                'quality_metrics_formatting_compliance': None
             }
 
         # Try to parse JSON response if present
@@ -104,13 +115,21 @@ def extract_indication_from_response(result: Dict) -> Dict[str, Any]:
             try:
                 parsed = json.loads(json_match.group(1))
                 if 'generated_indication' in parsed:
+                    # Extract quality metrics
+                    quality_metrics = parsed.get('quality_metrics', {})
+                    
                     return {
                         'indication': str(parsed.get('generated_indication', '')).strip(),
                         'success': True,
                         'selected_source': parsed.get('selected_source', ''),
                         'reasoning': parsed.get('reasoning', ''),
+                        'confidence_score': parsed.get('confidence_score', None),
                         'rules_retrieved': parsed.get('rules_retrieved', []),
-                        'components_identified': parsed.get('components_identified', [])
+                        'components_identified': parsed.get('components_identified', []),
+                        'quality_metrics_completeness': quality_metrics.get('completeness', None),
+                        'quality_metrics_rule_adherence': quality_metrics.get('rule_adherence', None),
+                        'quality_metrics_clinical_accuracy': quality_metrics.get('clinical_accuracy', None),
+                        'quality_metrics_formatting_compliance': quality_metrics.get('formatting_compliance', None)
                     }
             except json.JSONDecodeError:
                 pass
@@ -127,8 +146,13 @@ def extract_indication_from_response(result: Dict) -> Dict[str, Any]:
                     'success': True,
                     'selected_source': '',
                     'reasoning': '',
+                    'confidence_score': None,
                     'rules_retrieved': [],
-                    'components_identified': []
+                    'components_identified': [],
+                    'quality_metrics_completeness': None,
+                    'quality_metrics_rule_adherence': None,
+                    'quality_metrics_clinical_accuracy': None,
+                    'quality_metrics_formatting_compliance': None
                 }
             elif len(line) > 10 and not line.startswith('Based on') and not line.startswith('The'):
                 # Assume this is the indication
@@ -137,8 +161,13 @@ def extract_indication_from_response(result: Dict) -> Dict[str, Any]:
                     'success': True,
                     'selected_source': '',
                     'reasoning': '',
+                    'confidence_score': None,
                     'rules_retrieved': [],
-                    'components_identified': []
+                    'components_identified': [],
+                    'quality_metrics_completeness': None,
+                    'quality_metrics_rule_adherence': None,
+                    'quality_metrics_clinical_accuracy': None,
+                    'quality_metrics_formatting_compliance': None
                 }
 
         # Last resort: return the entire content if it's reasonable length
@@ -148,8 +177,13 @@ def extract_indication_from_response(result: Dict) -> Dict[str, Any]:
                 'success': True,
                 'selected_source': '',
                 'reasoning': '',
+                'confidence_score': None,
                 'rules_retrieved': [],
-                'components_identified': []
+                'components_identified': [],
+                'quality_metrics_completeness': None,
+                'quality_metrics_rule_adherence': None,
+                'quality_metrics_clinical_accuracy': None,
+                'quality_metrics_formatting_compliance': None
             }
 
         return {
@@ -157,8 +191,13 @@ def extract_indication_from_response(result: Dict) -> Dict[str, Any]:
             'success': False,
             'selected_source': '',
             'reasoning': '',
+            'confidence_score': None,
             'rules_retrieved': [],
-            'components_identified': []
+            'components_identified': [],
+            'quality_metrics_completeness': None,
+            'quality_metrics_rule_adherence': None,
+            'quality_metrics_clinical_accuracy': None,
+            'quality_metrics_formatting_compliance': None
         }
 
     except Exception as e:
@@ -168,8 +207,13 @@ def extract_indication_from_response(result: Dict) -> Dict[str, Any]:
             'success': False,
             'selected_source': '',
             'reasoning': '',
+            'confidence_score': None,
             'rules_retrieved': [],
-            'components_identified': []
+            'components_identified': [],
+            'quality_metrics_completeness': None,
+            'quality_metrics_rule_adherence': None,
+            'quality_metrics_clinical_accuracy': None,
+            'quality_metrics_formatting_compliance': None
         }
 
 
@@ -199,7 +243,8 @@ def process_single_abstract(abstract: Dict, agent: IndicationExtractionAgent,
         # Extract indication and additional fields
         extracted_data = extract_indication_from_response(result)
 
-        # Build result row
+        # Build result row with all JSON fields
+        import json
         result_row = {
             'abstract_id': abstract['abstract_id'],
             'session_title': abstract['session_title'],
@@ -209,9 +254,14 @@ def process_single_abstract(abstract: Dict, agent: IndicationExtractionAgent,
             f'{model_name}_indication_response': extracted_data['indication'],
             f'{model_name}_success': extracted_data['success'],
             f'{model_name}_selected_source': extracted_data['selected_source'],
+            f'{model_name}_confidence_score': extracted_data['confidence_score'],
             f'{model_name}_reasoning': extracted_data['reasoning'],
-            f'{model_name}_rules_retrieved': str(extracted_data['rules_retrieved']),  # Convert list to string
-            f'{model_name}_components_identified': str(extracted_data['components_identified']),  # Convert list to string
+            f'{model_name}_rules_retrieved': json.dumps(extracted_data['rules_retrieved']),  # Convert list to JSON string
+            f'{model_name}_components_identified': json.dumps(extracted_data['components_identified']),  # Convert list to JSON string
+            f'{model_name}_quality_metrics_completeness': extracted_data['quality_metrics_completeness'],
+            f'{model_name}_quality_metrics_rule_adherence': extracted_data['quality_metrics_rule_adherence'],
+            f'{model_name}_quality_metrics_clinical_accuracy': extracted_data['quality_metrics_clinical_accuracy'],
+            f'{model_name}_quality_metrics_formatting_compliance': extracted_data['quality_metrics_formatting_compliance'],
             f'{model_name}_llm_calls': result.get('llm_calls', 0)
         }
 
@@ -229,9 +279,14 @@ def process_single_abstract(abstract: Dict, agent: IndicationExtractionAgent,
             f'{model_name}_indication_response': "",
             f'{model_name}_success': False,
             f'{model_name}_selected_source': "",
+            f'{model_name}_confidence_score': None,
             f'{model_name}_reasoning': "",
             f'{model_name}_rules_retrieved': "[]",
             f'{model_name}_components_identified': "[]",
+            f'{model_name}_quality_metrics_completeness': None,
+            f'{model_name}_quality_metrics_rule_adherence': None,
+            f'{model_name}_quality_metrics_clinical_accuracy': None,
+            f'{model_name}_quality_metrics_formatting_compliance': None,
             f'{model_name}_llm_calls': 0
         }
         return result_row
