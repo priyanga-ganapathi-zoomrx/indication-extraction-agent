@@ -9,12 +9,40 @@ import os
 from typing import List, Dict, Any, Optional
 
 import litellm
+from pydantic import BaseModel
 from langchain_core.utils.function_calling import convert_to_openai_tool
 from langchain_core.messages import SystemMessage, HumanMessage, AIMessage, ToolMessage
 
 from src.config import settings
 from src.prompts import get_system_prompt
 from src.tools import get_tools
+
+# Define response schema
+class RuleRetrieved(BaseModel):
+    category: str
+    subcategories: List[str]
+    reason: str
+
+class ComponentIdentified(BaseModel):
+    component: str
+    type: str
+    normalized_form: str
+    rule_applied: str
+
+class QualityMetrics(BaseModel):
+    completeness: float
+    rule_adherence: float
+    clinical_accuracy: float
+    formatting_compliance: float
+
+class IndicationExtractionResponse(BaseModel):
+    selected_source: str
+    generated_indication: str
+    confidence_score: float
+    reasoning: str
+    rules_retrieved: List[RuleRetrieved]
+    components_identified: List[ComponentIdentified]
+    quality_metrics: QualityMetrics
 
 
 class LiteLLMIndicationAgent:
@@ -99,7 +127,8 @@ class LiteLLMIndicationAgent:
                     base_url=settings.llm.LLM_BASE_URL,
                     api_key=settings.llm.LLM_API_KEY,
                     reasoning_effort="high",
-                    metadata=metadata
+                    metadata=metadata,
+                    response_format=IndicationExtractionResponse
                 )
             except Exception as e:
                 return f"Error during LLM call: {str(e)}"
