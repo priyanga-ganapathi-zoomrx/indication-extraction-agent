@@ -28,20 +28,37 @@ class LiteLLMIndicationAgent:
         # Convert tools to OpenAI format for LiteLLM
         self.tools_schema = [convert_to_openai_tool(tool) for tool in self.tools]
         
+        # Initialize Langfuse
+        self._initialize_langfuse()
+        
         # Get system prompt
         # We'll use a simple fallback if Langfuse is not set up or fails, similar to the original agent
-        self.system_prompt, _ = get_system_prompt(
+        self.system_prompt, self.prompt_version = get_system_prompt(
             langfuse_client=None,  # We can add Langfuse support later if needed
             prompt_name="MEDICAL_INDICATION_EXTRACTION_SYSTEM_PROMPT",
             fallback_to_file=True,
         )
 
-    def run(self, abstract_title: str, session_title: str = "") -> str:
+    def _initialize_langfuse(self):
+        """Initialize Langfuse configuration for LiteLLM."""
+        if settings.langfuse.LANGFUSE_PUBLIC_KEY and settings.langfuse.LANGFUSE_SECRET_KEY:
+            os.environ["LANGFUSE_PUBLIC_KEY"] = settings.langfuse.LANGFUSE_PUBLIC_KEY
+            os.environ["LANGFUSE_SECRET_KEY"] = settings.langfuse.LANGFUSE_SECRET_KEY
+            os.environ["LANGFUSE_HOST"] = settings.langfuse.LANGFUSE_HOST
+            
+            # Set LiteLLM callbacks to use OTEL integration
+            litellm.callbacks = ["langfuse_otel"]
+            print(f"✓ Langfuse OTEL integration configured for LiteLLM")
+        else:
+            print(f"ℹ Langfuse not configured (missing keys)")
+
+    def run(self, abstract_title: str, session_title: str = "", abstract_id: str = None) -> str:
         """Run the agent to extract indication.
 
         Args:
             abstract_title: The abstract title.
             session_title: The session title (optional).
+            abstract_id: The abstract ID (optional).
 
         Returns:
             str: The extracted indication or response.
@@ -55,6 +72,19 @@ class LiteLLMIndicationAgent:
         ]
 
         print(f"Starting LiteLLM Agent with model: {settings.llm.LLM_MODEL}")
+        
+        # Optional: Add metadata for Langfuse
+        metadata = {
+            "agent_name": "LiteLLMIndicationAgent",
+            "session_title": session_title,
+            "abstract_title": abstract_title,
+            "abstract_id": abstract_id,
+            "tags": [
+                f"abstract_id:{abstract_id or 'unknown'}",
+                f"model:{settings.llm.LLM_MODEL}",
+                f"prompt_version:{self.prompt_version or 'unknown'}"
+            ]
+        }
 
         while True:
             # Call LiteLLM
@@ -69,6 +99,7 @@ class LiteLLMIndicationAgent:
                     base_url=settings.llm.LLM_BASE_URL,
                     api_key=settings.llm.LLM_API_KEY,
                     reasoning_effort="high",
+                    metadata=metadata
                 )
             except Exception as e:
                 return f"Error during LLM call: {str(e)}"

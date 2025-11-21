@@ -17,7 +17,11 @@ def main():
     
     print(f"\nProcessing:\nAbstract: {abstract_title}\nSession: {session_title}\n")
     
-    result = agent.run(abstract_title=abstract_title, session_title=session_title)
+    result = agent.run(
+        abstract_title=abstract_title, 
+        session_title=session_title,
+        abstract_id="12345"
+    )
     
     print("\n" + "="*50)
     print("FINAL RESULT")
