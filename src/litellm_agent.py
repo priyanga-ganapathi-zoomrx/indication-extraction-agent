@@ -143,12 +143,10 @@ class LiteLLMIndicationAgent:
             tool_calls = response_message.tool_calls
 
             if tool_calls:
-                print(f"Tool calls detected: {len(tool_calls)}")
                 for tool_call in tool_calls:
                     function_name = tool_call.function.name
                     function_args = json.loads(tool_call.function.arguments)
                     
-                    print(f"Executing tool: {function_name} with args: {function_args}")
                     
                     if function_name in self.tools_map:
                         tool_function = self.tools_map[function_name]
