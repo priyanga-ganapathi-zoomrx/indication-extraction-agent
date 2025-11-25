@@ -14,6 +14,11 @@ from datetime import datetime
 from typing import List, Dict, Any
 import argparse
 import concurrent.futures
+import sys
+import os
+
+# Add project root to sys.path to allow running as script
+sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from src.drug_agent import DrugExtractionAgent
 
@@ -36,15 +41,40 @@ def load_abstracts_from_csv(csv_path: str, max_abstracts: int = None, randomize:
         return abstracts
 
     try:
-        with open(csv_path, 'r', encoding='utf-8') as file:
+        with open(csv_path, 'r', encoding='utf-8-sig') as file:
+            # Read all rows to a list of dictionaries
             reader = csv.DictReader(file)
+            
+            # Normalize headers mapping
+            # Map normalized (lowercase, stripped) headers to actual headers
+            if reader.fieldnames:
+                header_map = {h.lower().strip(): h for h in reader.fieldnames}
+            else:
+                header_map = {}
+            
+            # Find the correct header names for our required fields
+            # We look for common variations
+            id_col = header_map.get('abstract_id') or header_map.get('abstract id') or header_map.get('id')
+            title_col = header_map.get('abstract_title') or header_map.get('abstract title') or header_map.get('title')
+            session_col = header_map.get('session_title') or header_map.get('session title')
+            ground_truth_col = header_map.get('ground_truth') or header_map.get('ground truth')
+
+            if not id_col or not title_col:
+                print(f"Warning: Could not find required columns (ID or Title) in {csv_path}")
+                print(f"Available columns: {list(header_map.keys())}")
+                # Continue anyway, might fail later but let's try
+            
             for row in reader:
-                abstracts.append({
-                    'abstract_id': row.get('abstract_id', row.get('\ufeffabstract_id', '')),
-                    'session_title': row.get('Session title', ''),
-                    'abstract_title': row.get('abstract Title', ''),
-                    'ground_truth': row.get('Ground Truth', ''),
-                })
+                abstract_data = {
+                    'abstract_id': row.get(id_col, '') if id_col else '',
+                    'session_title': row.get(session_col, '') if session_col else '',
+                    'abstract_title': row.get(title_col, '') if title_col else '',
+                    'ground_truth': row.get(ground_truth_col, '') if ground_truth_col else '',
+                }
+                
+                # Only add if we have at least an ID or Title
+                if abstract_data['abstract_id'] or abstract_data['abstract_title']:
+                    abstracts.append(abstract_data)
 
         if randomize and max_abstracts and len(abstracts) > max_abstracts:
             import random
@@ -92,46 +122,43 @@ def extract_drugs_from_response(result: Dict) -> Dict[str, Any]:
 
         # Try to parse JSON response
         import re
+        json_str = content
 
-        # Look for JSON in the response (with or without code blocks)
+        # 1. Try to find JSON block
         json_match = re.search(r'```json\s*(.*?)\s*```', content, re.DOTALL)
         if json_match:
             json_str = json_match.group(1)
         else:
-            # Try to find JSON object directly in content
-            json_match = re.search(r'\{[^}]*"Primary Drugs"[^}]*\}', content, re.DOTALL)
-            if json_match:
-                json_str = json_match.group(0)
-            else:
-                json_str = content
+            # 2. Try to find the first '{' and last '}'
+            # This handles cases where there's text before/after the JSON but no code blocks
+            start_idx = content.find('{')
+            end_idx = content.rfind('}')
+            
+            if start_idx != -1 and end_idx != -1 and end_idx > start_idx:
+                json_str = content[start_idx:end_idx+1]
 
         try:
             parsed = json.loads(json_str)
             
-            # Handle different possible key formats
-            primary_drugs = (
-                parsed.get('Primary Drugs', []) or 
-                parsed.get('primary_drugs', []) or 
-                parsed.get('Primary', []) or
-                []
-            )
-            secondary_drugs = (
-                parsed.get('Secondary Drugs', []) or 
-                parsed.get('secondary_drugs', []) or 
-                parsed.get('Secondary', []) or
-                []
-            )
-            comparator_drugs = (
-                parsed.get('Comparator Drugs', []) or 
-                parsed.get('comparator_drugs', []) or 
-                parsed.get('Comparator', []) or
-                []
-            )
+            # Helper to safely get list from various key formats
+            def get_list(data, keys):
+                for key in keys:
+                    if key in data:
+                        val = data[key]
+                        if isinstance(val, list):
+                            return val
+                return []
+
+            primary_drugs = get_list(parsed, ['Primary Drugs', 'primary_drugs', 'Primary', 'primary'])
+            secondary_drugs = get_list(parsed, ['Secondary Drugs', 'secondary_drugs', 'Secondary', 'secondary'])
+            comparator_drugs = get_list(parsed, ['Comparator Drugs', 'comparator_drugs', 'Comparator', 'comparator'])
+            reasoning = get_list(parsed, ['Reasoning', 'reasoning'])
             
             return {
-                'primary_drugs': primary_drugs if isinstance(primary_drugs, list) else [],
-                'secondary_drugs': secondary_drugs if isinstance(secondary_drugs, list) else [],
-                'comparator_drugs': comparator_drugs if isinstance(comparator_drugs, list) else [],
+                'primary_drugs': primary_drugs,
+                'secondary_drugs': secondary_drugs,
+                'comparator_drugs': comparator_drugs,
+                'reasoning': reasoning,
                 'success': True,
             }
         except json.JSONDecodeError as e:
@@ -141,6 +168,7 @@ def extract_drugs_from_response(result: Dict) -> Dict[str, Any]:
                 'primary_drugs': [],
                 'secondary_drugs': [],
                 'comparator_drugs': [],
+                'reasoning': [],
                 'success': False,
             }
 
@@ -150,6 +178,7 @@ def extract_drugs_from_response(result: Dict) -> Dict[str, Any]:
             'primary_drugs': [],
             'secondary_drugs': [],
             'comparator_drugs': [],
+            'reasoning': [],
             'success': False,
         }
 
@@ -189,6 +218,7 @@ def process_single_abstract(abstract: Dict, agent: DrugExtractionAgent,
             f'{model_name}_primary_drugs': json.dumps(extracted_data['primary_drugs']),
             f'{model_name}_secondary_drugs': json.dumps(extracted_data['secondary_drugs']),
             f'{model_name}_comparator_drugs': json.dumps(extracted_data['comparator_drugs']),
+            f'{model_name}_reasoning': json.dumps(extracted_data['reasoning']),
             f'{model_name}_success': extracted_data['success'],
             f'{model_name}_llm_calls': result.get('llm_calls', 0)
         }
@@ -206,6 +236,7 @@ def process_single_abstract(abstract: Dict, agent: DrugExtractionAgent,
             f'{model_name}_primary_drugs': json.dumps([]),
             f'{model_name}_secondary_drugs': json.dumps([]),
             f'{model_name}_comparator_drugs': json.dumps([]),
+            f'{model_name}_reasoning': json.dumps([]),
             f'{model_name}_success': False,
             f'{model_name}_llm_calls': 0
         }
@@ -275,7 +306,7 @@ def process_abstracts_batch(abstracts: List[Dict], agent: DrugExtractionAgent,
 def main():
     """Main batch processing function."""
     parser = argparse.ArgumentParser(description='Batch Process Drug Extraction')
-    parser.add_argument('--input_file', default='data/abstract_titles.csv',
+    parser.add_argument('--input_file', default='data/drug_extraction_input.csv',
                        help='Input CSV file with abstracts')
     parser.add_argument('--output_file', default=None,
                        help='Output CSV file (default: auto-generated)')
