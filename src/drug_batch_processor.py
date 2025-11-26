@@ -90,22 +90,24 @@ def load_abstracts_from_csv(csv_path: str, max_abstracts: int = None, randomize:
 
 
 def extract_drugs_from_response(result: Dict) -> Dict[str, Any]:
-    """Extract drugs from agent response.
+    """Extract drugs from agent response (validation response).
 
     Args:
         result: Agent invocation result
 
     Returns:
-        Dictionary with extracted fields: primary_drugs, secondary_drugs, comparator_drugs, success
+        Dictionary with extracted fields: primary_drugs, secondary_drugs, comparator_drugs, removed_drugs, success
     """
     try:
-        # Get the final message from the agent
+        # Get the final message from the agent (validation response)
         messages = result.get('messages', [])
         if not messages:
             return {
                 'primary_drugs': [],
                 'secondary_drugs': [],
                 'comparator_drugs': [],
+                'removed_drugs': [],
+                'reasoning': [],
                 'success': False,
             }
 
@@ -117,6 +119,8 @@ def extract_drugs_from_response(result: Dict) -> Dict[str, Any]:
                 'primary_drugs': [],
                 'secondary_drugs': [],
                 'comparator_drugs': [],
+                'removed_drugs': [],
+                'reasoning': [],
                 'success': False,
             }
 
@@ -152,12 +156,14 @@ def extract_drugs_from_response(result: Dict) -> Dict[str, Any]:
             primary_drugs = get_list(parsed, ['Primary Drugs', 'primary_drugs', 'Primary', 'primary'])
             secondary_drugs = get_list(parsed, ['Secondary Drugs', 'secondary_drugs', 'Secondary', 'secondary'])
             comparator_drugs = get_list(parsed, ['Comparator Drugs', 'comparator_drugs', 'Comparator', 'comparator'])
+            removed_drugs = get_list(parsed, ['Removed Drugs', 'removed_drugs', 'Removed', 'removed'])
             reasoning = get_list(parsed, ['Reasoning', 'reasoning'])
             
             return {
                 'primary_drugs': primary_drugs,
                 'secondary_drugs': secondary_drugs,
                 'comparator_drugs': comparator_drugs,
+                'removed_drugs': removed_drugs,
                 'reasoning': reasoning,
                 'success': True,
             }
@@ -168,6 +174,7 @@ def extract_drugs_from_response(result: Dict) -> Dict[str, Any]:
                 'primary_drugs': [],
                 'secondary_drugs': [],
                 'comparator_drugs': [],
+                'removed_drugs': [],
                 'reasoning': [],
                 'success': False,
             }
@@ -178,6 +185,7 @@ def extract_drugs_from_response(result: Dict) -> Dict[str, Any]:
             'primary_drugs': [],
             'secondary_drugs': [],
             'comparator_drugs': [],
+            'removed_drugs': [],
             'reasoning': [],
             'success': False,
         }
@@ -209,15 +217,33 @@ def process_single_abstract(abstract: Dict, agent: DrugExtractionAgent,
         # Extract drugs
         extracted_data = extract_drugs_from_response(result)
 
-        # Build result row
+        # Get raw LLM responses
+        messages = result.get('messages', [])
+        # First AI message is extraction response, second (last) is validation response
+        extraction_response = ""
+        validation_response = ""
+        
+        # Also get extraction response from state if available
+        extraction_response = result.get('extracted_drugs_json', '')
+        
+        # Get validation response from the last message
+        if messages:
+            # The last message is the validation response
+            final_message = messages[-1]
+            validation_response = getattr(final_message, 'content', '')
+
+        # Build result row with all LLM responses
         result_row = {
             'abstract_id': abstract['abstract_id'],
             'session_title': abstract['session_title'],
             'abstract_title': abstract['abstract_title'],
             'ground_truth': abstract['ground_truth'],
+            f'{model_name}_extraction_response': extraction_response,
+            f'{model_name}_validation_response': validation_response,
             f'{model_name}_primary_drugs': json.dumps(extracted_data['primary_drugs']),
             f'{model_name}_secondary_drugs': json.dumps(extracted_data['secondary_drugs']),
             f'{model_name}_comparator_drugs': json.dumps(extracted_data['comparator_drugs']),
+            f'{model_name}_removed_drugs': json.dumps(extracted_data['removed_drugs']),
             f'{model_name}_reasoning': json.dumps(extracted_data['reasoning']),
             f'{model_name}_success': extracted_data['success'],
             f'{model_name}_llm_calls': result.get('llm_calls', 0)
@@ -233,9 +259,12 @@ def process_single_abstract(abstract: Dict, agent: DrugExtractionAgent,
             'session_title': abstract['session_title'],
             'abstract_title': abstract['abstract_title'],
             'ground_truth': abstract['ground_truth'],
+            f'{model_name}_extraction_response': '',
+            f'{model_name}_validation_response': '',
             f'{model_name}_primary_drugs': json.dumps([]),
             f'{model_name}_secondary_drugs': json.dumps([]),
             f'{model_name}_comparator_drugs': json.dumps([]),
+            f'{model_name}_removed_drugs': json.dumps([]),
             f'{model_name}_reasoning': json.dumps([]),
             f'{model_name}_success': False,
             f'{model_name}_llm_calls': 0
@@ -348,9 +377,14 @@ def main():
     print(f"Loaded {len(abstracts)} abstracts")
     print()
 
-    # Initialize agent
+    # Initialize agent with validation model configuration
     print("Initializing Drug Extraction Agent...")
-    agent = DrugExtractionAgent(agent_name=f"BatchProcessor_{args.model_name}")
+    agent = DrugExtractionAgent(
+        agent_name=f"BatchProcessor_{args.model_name}",
+        validation_model="gpt-5.1",
+        validation_temperature=0,
+        validation_max_tokens=30000,
+    )
     print("✓ Agent initialized successfully!")
     print()
 
