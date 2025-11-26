@@ -1,12 +1,15 @@
 """Drug Extraction Agent using LangGraph.
 
 This module implements a drug extraction agent using the LangGraph framework.
-The agent processes abstract titles through two LLM calls:
+The agent processes abstract titles through up to three steps:
 1. Extraction: Extracts drugs from the abstract title
 2. Validation: Validates extracted drugs for therapeutic relevance
+3. Verification (optional): Verifies each drug term via Tavily search
 """
 
+import json
 import operator
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from typing import Annotated, Optional
 
 from langchain_core.messages import AIMessage, BaseMessage, HumanMessage, SystemMessage
@@ -30,23 +33,30 @@ class MessagesState(TypedDict):
         llm_calls: Counter for the number of LLM calls made
         extracted_drugs_json: JSON string containing extracted drugs from first LLM call
         abstract_title: The original abstract title for reference in validation
+        validated_drugs_json: JSON string containing validated drugs from second LLM call
+        verification_results: Dict containing verification results for each drug
+        verification_removed_drugs: List of drugs removed during verification
     """
 
     messages: Annotated[list[BaseMessage], operator.add]
     llm_calls: int
     extracted_drugs_json: str
     abstract_title: str
+    validated_drugs_json: str
+    verification_results: dict
+    verification_removed_drugs: list
 
 
 class DrugExtractionAgent:
-    """Drug Extraction Agent that extracts and validates drugs using LLM.
+    """Drug Extraction Agent that extracts, validates, and optionally verifies drugs using LLM.
 
     This agent uses LangGraph to create a stateful conversation flow that:
     - Extracts drugs from research abstract titles (first LLM call)
     - Validates extracted drugs for therapeutic relevance (second LLM call)
+    - Optionally verifies each drug term via Tavily search (third step)
     - Classifies drugs as Primary, Secondary, or Comparator
-    - Returns structured JSON output with validated drugs
-    - Traces all operations with Langfuse (single trace for both calls)
+    - Returns structured JSON output with validated/verified drugs
+    - Traces all operations with Langfuse (single trace for all calls)
     """
 
     def __init__(
@@ -55,6 +65,11 @@ class DrugExtractionAgent:
         validation_model: Optional[str] = None,
         validation_temperature: Optional[float] = None,
         validation_max_tokens: Optional[int] = None,
+        enable_verification: bool = False,
+        verification_model: Optional[str] = None,
+        verification_temperature: Optional[float] = None,
+        verification_max_tokens: Optional[int] = None,
+        verification_max_parallel: int = 5,
     ):
         """Initialize the Drug Extraction Agent.
 
@@ -63,11 +78,21 @@ class DrugExtractionAgent:
             validation_model: Optional model name for validation LLM call (uses default if not specified)
             validation_temperature: Optional temperature for validation LLM call (uses default if not specified)
             validation_max_tokens: Optional max_tokens for validation LLM call (uses default if not specified)
+            enable_verification: Whether to enable Tavily-based drug verification (default: False)
+            verification_model: Optional model name for verification LLM call (uses default if not specified)
+            verification_temperature: Optional temperature for verification LLM call (uses default if not specified)
+            verification_max_tokens: Optional max_tokens for verification LLM call (uses default if not specified)
+            verification_max_parallel: Maximum parallel Tavily queries (default: 5)
         """
         self.agent_name = agent_name
         self._validation_model = validation_model
         self._validation_temperature = validation_temperature
         self._validation_max_tokens = validation_max_tokens
+        self._enable_verification = enable_verification
+        self._verification_model = verification_model
+        self._verification_temperature = verification_temperature
+        self._verification_max_tokens = verification_max_tokens
+        self._verification_max_parallel = verification_max_parallel
 
         # Initialize Langfuse
         self.langfuse_config = get_langfuse_config()
@@ -81,9 +106,17 @@ class DrugExtractionAgent:
         self.validation_llm_config = self._get_validation_llm_config()
         self.validation_llm = create_llm(self.validation_llm_config)
 
-        # System prompts for extraction and validation
+        # Initialize LLM for verification if enabled
+        if self._enable_verification:
+            self.verification_llm_config = self._get_verification_llm_config()
+            self.verification_llm = create_llm(self.verification_llm_config)
+            self._tavily_client = self._initialize_tavily()
+
+        # System prompts for extraction, validation, and verification
         self.extraction_system_prompt = self._get_extraction_system_prompt()
         self.validation_system_prompt = self._get_validation_system_prompt()
+        if self._enable_verification:
+            self.verification_system_prompt = self._get_verification_system_prompt()
 
         # Build the graph
         self.graph = self._build_graph()
@@ -112,6 +145,30 @@ class DrugExtractionAgent:
                 return None
         except Exception as e:
             print(f"✗ Error initializing Langfuse for {self.agent_name}: {e}")
+            return None
+
+    def _initialize_tavily(self):
+        """Initialize Tavily client for drug verification searches.
+
+        Returns:
+            TavilyClient instance or None if initialization fails
+        """
+        try:
+            from tavily import TavilyClient
+            
+            api_key = settings.tavily.TAVILY_API_KEY
+            if not api_key:
+                print(f"⚠ Tavily API key not configured. Verification will be skipped.")
+                return None
+            
+            client = TavilyClient(api_key=api_key)
+            print(f"✓ Tavily client initialized for {self.agent_name}")
+            return client
+        except ImportError:
+            print(f"✗ tavily-python not installed. Run: pip install tavily-python")
+            return None
+        except Exception as e:
+            print(f"✗ Error initializing Tavily client: {e}")
             return None
 
     def _get_extraction_llm_config(self) -> LLMConfig:
@@ -145,6 +202,21 @@ class DrugExtractionAgent:
             temperature=self._validation_temperature if self._validation_temperature is not None else settings.llm.LLM_TEMPERATURE,
             max_tokens=self._validation_max_tokens or settings.llm.LLM_MAX_TOKENS,
             name=f"{self.agent_name}_validation",
+        )
+
+    def _get_verification_llm_config(self) -> LLMConfig:
+        """Get LLM configuration for verification with optional overrides.
+
+        Returns:
+            LLMConfig: Configuration for the verification language model
+        """
+        return LLMConfig(
+            api_key=settings.llm.LLM_API_KEY,
+            model=self._verification_model or settings.llm.LLM_MODEL,
+            base_url=settings.llm.LLM_BASE_URL,
+            temperature=self._verification_temperature if self._verification_temperature is not None else settings.llm.LLM_TEMPERATURE,
+            max_tokens=self._verification_max_tokens or settings.llm.LLM_MAX_TOKENS,
+            name=f"{self.agent_name}_verification",
         )
 
     def _get_extraction_system_prompt(self) -> str:
@@ -181,11 +253,29 @@ class DrugExtractionAgent:
         self.validation_prompt_version = prompt_version
         return prompt_content
 
+    def _get_verification_system_prompt(self) -> str:
+        """Get the system prompt for drug verification.
+
+        Fetches the prompt from Langfuse if configured, otherwise falls back to local file.
+
+        Returns:
+            str: System prompt content for verification
+        """
+        prompt_content, prompt_version = get_system_prompt(
+            langfuse_client=self.langfuse,
+            prompt_name="DRUG_VERIFICATION_SYSTEM_PROMPT",
+            fallback_to_file=True,
+        )
+        # Store the prompt version for tagging
+        self.verification_prompt_version = prompt_version
+        return prompt_content
+
     def _build_graph(self) -> StateGraph:
         """Build the LangGraph state graph for the drug extraction agent.
 
-        The graph has two sequential LLM calls:
-        - START -> extraction_llm_call -> validation_llm_call -> END
+        The graph structure depends on whether verification is enabled:
+        - Without verification: START -> extraction -> validation -> END
+        - With verification: START -> extraction -> validation -> verification -> END
 
         Returns:
             StateGraph: Compiled state graph ready for execution
@@ -197,10 +287,19 @@ class DrugExtractionAgent:
         graph.add_node("extraction_llm_call", self._extraction_llm_call_node)
         graph.add_node("validation_llm_call", self._validation_llm_call_node)
 
+        # Add verification node if enabled
+        if self._enable_verification:
+            graph.add_node("verification_step", self._verification_node)
+
         # Add edges for sequential flow
         graph.add_edge(START, "extraction_llm_call")
         graph.add_edge("extraction_llm_call", "validation_llm_call")
-        graph.add_edge("validation_llm_call", END)
+
+        if self._enable_verification:
+            graph.add_edge("validation_llm_call", "verification_step")
+            graph.add_edge("verification_step", END)
+        else:
+            graph.add_edge("validation_llm_call", END)
 
         # Compile the graph
         return graph.compile()
@@ -289,23 +388,251 @@ class DrugExtractionAgent:
             return {
                 "messages": [response],
                 "llm_calls": state.get("llm_calls", 0) + 1,
+                "validated_drugs_json": response.content,
             }
         except Exception as e:
             print(f"✗ Error during validation LLM call: {e}")
             # Return an error message
-            error_message = AIMessage(
-                content=f'{{"Primary Drugs": [], "Secondary Drugs": [], "Comparator Drugs": [], "Removed Drugs": [], "Reasoning": ["Error during validation: {str(e)}"]}}'
-            )
+            error_content = '{"Primary Drugs": [], "Secondary Drugs": [], "Comparator Drugs": [], "Removed Drugs": [], "Reasoning": []}'
+            error_message = AIMessage(content=error_content)
             return {
                 "messages": [error_message],
                 "llm_calls": state.get("llm_calls", 0) + 1,
+                "validated_drugs_json": error_content,
             }
+
+    def _search_drug_term(self, drug_term: str) -> dict:
+        """Search for a drug term using Tavily and return search results.
+
+        Args:
+            drug_term: The drug term to search for
+
+        Returns:
+            dict: Search results with title and snippets
+        """
+        if not self._tavily_client:
+            return {"drug_term": drug_term, "results": [], "error": "Tavily client not initialized"}
+
+        try:
+            query = f"Is {drug_term} a valid drug or drug regimen?"
+            response = self._tavily_client.search(
+                query=query,
+                max_results=settings.tavily.TAVILY_MAX_RESULTS,
+                search_depth="basic",
+            )
+            
+            # Extract relevant information from results
+            results = []
+            for result in response.get("results", [])[:5]:
+                results.append({
+                    "title": result.get("title", ""),
+                    "snippet": result.get("content", "")[:500],  # Limit snippet length
+                    "url": result.get("url", ""),
+                })
+            
+            return {"drug_term": drug_term, "results": results, "error": None}
+        except Exception as e:
+            print(f"✗ Error searching for '{drug_term}': {e}")
+            return {"drug_term": drug_term, "results": [], "error": str(e)}
+
+    def _verify_single_drug(self, drug_term: str, search_results: list, config: RunnableConfig = None) -> dict:
+        """Verify a single drug term using LLM with search results.
+
+        Args:
+            drug_term: The drug term to verify
+            search_results: List of search results from Tavily
+            config: RunnableConfig with callbacks for Langfuse tracing
+
+        Returns:
+            dict: Verification result with is_drug and reason
+        """
+        # Format search results for the prompt
+        formatted_results = ""
+        for i, result in enumerate(search_results, 1):
+            formatted_results += f"\n{i}. **{result.get('title', 'No title')}**\n"
+            formatted_results += f"   {result.get('snippet', 'No content')}\n"
+
+        if not formatted_results:
+            formatted_results = "No search results available."
+
+        verification_input = f"""**Drug Term:** {drug_term}
+
+**Search Results:**
+{formatted_results}
+
+Based on the search results, determine if "{drug_term}" is a valid drug or drug regimen."""
+
+        messages_for_llm = [
+            SystemMessage(content=self.verification_system_prompt),
+            HumanMessage(content=verification_input),
+        ]
+
+        try:
+            # Use config from the graph node for Langfuse tracing (same trace)
+            response: AIMessage = self.verification_llm.invoke(messages_for_llm, config=config)
+            content = response.content
+
+            # Parse JSON response
+            try:
+                # Try to extract JSON from response
+                import re
+                json_match = re.search(r'\{[^{}]*\}', content, re.DOTALL)
+                if json_match:
+                    parsed = json.loads(json_match.group())
+                    return {
+                        "drug_term": drug_term,
+                        "is_drug": parsed.get("is_drug", False),
+                        "reason": parsed.get("reason", "Unable to determine"),
+                    }
+            except json.JSONDecodeError:
+                pass
+
+            # Default response if parsing fails
+            return {
+                "drug_term": drug_term,
+                "is_drug": False,
+                "reason": "Failed to parse verification response",
+            }
+        except Exception as e:
+            print(f"✗ Error verifying '{drug_term}': {e}")
+            return {
+                "drug_term": drug_term,
+                "is_drug": False,
+                "reason": f"Verification error: {str(e)}",
+            }
+
+    def _verification_node(self, state: MessagesState, config: RunnableConfig) -> dict:
+        """Verification node that verifies each drug term via Tavily search.
+
+        This node handles:
+        - Extracting all drug terms from validated output
+        - Querying Tavily for each drug term (in parallel with max limit)
+        - Passing results to LLM for verification decision
+        - Removing unverified drugs from final lists
+
+        Args:
+            state: Current state containing validated_drugs_json
+            config: RunnableConfig with callbacks for Langfuse tracing
+
+        Returns:
+            dict: Updated state with verification results and filtered drug lists
+        """
+        validated_json = state.get("validated_drugs_json", "{}")
+        
+        # Parse validated drugs
+        try:
+            # Extract JSON from response
+            import re
+            json_match = re.search(r'\{.*\}', validated_json, re.DOTALL)
+            if json_match:
+                validated_data = json.loads(json_match.group())
+            else:
+                validated_data = json.loads(validated_json)
+        except json.JSONDecodeError:
+            validated_data = {
+                "Primary Drugs": [],
+                "Secondary Drugs": [],
+                "Comparator Drugs": [],
+                "Removed Drugs": [],
+                "Reasoning": [],
+            }
+
+        # Collect all drug terms to verify
+        primary_drugs = validated_data.get("Primary Drugs", [])
+        secondary_drugs = validated_data.get("Secondary Drugs", [])
+        comparator_drugs = validated_data.get("Comparator Drugs", [])
+        existing_removed = validated_data.get("Removed Drugs", [])
+        existing_reasoning = validated_data.get("Reasoning", [])
+
+        all_drugs = list(set(primary_drugs + secondary_drugs + comparator_drugs))
+
+        if not all_drugs or not self._tavily_client:
+            # No drugs to verify or Tavily not available
+            final_output = {
+                "Primary Drugs": primary_drugs,
+                "Secondary Drugs": secondary_drugs,
+                "Comparator Drugs": comparator_drugs,
+                "Removed Drugs": existing_removed,
+                "Reasoning": existing_reasoning,
+            }
+            return {
+                "messages": [AIMessage(content=json.dumps(final_output, indent=2))],
+                "llm_calls": state.get("llm_calls", 0),
+                "verification_results": {},
+                "verification_removed_drugs": [],
+            }
+
+        # Search for all drugs in parallel with max limit
+        search_results_map = {}
+        with ThreadPoolExecutor(max_workers=self._verification_max_parallel) as executor:
+            future_to_drug = {
+                executor.submit(self._search_drug_term, drug): drug
+                for drug in all_drugs
+            }
+            for future in as_completed(future_to_drug):
+                result = future.result()
+                search_results_map[result["drug_term"]] = result["results"]
+
+        # Verify each drug with LLM (in parallel with max limit)
+        print(f"🤖 Running LLM verification for {len(all_drugs)} drug(s)...")
+        verification_results = {}
+        llm_calls = 0
+        with ThreadPoolExecutor(max_workers=self._verification_max_parallel) as executor:
+            future_to_drug = {
+                executor.submit(
+                    self._verify_single_drug,
+                    drug,
+                    search_results_map.get(drug, []),
+                    config  # Pass config for Langfuse tracing (same trace)
+                ): drug
+                for drug in all_drugs
+            }
+            for future in as_completed(future_to_drug):
+                result = future.result()
+                verification_results[result["drug_term"]] = {
+                    "is_drug": result["is_drug"],
+                    "reason": result["reason"],
+                }
+                llm_calls += 1
+                print(f"  ✓ Verified '{result['drug_term']}': is_drug={result['is_drug']}")
+
+        # Filter drugs based on verification results
+        verified_primary = [d for d in primary_drugs if verification_results.get(d, {}).get("is_drug", True)]
+        verified_secondary = [d for d in secondary_drugs if verification_results.get(d, {}).get("is_drug", True)]
+        verified_comparator = [d for d in comparator_drugs if verification_results.get(d, {}).get("is_drug", True)]
+
+        # Collect removed drugs from verification
+        verification_removed = []
+        for drug in all_drugs:
+            if not verification_results.get(drug, {}).get("is_drug", True):
+                verification_removed.append({
+                    "Drug": drug,
+                    "Reason": f"Verification failed: {verification_results[drug].get('reason', 'Unknown')}"
+                })
+
+        # Build final output
+        final_output = {
+            "Primary Drugs": verified_primary,
+            "Secondary Drugs": verified_secondary,
+            "Comparator Drugs": verified_comparator,
+            "Removed Drugs": existing_removed,
+            "Verification Removed Drugs": verification_removed,
+            "Reasoning": existing_reasoning,
+            "Verification Results": verification_results,
+        }
+
+        return {
+            "messages": [AIMessage(content=json.dumps(final_output, indent=2))],
+            "llm_calls": state.get("llm_calls", 0) + llm_calls,
+            "verification_results": verification_results,
+            "verification_removed_drugs": verification_removed,
+        }
 
     def invoke(self, abstract_title: str, session_title: str = "", abstract_id: str = None) -> dict:
         """Invoke the drug extraction agent with abstract title.
 
-        This method runs both extraction and validation steps, returning only
-        the final validated response.
+        This method runs extraction, validation, and optionally verification steps,
+        returning the final response.
 
         Args:
             abstract_title: The abstract title to extract drugs from
@@ -313,7 +640,7 @@ class DrugExtractionAgent:
             abstract_id: The abstract ID for tracking in Langfuse (optional)
 
         Returns:
-            dict: Final state containing validated drugs response
+            dict: Final state containing validated/verified drugs response
         """
         import os
 
@@ -324,7 +651,12 @@ class DrugExtractionAgent:
             f"validation_prompt_version:{getattr(self, 'validation_prompt_version', 'unknown')}",
             f"extraction_model:{self.extraction_llm_config.model}",
             f"validation_model:{self.validation_llm_config.model}",
+            f"verification_enabled:{self._enable_verification}",
         ]
+        
+        if self._enable_verification:
+            tags.append(f"verification_prompt_version:{getattr(self, 'verification_prompt_version', 'unknown')}")
+            tags.append(f"verification_model:{self.verification_llm_config.model}")
 
         # Format the input message with the abstract title
         input_content = f"Extract drugs from the following:\n\nabstract_title: {abstract_title}"
@@ -335,6 +667,9 @@ class DrugExtractionAgent:
             "llm_calls": 0,
             "extracted_drugs_json": "",
             "abstract_title": abstract_title,
+            "validated_drugs_json": "",
+            "verification_results": {},
+            "verification_removed_drugs": [],
         }
 
         # Set environment variables for Langfuse callback handler
@@ -343,14 +678,10 @@ class DrugExtractionAgent:
             os.environ["LANGFUSE_SECRET_KEY"] = self.langfuse_config.secret_key
             os.environ["LANGFUSE_HOST"] = self.langfuse_config.host
 
-        # Configure with Langfuse tracing and tags (single trace for both LLM calls)
+        # Configure with Langfuse tracing and tags (single trace for all calls)
         config = RunnableConfig(
             recursion_limit=100,
-            callbacks=(
-                [CallbackHandler()]
-                if self.langfuse
-                else []
-            ),
+            callbacks=[CallbackHandler()] if self.langfuse else [],
             metadata={"langfuse_tags": tags} if self.langfuse else {},
         )
 
@@ -370,6 +701,9 @@ class DrugExtractionAgent:
                 "llm_calls": initial_state.get("llm_calls", 0),
                 "extracted_drugs_json": "",
                 "abstract_title": abstract_title,
+                "validated_drugs_json": "",
+                "verification_results": {},
+                "verification_removed_drugs": [],
             }
 
     def visualize(self, output_path: str = "drug_extraction_agent_graph.png"):

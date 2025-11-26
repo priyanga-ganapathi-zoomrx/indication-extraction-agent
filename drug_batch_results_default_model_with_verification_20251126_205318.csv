@@ -1,0 +1,96 @@
+abstract_id,session_title,abstract_title,ground_truth,default_model_extraction_response,default_model_validation_response,default_model_primary_drugs,default_model_secondary_drugs,default_model_comparator_drugs,default_model_removed_drugs,default_model_reasoning,default_model_success,default_model_llm_calls,default_model_verification_response,default_model_verification_results,default_model_verification_removed_drugs
+6022,,"A Prospective, Open-Label, Multicenter, Randomized Controlled Study Comparing the Efficacy and Safety of Polatuzumab Vedotin, Rituximab, Cyclophosphamide, Doxorubicin, and Prednisone Combined with Orelabrutinib/Chidamide/Venetoclax/Lenalidomide/Penpulimab (Pola-RCHP-X) Versus RCHOP-X and Pola-Rchp in Previously Untreated Patients with Diffuse Large B-Cell Lymphoma",,"```json
+{
+""Primary Drugs"": [
+""Polatuzumab Vedotin"",
+""Rituximab"",
+""Cyclophosphamide"",
+""Doxorubicin"",
+""Prednisone"",
+""Orelabrutinib"",
+""Chidamide"",
+""Venetoclax"",
+""Lenalidomide"",
+""Penpulimab""
+],
+""Secondary Drugs"": [],
+""Comparator Drugs"": [
+""RCHOP-X"",
+""Pola-Rchp""
+],
+""Reasoning"": [
+""1. Identified the main experimental arm and the comparator arms using the keyword 'Versus'."",
+""2. Extracted the individual drugs from the main experimental arm: Polatuzumab Vedotin, Rituximab, Cyclophosphamide, Doxorubicin, and Prednisone Combined with Orelabrutinib/Chidamide/Venetoclax/Lenalidomide/Penpulimab."",
+""3. Classified all these individual drugs as 'Primary Drugs' based on the connecting keywords 'and' and 'Combined with'."",
+""4. Excluded the regimen abbreviation 'Pola-RCHP-X' because its full constituent drugs were provided, following the exclusion rules."",
+""5. Identified 'RCHOP-X' and 'Pola-Rchp' as the comparator arms."",
+""6. Classified the abbreviated regimens 'RCHOP-X' and 'Pola-Rchp' as 'Comparator Drugs' as their expanded forms were not listed in the title."",
+""7. Confirmed no secondary drugs were mentioned based on the absence of relevant keywords."",
+""8. Formatted the final JSON output according to the specified rules.""
+]
+}
+```","```json
+{
+  ""Primary Drugs"": [
+    ""Polatuzumab Vedotin"",
+    ""Rituximab"",
+    ""Cyclophosphamide"",
+    ""Doxorubicin"",
+    ""Prednisone"",
+    ""Orelabrutinib"",
+    ""Chidamide"",
+    ""Venetoclax"",
+    ""Lenalidomide"",
+    ""Penpulimab""
+  ],
+  ""Secondary Drugs"": [],
+  ""Comparator Drugs"": [
+    ""RCHOP-X"",
+    ""Pola-Rchp""
+  ],
+  ""Removed Drugs"": [],
+  ""Reasoning"": [
+    ""1. Normalized the title by trimming whitespace and identifying connectors such as 'combined with', slashes '/', and 'versus' to separate regimens and individual drugs (confidence: high)."",
+    ""2. Verified that all extracted Primary Drugs (Polatuzumab Vedotin, Rituximab, Cyclophosphamide, Doxorubicin, Prednisone, Orelabrutinib, Chidamide, Venetoclax, Lenalidomide, Penpulimab) appear literally in the title as components of the experimental combination (confidence: high)."",
+    ""3. Confirmed that 'RCHOP-X' and 'Pola-Rchp' appear literally in the title as named comparator regimens in the 'Versus RCHOP-X and Pola-Rchp' clause, indicating they are therapeutic comparators (confidence: high)."",
+    ""4. Scanned the title for other capitalized or short tokens (e.g., 'Pola-RCHP-X', 'Diffuse', 'Large', 'B-Cell') and determined that only 'Pola-RCHP-X' is a regimen acronym already represented by its component drugs, while the others are disease descriptors or non-drug terms (confidence: high)."",
+    ""5. Applied non-drug pattern checks and confirmed that no extracted item is a trial identifier, endpoint, biomarker/gene, institution, or device; all are known anticancer agents or regimen names used therapeutically in lymphoma (confidence: high)."",
+    ""6. Treated 'RCHOP-X' and 'Pola-Rchp' as regimen comparators because the title explicitly compares 'Pola-RCHP-X' versus these regimens, and their internal components are not fully spelled out here; thus they are correctly classified under Comparator Drugs (confidence: high)."",
+    ""7. Noted that 'Pola-RCHP-X' itself is not listed in the extracted JSON; this is acceptable because its constituent drugs are explicitly enumerated and captured as Primary Drugs, so the acronym need not be included separately (confidence: high)."",
+    ""8. Determined that there are no separate supportive, background, or prior therapies designated as secondary; all mentioned agents are part of randomized treatment arms, so Secondary Drugs remains empty (confidence: high)."",
+    ""9. Since all extracted items are valid therapeutic agents or regimens within the study arms and no spurious tokens were identified, no items were placed in Removed Drugs (confidence: high)."",
+    ""10. Performed final QC to ensure correct categorization, title case formatting, and compliance with the required JSON structure (confidence: high).""
+  ]
+}
+```","[""Polatuzumab Vedotin"", ""Rituximab"", ""Cyclophosphamide"", ""Doxorubicin"", ""Prednisone"", ""Orelabrutinib"", ""Chidamide"", ""Venetoclax"", ""Lenalidomide"", ""Penpulimab""]",[],"[""RCHOP-X"", ""Pola-Rchp""]",[],"[""1. Normalized the title by trimming whitespace and identifying connectors such as 'combined with', slashes '/', and 'versus' to separate regimens and individual drugs (confidence: high)."", ""2. Verified that all extracted Primary Drugs (Polatuzumab Vedotin, Rituximab, Cyclophosphamide, Doxorubicin, Prednisone, Orelabrutinib, Chidamide, Venetoclax, Lenalidomide, Penpulimab) appear literally in the title as components of the experimental combination (confidence: high)."", ""3. Confirmed that 'RCHOP-X' and 'Pola-Rchp' appear literally in the title as named comparator regimens in the 'Versus RCHOP-X and Pola-Rchp' clause, indicating they are therapeutic comparators (confidence: high)."", ""4. Scanned the title for other capitalized or short tokens (e.g., 'Pola-RCHP-X', 'Diffuse', 'Large', 'B-Cell') and determined that only 'Pola-RCHP-X' is a regimen acronym already represented by its component drugs, while the others are disease descriptors or non-drug terms (confidence: high)."", ""5. Applied non-drug pattern checks and confirmed that no extracted item is a trial identifier, endpoint, biomarker/gene, institution, or device; all are known anticancer agents or regimen names used therapeutically in lymphoma (confidence: high)."", ""6. Treated 'RCHOP-X' and 'Pola-Rchp' as regimen comparators because the title explicitly compares 'Pola-RCHP-X' versus these regimens, and their internal components are not fully spelled out here; thus they are correctly classified under Comparator Drugs (confidence: high)."", ""7. Noted that 'Pola-RCHP-X' itself is not listed in the extracted JSON; this is acceptable because its constituent drugs are explicitly enumerated and captured as Primary Drugs, so the acronym need not be included separately (confidence: high)."", ""8. Determined that there are no separate supportive, background, or prior therapies designated as secondary; all mentioned agents are part of randomized treatment arms, so Secondary Drugs remains empty (confidence: high)."", ""9. Since all extracted items are valid therapeutic agents or regimens within the study arms and no spurious tokens were identified, no items were placed in Removed Drugs (confidence: high)."", ""10. Performed final QC to ensure correct categorization, title case formatting, and compliance with the required JSON structure (confidence: high).""]",True,2,"{
+  ""Primary Drugs"": [
+    ""Polatuzumab Vedotin"",
+    ""Rituximab"",
+    ""Cyclophosphamide"",
+    ""Doxorubicin"",
+    ""Prednisone"",
+    ""Orelabrutinib"",
+    ""Chidamide"",
+    ""Venetoclax"",
+    ""Lenalidomide"",
+    ""Penpulimab""
+  ],
+  ""Secondary Drugs"": [],
+  ""Comparator Drugs"": [
+    ""RCHOP-X"",
+    ""Pola-Rchp""
+  ],
+  ""Removed Drugs"": [],
+  ""Reasoning"": [
+    ""1. Normalized the title by trimming whitespace and identifying connectors such as 'combined with', slashes '/', and 'versus' to separate regimens and individual drugs (confidence: high)."",
+    ""2. Verified that all extracted Primary Drugs (Polatuzumab Vedotin, Rituximab, Cyclophosphamide, Doxorubicin, Prednisone, Orelabrutinib, Chidamide, Venetoclax, Lenalidomide, Penpulimab) appear literally in the title as components of the experimental combination (confidence: high)."",
+    ""3. Confirmed that 'RCHOP-X' and 'Pola-Rchp' appear literally in the title as named comparator regimens in the 'Versus RCHOP-X and Pola-Rchp' clause, indicating they are therapeutic comparators (confidence: high)."",
+    ""4. Scanned the title for other capitalized or short tokens (e.g., 'Pola-RCHP-X', 'Diffuse', 'Large', 'B-Cell') and determined that only 'Pola-RCHP-X' is a regimen acronym already represented by its component drugs, while the others are disease descriptors or non-drug terms (confidence: high)."",
+    ""5. Applied non-drug pattern checks and confirmed that no extracted item is a trial identifier, endpoint, biomarker/gene, institution, or device; all are known anticancer agents or regimen names used therapeutically in lymphoma (confidence: high)."",
+    ""6. Treated 'RCHOP-X' and 'Pola-Rchp' as regimen comparators because the title explicitly compares 'Pola-RCHP-X' versus these regimens, and their internal components are not fully spelled out here; thus they are correctly classified under Comparator Drugs (confidence: high)."",
+    ""7. Noted that 'Pola-RCHP-X' itself is not listed in the extracted JSON; this is acceptable because its constituent drugs are explicitly enumerated and captured as Primary Drugs, so the acronym need not be included separately (confidence: high)."",
+    ""8. Determined that there are no separate supportive, background, or prior therapies designated as secondary; all mentioned agents are part of randomized treatment arms, so Secondary Drugs remains empty (confidence: high)."",
+    ""9. Since all extracted items are valid therapeutic agents or regimens within the study arms and no spurious tokens were identified, no items were placed in Removed Drugs (confidence: high)."",
+    ""10. Performed final QC to ensure correct categorization, title case formatting, and compliance with the required JSON structure (confidence: high).""
+  ]
+}",{},[]

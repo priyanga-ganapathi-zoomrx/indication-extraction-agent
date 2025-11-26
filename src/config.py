@@ -33,6 +33,15 @@ class LLMSettings(BaseSettings):
     LLM_MAX_TOKENS: int = Field(default=4096, description="Maximum tokens for LLM")
 
 
+class TavilySettings(BaseSettings):
+    """Tavily search API configuration settings."""
+
+    model_config = SettingsConfigDict(env_file=".env", extra="ignore")
+
+    TAVILY_API_KEY: str = Field(default="", description="API key for Tavily search")
+    TAVILY_MAX_RESULTS: int = Field(default=5, description="Maximum search results to return")
+
+
 class AppSettings(BaseSettings):
     """Application configuration settings."""
 
@@ -41,6 +50,7 @@ class AppSettings(BaseSettings):
     # Nested settings
     langfuse: LangfuseSettings = LangfuseSettings()
     llm: LLMSettings = LLMSettings()
+    tavily: TavilySettings = TavilySettings()
 
 
 # Global settings instance

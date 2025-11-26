@@ -15,7 +15,6 @@ from typing import List, Dict, Any
 import argparse
 import concurrent.futures
 import sys
-import os
 
 # Add project root to sys.path to allow running as script
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
@@ -89,20 +88,21 @@ def load_abstracts_from_csv(csv_path: str, max_abstracts: int = None, randomize:
         return []
 
 
-def extract_drugs_from_response(result: Dict) -> Dict[str, Any]:
-    """Extract drugs from agent response (validation response).
+def extract_drugs_from_response(result: Dict, verification_enabled: bool = False) -> Dict[str, Any]:
+    """Extract drugs from agent response (validation/verification response).
 
     Args:
         result: Agent invocation result
+        verification_enabled: Whether verification step was enabled
 
     Returns:
-        Dictionary with extracted fields: primary_drugs, secondary_drugs, comparator_drugs, removed_drugs, success
+        Dictionary with extracted fields including verification results if enabled
     """
     try:
-        # Get the final message from the agent (validation response)
+        # Get the final message from the agent
         messages = result.get('messages', [])
         if not messages:
-            return {
+            base_result = {
                 'primary_drugs': [],
                 'secondary_drugs': [],
                 'comparator_drugs': [],
@@ -110,12 +110,16 @@ def extract_drugs_from_response(result: Dict) -> Dict[str, Any]:
                 'reasoning': [],
                 'success': False,
             }
+            if verification_enabled:
+                base_result['verification_results'] = {}
+                base_result['verification_removed_drugs'] = []
+            return base_result
 
         final_message = messages[-1]
         content = getattr(final_message, 'content', '')
 
         if not content or content.startswith("I encountered an error"):
-            return {
+            base_result = {
                 'primary_drugs': [],
                 'secondary_drugs': [],
                 'comparator_drugs': [],
@@ -123,6 +127,10 @@ def extract_drugs_from_response(result: Dict) -> Dict[str, Any]:
                 'reasoning': [],
                 'success': False,
             }
+            if verification_enabled:
+                base_result['verification_results'] = {}
+                base_result['verification_removed_drugs'] = []
+            return base_result
 
         # Try to parse JSON response
         import re
@@ -152,6 +160,15 @@ def extract_drugs_from_response(result: Dict) -> Dict[str, Any]:
                         if isinstance(val, list):
                             return val
                 return []
+            
+            # Helper to safely get dict from various key formats
+            def get_dict(data, keys):
+                for key in keys:
+                    if key in data:
+                        val = data[key]
+                        if isinstance(val, dict):
+                            return val
+                return {}
 
             primary_drugs = get_list(parsed, ['Primary Drugs', 'primary_drugs', 'Primary', 'primary'])
             secondary_drugs = get_list(parsed, ['Secondary Drugs', 'secondary_drugs', 'Secondary', 'secondary'])
@@ -159,7 +176,7 @@ def extract_drugs_from_response(result: Dict) -> Dict[str, Any]:
             removed_drugs = get_list(parsed, ['Removed Drugs', 'removed_drugs', 'Removed', 'removed'])
             reasoning = get_list(parsed, ['Reasoning', 'reasoning'])
             
-            return {
+            result_dict = {
                 'primary_drugs': primary_drugs,
                 'secondary_drugs': secondary_drugs,
                 'comparator_drugs': comparator_drugs,
@@ -167,10 +184,20 @@ def extract_drugs_from_response(result: Dict) -> Dict[str, Any]:
                 'reasoning': reasoning,
                 'success': True,
             }
+            
+            # Add verification fields if enabled
+            if verification_enabled:
+                verification_results = get_dict(parsed, ['Verification Results', 'verification_results'])
+                verification_removed = get_list(parsed, ['Verification Removed Drugs', 'verification_removed_drugs'])
+                result_dict['verification_results'] = verification_results
+                result_dict['verification_removed_drugs'] = verification_removed
+            
+            return result_dict
+            
         except json.JSONDecodeError as e:
             print(f"JSON decode error: {e}")
             print(f"Content: {content[:200]}...")
-            return {
+            base_result = {
                 'primary_drugs': [],
                 'secondary_drugs': [],
                 'comparator_drugs': [],
@@ -178,10 +205,14 @@ def extract_drugs_from_response(result: Dict) -> Dict[str, Any]:
                 'reasoning': [],
                 'success': False,
             }
+            if verification_enabled:
+                base_result['verification_results'] = {}
+                base_result['verification_removed_drugs'] = []
+            return base_result
 
     except Exception as e:
         print(f"Error extracting drugs: {e}")
-        return {
+        base_result = {
             'primary_drugs': [],
             'secondary_drugs': [],
             'comparator_drugs': [],
@@ -189,10 +220,14 @@ def extract_drugs_from_response(result: Dict) -> Dict[str, Any]:
             'reasoning': [],
             'success': False,
         }
+        if verification_enabled:
+            base_result['verification_results'] = {}
+            base_result['verification_removed_drugs'] = []
+        return base_result
 
 
 def process_single_abstract(abstract: Dict, agent: DrugExtractionAgent,
-                           model_name: str, index: int) -> Dict:
+                           model_name: str, index: int, verification_enabled: bool = False) -> Dict:
     """Process a single abstract and return the result.
 
     Args:
@@ -200,6 +235,7 @@ def process_single_abstract(abstract: Dict, agent: DrugExtractionAgent,
         agent: Initialized DrugExtractionAgent
         model_name: Name of the model being used
         index: Index of the abstract for logging
+        verification_enabled: Whether verification step is enabled
 
     Returns:
         Dictionary with processing result
@@ -215,20 +251,21 @@ def process_single_abstract(abstract: Dict, agent: DrugExtractionAgent,
         )
 
         # Extract drugs
-        extracted_data = extract_drugs_from_response(result)
+        extracted_data = extract_drugs_from_response(result, verification_enabled)
 
         # Get raw LLM responses
         messages = result.get('messages', [])
-        # First AI message is extraction response, second (last) is validation response
         extraction_response = ""
         validation_response = ""
         
-        # Also get extraction response from state if available
+        # Get extraction response from state
         extraction_response = result.get('extracted_drugs_json', '')
         
-        # Get validation response from the last message
-        if messages:
-            # The last message is the validation response
+        # Get validation response from state (if verification enabled, last message is verification)
+        if verification_enabled:
+            validation_response = result.get('validated_drugs_json', '')
+        elif messages:
+            # Without verification, last message is validation response
             final_message = messages[-1]
             validation_response = getattr(final_message, 'content', '')
 
@@ -248,6 +285,18 @@ def process_single_abstract(abstract: Dict, agent: DrugExtractionAgent,
             f'{model_name}_success': extracted_data['success'],
             f'{model_name}_llm_calls': result.get('llm_calls', 0)
         }
+        
+        # Add verification columns if enabled
+        if verification_enabled:
+            # Get verification response (last message when verification is enabled)
+            verification_response = ""
+            if messages:
+                final_message = messages[-1]
+                verification_response = getattr(final_message, 'content', '')
+            
+            result_row[f'{model_name}_verification_response'] = verification_response
+            result_row[f'{model_name}_verification_results'] = json.dumps(extracted_data.get('verification_results', {}))
+            result_row[f'{model_name}_verification_removed_drugs'] = json.dumps(extracted_data.get('verification_removed_drugs', []))
 
         return result_row
 
@@ -269,11 +318,18 @@ def process_single_abstract(abstract: Dict, agent: DrugExtractionAgent,
             f'{model_name}_success': False,
             f'{model_name}_llm_calls': 0
         }
+        
+        if verification_enabled:
+            result_row[f'{model_name}_verification_response'] = ''
+            result_row[f'{model_name}_verification_results'] = json.dumps({})
+            result_row[f'{model_name}_verification_removed_drugs'] = json.dumps([])
+        
         return result_row
 
 
 def process_abstracts_batch(abstracts: List[Dict], agent: DrugExtractionAgent,
-                          model_name: str, output_file: str = None) -> pd.DataFrame:
+                          model_name: str, output_file: str = None,
+                          verification_enabled: bool = False) -> pd.DataFrame:
     """Process a batch of abstracts and return results DataFrame.
 
     Args:
@@ -281,6 +337,7 @@ def process_abstracts_batch(abstracts: List[Dict], agent: DrugExtractionAgent,
         agent: Initialized DrugExtractionAgent
         model_name: Name of the model being used
         output_file: Optional output file path to save intermediate results
+        verification_enabled: Whether verification step is enabled
 
     Returns:
         DataFrame with processing results
@@ -293,7 +350,7 @@ def process_abstracts_batch(abstracts: List[Dict], agent: DrugExtractionAgent,
     with concurrent.futures.ThreadPoolExecutor(max_workers=3) as executor:
         # Submit all tasks
         future_to_index = {
-            executor.submit(process_single_abstract, abstract, agent, model_name, i): i
+            executor.submit(process_single_abstract, abstract, agent, model_name, i, verification_enabled): i
             for i, abstract in enumerate(abstracts, 1)
         }
 
@@ -345,13 +402,20 @@ def main():
                        help='Randomize abstract selection')
     parser.add_argument('--model_name', default='default_model',
                        help='Name of the model for column naming')
+    parser.add_argument('--enable_verification', action='store_true',
+                       help='Enable Tavily-based drug verification (requires TAVILY_API_KEY)')
+    parser.add_argument('--verification_model', default='gpt-5.1',
+                       help='Model to use for verification LLM calls')
+    parser.add_argument('--verification_max_parallel', type=int, default=5,
+                       help='Maximum parallel Tavily queries (default: 5)')
 
     args = parser.parse_args()
 
     # Generate output filename if not provided
     if not args.output_file:
         timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-        args.output_file = f"drug_batch_results_{args.model_name}_{timestamp}.csv"
+        suffix = "_with_verification" if args.enable_verification else ""
+        args.output_file = f"drug_batch_results_{args.model_name}{suffix}_{timestamp}.csv"
 
     print("💊 Batch Drug Extraction Processor")
     print("=" * 80)
@@ -360,6 +424,10 @@ def main():
     print(f"Model name: {args.model_name}")
     print(f"Number of abstracts: {args.num_abstracts or 'all'}")
     print(f"Randomize: {args.randomize}")
+    print(f"Verification enabled: {args.enable_verification}")
+    if args.enable_verification:
+        print(f"Verification model: {args.verification_model or 'default'}")
+        print(f"Verification max parallel: {args.verification_max_parallel}")
     print()
 
     # Load abstracts
@@ -377,19 +445,25 @@ def main():
     print(f"Loaded {len(abstracts)} abstracts")
     print()
 
-    # Initialize agent with validation model configuration
+    # Initialize agent with validation and optional verification configuration
     print("Initializing Drug Extraction Agent...")
     agent = DrugExtractionAgent(
         agent_name=f"BatchProcessor_{args.model_name}",
         validation_model="gpt-5.1",
         validation_temperature=0,
         validation_max_tokens=30000,
+        enable_verification=args.enable_verification,
+        verification_model=args.verification_model,
+        verification_max_parallel=args.verification_max_parallel,
     )
     print("✓ Agent initialized successfully!")
     print()
 
     # Process abstracts
-    results_df = process_abstracts_batch(abstracts, agent, args.model_name, args.output_file)
+    results_df = process_abstracts_batch(
+        abstracts, agent, args.model_name, args.output_file,
+        verification_enabled=args.enable_verification
+    )
 
     # Summary
     total_processed = len(results_df)
@@ -406,4 +480,3 @@ def main():
 
 if __name__ == "__main__":
     main()
-
