@@ -35,9 +35,6 @@ Identify drugs/regimens administered for therapeutic use in the cure, mitigation
 
 ### Secondary Drugs
 
-* Supporting therapeutic agents used in combination
-* Adjuvant therapies
-* Background treatments
 * Identifiers: Look for keywords/phrases such as “with or without,” “plus/minus (symbol),” “alone or in combination with,” “monotherapy and/or in combination with,” “alone or with,” “or in combination with,” “single agent or in combination with,” “monotherapy or in combination with,” “and/or”
   Examples:
 
@@ -53,9 +50,7 @@ Identify drugs/regimens administered for therapeutic use in the cure, mitigation
 
 ### Comparator Drugs
 
-* Control arms in comparative studies
-* Standard of care treatments being compared against
-* Reference treatments (placebo, standard therapy)
+* Drugs being compared against
 * Identifiers: Look for keywords/phrases such as “vs (or) versus,” “comparing,” “to compare,” “compared with”
   Examples:
 
@@ -63,7 +58,7 @@ Identify drugs/regimens administered for therapeutic use in the cure, mitigation
 2. Drug A comparing to Drug B → Drug B = Comparator
 3. Drug A to compare with Drug B → Drug B = Comparator
 4. Drug A compared with Drug B → Drug B = Comparator
-5. Comparing Drug A and Drug B → either Drug A/Drug B must be captured as Comparator (contextual)
+5. Comparing Drug A and Drug B → Drug B = Comparator
 
 ## Critical Instruction
 
@@ -87,10 +82,11 @@ Identify drugs/regimens administered for therapeutic use in the cure, mitigation
 
    * Capture abbreviated regimens only if their expanded (full drug name) form is not present (e.g., FOLFOX, CHOP)
    * For valid drug regimens **containing only 2–3 letters**, with clearly identifiable drugs, analyze and capture the individual drug names rather than the short code itself
+   **Do not assume general terms as drug regimens** — capture a term as a drug or regimen **only if it is clearly a therapy and used for treatment**. This must be strictly followed to avoid noise terms being captured as drug regimens.
 
 3. **Diagnostic Agents**
 
-   * Include diagnostic agents if they are drugs used specifically for detecting purposes (e.g., 18FDG)
+   * Include diagnostic agents used for detecting purposes (e.g., 18FDG)
 
 4. **Cell Therapies**
 
@@ -101,18 +97,17 @@ a. **CAR-T Cells**
 * Standard CAR-T should always be captured as **“CAR-T Cell”** (singular, maintain capitalization).
 * Full form, when written, should be captured as **“Chimeric Antigen Receptor T Cell”**.
 * Specific CAR-T variants should include complete names and any prefixes:
-
   * mfCAR-T Cell (membrane-bound)
   * CD19-CAR-T Cell
   * CD20-CAR-T Cell
   * Other CAR-T variants with specific targets
 * **Directed or Targeted CAR-T therapies** must capture the full specification:
-
   * CD38-Directed CAR T-Cell
   * BCMA-Directed CAR T-Cell
   * HER2-Directed CAR-T Cell
   * EGFR-Targeted CAR-T Cell
   * CD22-Targeted CAR-T Cell
+* **Directed or Targeted CAR-T therapies should be strictly captured in this exact format** to ensure consistency and avoid mislabeling.
 
 
 b. **Other Cell Therapies**
@@ -128,7 +123,7 @@ b. **Other Cell Therapies**
 * Stem cell transplantation → **Stem Cell**
 * Allogeneic hematopoietic stem cell transplantation → **Allogeneic Hematopoietic Stem Cell**
 * Allogeneic hematopoietic cell transplantation → **Allogeneic Hematopoietic Cell**
-* Autologous stem cell transplantation → **Autologous Stem Cell** (or **Autologous** if required by framework)
+* Autologous stem cell transplantation → **Autologous Stem Cell**
 
 #### **Rule Notes**
 
@@ -338,7 +333,8 @@ The model **must** return a single JSON object with the following keys. All arra
 * **Consistency is critical**: Apply all standardization rules uniformly across all abstracts.
 * **Use the decision tree**: Follow the classification decision tree for consistent categorization.
 * **Quality check**: Verify output against the quality control measures before finalizing.
-* **If no drugs are identified in any category, return empty arrays ([]) for those keys, and do not introduce or infer any invalid terms as drugs when none are present**.
+* **Always extract drugs as Primary, Secondary, and Comparator** after carefully analyzing the title and understanding the drugs intended for treatment. **Drugs not intended for treatment or other terms (such as drug classes, mechanisms, or general therapy terms) should be strictly omitted.**
+* **If no drugs are identified in any category, return empty arrays ([]) for those keys, and do not add invalid or general terms as drugs that are not intended for the treatment.**
 * When uncertain about classification, choose the most contextually appropriate class per the decision tree and document that reasoning step in the `Reasoning` field.
 * **Output only the JSON object** — no additional text, explanations, or formatting outside the JSON.
 * **Maintain exact formatting**: Follow separators, casing, and naming conventions precisely.
