@@ -116,7 +116,13 @@ class DrugExtractionProcessor:
 
 
 def load_abstracts_from_csv(csv_path: str, max_abstracts: int = None, randomize: bool = False) -> List[Dict]:
-    """Load abstracts from CSV file."""
+    """Load abstracts from CSV file, preserving ALL columns.
+    
+    Returns:
+        List of dicts where each dict contains:
+        - All original columns from the CSV (prefixed with 'input_')
+        - Mapped columns for processing: abstract_id, abstract_title
+    """
     abstracts = []
 
     if not os.path.exists(csv_path):
@@ -129,21 +135,30 @@ def load_abstracts_from_csv(csv_path: str, max_abstracts: int = None, randomize:
             
             if reader.fieldnames:
                 header_map = {h.lower().strip(): h for h in reader.fieldnames}
+                original_headers = list(reader.fieldnames)
             else:
                 header_map = {}
+                original_headers = []
             
+            # Map standard column names (case-insensitive)
             id_col = header_map.get('abstract_id') or header_map.get('abstract id') or header_map.get('id')
             title_col = header_map.get('abstract_title') or header_map.get('abstract title') or header_map.get('title')
-            session_col = header_map.get('session_title') or header_map.get('session title')
-            ground_truth_col = header_map.get('ground_truth') or header_map.get('ground truth')
             
             for row in reader:
-                abstract_data = {
-                    'abstract_id': row.get(id_col, '') if id_col else '',
-                    'session_title': row.get(session_col, '') if session_col else '',
-                    'abstract_title': row.get(title_col, '') if title_col else '',
-                    'ground_truth': row.get(ground_truth_col, '') if ground_truth_col else '',
-                }
+                # Start with all original columns (preserve everything)
+                abstract_data = {}
+                for header in original_headers:
+                    # Skip empty column names (from trailing commas in CSV)
+                    header_stripped = header.strip()
+                    if not header_stripped:
+                        continue
+                    # Store original column with 'input_' prefix to avoid collision
+                    col_key = f"input_{header_stripped}"
+                    abstract_data[col_key] = row.get(header, '')
+                
+                # Add mapped columns for processing (these are used by the processor)
+                abstract_data['abstract_id'] = row.get(id_col, '') if id_col else ''
+                abstract_data['abstract_title'] = row.get(title_col, '') if title_col else ''
                 
                 if abstract_data['abstract_id'] or abstract_data['abstract_title']:
                     abstracts.append(abstract_data)
@@ -202,7 +217,7 @@ def parse_extraction_response(response: str) -> Dict[str, Any]:
 
 
 def process_single_abstract(abstract: Dict, processor: DrugExtractionProcessor, index: int) -> Dict:
-    """Process a single abstract."""
+    """Process a single abstract, preserving all original input columns."""
     print(f"Processing abstract {index}: ID {abstract['abstract_id']}")
 
     result = processor.extract(
@@ -213,11 +228,14 @@ def process_single_abstract(abstract: Dict, processor: DrugExtractionProcessor, 
     # Parse the extraction response into separate columns
     parsed = parse_extraction_response(result['response'])
 
-    return {
-        'abstract_id': abstract['abstract_id'],
-        'session_title': abstract['session_title'],
-        'abstract_title': abstract['abstract_title'],
-        'ground_truth': abstract['ground_truth'],
+    # Start with all original input columns (those prefixed with 'input_')
+    output = {}
+    for key, value in abstract.items():
+        if key.startswith('input_'):
+            output[key] = value
+    
+    # Add extraction-specific columns
+    output.update({
         'extraction_response': result['response'],
         'extraction_primary_drugs': json.dumps(parsed['primary_drugs']),
         'extraction_secondary_drugs': json.dumps(parsed['secondary_drugs']),
@@ -225,7 +243,9 @@ def process_single_abstract(abstract: Dict, processor: DrugExtractionProcessor, 
         'extraction_reasoning': json.dumps(parsed['reasoning']),
         'extraction_success': result['success'],
         'extraction_error': result['error'] or '',
-    }
+    })
+    
+    return output
 
 
 def main():
@@ -270,8 +290,11 @@ def main():
         max_tokens=args.max_tokens,
     )
 
-    # Process abstracts
+    # Process abstracts with intermediate saves every 5 results
     results = []
+    save_interval = 5
+    last_saved_count = 0
+    
     with concurrent.futures.ThreadPoolExecutor(max_workers=args.parallel_workers) as executor:
         future_to_index = {
             executor.submit(process_single_abstract, abstract, processor, i): i
@@ -282,6 +305,17 @@ def main():
             try:
                 result = future.result()
                 results.append((index, result))
+                
+                # Save intermediate results every 5 processed
+                if len(results) - last_saved_count >= save_interval:
+                    # Sort by original order before saving
+                    sorted_results = sorted(results, key=lambda x: x[0])
+                    sorted_data = [r for _, r in sorted_results]
+                    df = pd.DataFrame(sorted_data)
+                    df.to_csv(args.output_file, index=False)
+                    last_saved_count = len(results)
+                    print(f"💾 Intermediate save: {len(results)} results saved to {args.output_file}")
+                    
             except Exception as e:
                 print(f"Error processing abstract {index}: {e}")
 
@@ -289,7 +323,7 @@ def main():
     results.sort(key=lambda x: x[0])
     results = [r for _, r in results]
 
-    # Save results
+    # Final save
     df = pd.DataFrame(results)
     df.to_csv(args.output_file, index=False)
 

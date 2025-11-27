@@ -2,11 +2,11 @@
 """
 Step 3: Drug Verification Processor
 
-This script runs ONLY the verification step (Step 3) using validation results from Step 2.
+This script runs ONLY the verification step (Step 3) using extraction results from Step 1.
 It uses Tavily search to verify if each drug term is a valid drug/regimen.
 
 Usage:
-    python src/drug_verification_processor.py --input_file step2_validation_results.csv --output_file verification_results.csv
+    python src/drug_verification_processor.py --input_file step1_extraction_results.csv --output_file verification_results.csv
 """
 
 import csv
@@ -262,109 +262,147 @@ Based on the search results, determine if "{drug_term}" is a valid drug or drug 
         }
 
 
-def load_validation_results(csv_path: str, max_rows: int = None) -> List[Dict]:
-    """Load validation results from Step 2 CSV."""
+def load_extraction_results(csv_path: str, max_rows: int = None) -> tuple:
+    """Load extraction results from CSV, preserving all columns.
+    
+    Returns:
+        tuple: (list of row dicts with parsed drugs, list of column names)
+    """
     results = []
+    columns = []
 
     if not os.path.exists(csv_path):
         print(f"Error: CSV file not found at {csv_path}")
-        return results
+        return results, columns
 
     try:
         df = pd.read_csv(csv_path)
+        columns = list(df.columns)
+
+        # Find abstract_id column (may be input_ID or similar)
+        id_col = None
+        for col in df.columns:
+            col_lower = col.lower().replace(' ', '_')
+            if col_lower in ['abstract_id', 'input_id', 'input_abstract_id']:
+                id_col = col
+                break
 
         for _, row in df.iterrows():
-            # Parse drug lists from JSON strings
-            primary_drugs = json.loads(row.get('validation_primary_drugs', '[]') or '[]')
-            secondary_drugs = json.loads(row.get('validation_secondary_drugs', '[]') or '[]')
-            comparator_drugs = json.loads(row.get('validation_comparator_drugs', '[]') or '[]')
-            removed_drugs = json.loads(row.get('validation_removed_drugs', '[]') or '[]')
-            reasoning = json.loads(row.get('validation_reasoning', '[]') or '[]')
+            # Keep all original columns as a dict
+            row_dict = row.to_dict()
+            
+            # Convert NaN to empty string for string columns
+            for key, value in row_dict.items():
+                if pd.isna(value):
+                    row_dict[key] = ''
+                else:
+                    row_dict[key] = str(value) if not isinstance(value, (int, float, bool)) else value
+            
+            # Add mapped abstract_id for processing
+            if id_col:
+                row_dict['abstract_id'] = str(row.get(id_col, ''))
+            
+            # Parse drug lists from JSON strings (from extraction columns)
+            try:
+                primary_drugs = json.loads(row.get('extraction_primary_drugs', '[]') or '[]')
+            except (json.JSONDecodeError, TypeError):
+                primary_drugs = []
+            try:
+                secondary_drugs = json.loads(row.get('extraction_secondary_drugs', '[]') or '[]')
+            except (json.JSONDecodeError, TypeError):
+                secondary_drugs = []
+            try:
+                comparator_drugs = json.loads(row.get('extraction_comparator_drugs', '[]') or '[]')
+            except (json.JSONDecodeError, TypeError):
+                comparator_drugs = []
+            
+            # Add parsed lists for processing
+            row_dict['_primary_drugs'] = primary_drugs
+            row_dict['_secondary_drugs'] = secondary_drugs
+            row_dict['_comparator_drugs'] = comparator_drugs
 
-            results.append({
-                'abstract_id': str(row.get('abstract_id', '')),
-                'session_title': str(row.get('session_title', '')),
-                'abstract_title': str(row.get('abstract_title', '')),
-                'ground_truth': str(row.get('ground_truth', '')),
-                # Step 1 columns
-                'extraction_response': str(row.get('extraction_response', '{}')),
-                'extraction_primary_drugs': str(row.get('extraction_primary_drugs', '[]')),
-                'extraction_secondary_drugs': str(row.get('extraction_secondary_drugs', '[]')),
-                'extraction_comparator_drugs': str(row.get('extraction_comparator_drugs', '[]')),
-                'extraction_reasoning': str(row.get('extraction_reasoning', '[]')),
-                # Step 2 columns
-                'validation_response': str(row.get('validation_response', '{}')),
-                'primary_drugs': primary_drugs,
-                'secondary_drugs': secondary_drugs,
-                'comparator_drugs': comparator_drugs,
-                'validation_removed_drugs': removed_drugs,
-                'validation_reasoning': reasoning,
-            })
+            results.append(row_dict)
             
             if max_rows and len(results) >= max_rows:
                 break
 
-        return results
+        return results, columns
 
     except Exception as e:
         print(f"Error reading CSV file: {e}")
         import traceback
         traceback.print_exc()
-        return []
+        return [], []
 
 
 def process_single_row(row: Dict, processor: DrugVerificationProcessor, index: int) -> Dict:
-    """Process a single row."""
-    print(f"Processing row {index}: ID {row['abstract_id']}")
+    """Process a single row, preserving all input columns and adding verification columns."""
+    print(f"Processing row {index}: ID {row.get('abstract_id', 'unknown')}")
+
+    # Get parsed drug lists (added by load function)
+    primary_drugs = row.get('_primary_drugs', [])
+    secondary_drugs = row.get('_secondary_drugs', [])
+    comparator_drugs = row.get('_comparator_drugs', [])
 
     # Combine all drugs for verification
-    all_drugs = row['primary_drugs'] + row['secondary_drugs'] + row['comparator_drugs']
+    all_drugs = primary_drugs + secondary_drugs + comparator_drugs
     
     # Verify drugs
-    verification_result = processor.verify_drugs(all_drugs, row['abstract_id'])
+    verification_result = processor.verify_drugs(all_drugs, str(row.get('abstract_id', '')))
 
-    # Filter each category based on verification
+    # Filter each category based on verification - preserve original categories
     verified_results = verification_result['verification_results']
     
-    verified_primary = [d for d in row['primary_drugs'] if verified_results.get(d, {}).get("is_drug", True)]
-    verified_secondary = [d for d in row['secondary_drugs'] if verified_results.get(d, {}).get("is_drug", True)]
-    verified_comparator = [d for d in row['comparator_drugs'] if verified_results.get(d, {}).get("is_drug", True)]
+    # Filter each category separately, keeping drugs that are verified as valid
+    verified_primary = [d for d in primary_drugs if verified_results.get(d, {}).get("is_drug", True)]
+    verified_secondary = [d for d in secondary_drugs if verified_results.get(d, {}).get("is_drug", True)]
+    verified_comparator = [d for d in comparator_drugs if verified_results.get(d, {}).get("is_drug", True)]
+    
+    # Track removed drugs with their original category
+    removed_drugs_with_category = []
+    for d in primary_drugs:
+        if not verified_results.get(d, {}).get("is_drug", True):
+            removed_drugs_with_category.append({
+                "Drug": d,
+                "Category": "Primary",
+                "Reason": verified_results.get(d, {}).get("reason", "Unknown")
+            })
+    for d in secondary_drugs:
+        if not verified_results.get(d, {}).get("is_drug", True):
+            removed_drugs_with_category.append({
+                "Drug": d,
+                "Category": "Secondary",
+                "Reason": verified_results.get(d, {}).get("reason", "Unknown")
+            })
+    for d in comparator_drugs:
+        if not verified_results.get(d, {}).get("is_drug", True):
+            removed_drugs_with_category.append({
+                "Drug": d,
+                "Category": "Comparator",
+                "Reason": verified_results.get(d, {}).get("reason", "Unknown")
+            })
 
-    return {
-        'abstract_id': row['abstract_id'],
-        'session_title': row['session_title'],
-        'abstract_title': row['abstract_title'],
-        'ground_truth': row['ground_truth'],
-        # Step 1 columns
-        'extraction_response': row['extraction_response'],
-        'extraction_primary_drugs': row.get('extraction_primary_drugs', '[]'),
-        'extraction_secondary_drugs': row.get('extraction_secondary_drugs', '[]'),
-        'extraction_comparator_drugs': row.get('extraction_comparator_drugs', '[]'),
-        'extraction_reasoning': row.get('extraction_reasoning', '[]'),
-        # Step 2 columns
-        'validation_response': row['validation_response'],
-        'validation_primary_drugs': json.dumps(row['primary_drugs']),
-        'validation_secondary_drugs': json.dumps(row['secondary_drugs']),
-        'validation_comparator_drugs': json.dumps(row['comparator_drugs']),
-        'validation_removed_drugs': json.dumps(row['validation_removed_drugs']),
-        'validation_reasoning': json.dumps(row['validation_reasoning']),
-        # Step 3 columns
-        'verified_primary_drugs': json.dumps(verified_primary),
-        'verified_secondary_drugs': json.dumps(verified_secondary),
-        'verified_comparator_drugs': json.dumps(verified_comparator),
-        'verification_removed_drugs': json.dumps(verification_result['removed_drugs']),
-        'verification_results': json.dumps(verified_results),
-    }
+    # Start with all original columns (excluding internal parsed fields)
+    result = {k: v for k, v in row.items() if not k.startswith('_')}
+    
+    # Add Step 3 verification columns
+    result['verified_primary_drugs'] = json.dumps(verified_primary)
+    result['verified_secondary_drugs'] = json.dumps(verified_secondary)
+    result['verified_comparator_drugs'] = json.dumps(verified_comparator)
+    result['verification_removed_drugs'] = json.dumps(removed_drugs_with_category)
+    result['verification_results'] = json.dumps(verified_results)
+    
+    return result
 
 
 def main():
     parser = argparse.ArgumentParser(description='Step 3: Drug Verification Processor')
-    parser.add_argument('--input_file', required=True, help='Input CSV file from Step 2 (validation results)')
-    parser.add_argument('--output_file', default=None, help='Output CSV file (default: auto-generated)')
+    parser.add_argument('--input_file', default='step2.csv', help='Input CSV file from Step 1 (extraction results)')
+    parser.add_argument('--output_file', default="step3.csv", help='Output CSV file (default: auto-generated)')
     parser.add_argument('--num_rows', type=int, default=None, help='Number of rows to process')
-    parser.add_argument('--model', default=None, help='Model to use for verification LLM calls')
-    parser.add_argument('--temperature', type=float, default=None, help='Temperature for LLM')
-    parser.add_argument('--max_tokens', type=int, default=None, help='Max tokens for LLM')
+    parser.add_argument('--model', default='gpt-4.1', help='Model to use for verification LLM calls')
+    parser.add_argument('--temperature', type=float, default=0, help='Temperature for LLM')
+    parser.add_argument('--max_tokens', type=int, default=30000, help='Max tokens for LLM')
     parser.add_argument('--max_parallel', type=int, default=5, help='Maximum parallel Tavily queries')
 
     args = parser.parse_args()
@@ -384,13 +422,14 @@ def main():
     print(f"Max parallel queries: {args.max_parallel}")
     print()
 
-    # Load validation results
-    rows = load_validation_results(args.input_file, args.num_rows)
+    # Load extraction results (preserves all columns from input CSV)
+    rows, input_columns = load_extraction_results(args.input_file, args.num_rows)
     if not rows:
-        print("No validation results loaded. Exiting.")
+        print("No extraction results loaded. Exiting.")
         return
 
-    print(f"Loaded {len(rows)} validation results")
+    print(f"Loaded {len(rows)} rows with {len(input_columns)} columns")
+    print(f"Input columns: {input_columns}")
 
     # Initialize processor
     processor = DrugVerificationProcessor(
@@ -400,16 +439,27 @@ def main():
         max_parallel=args.max_parallel,
     )
 
-    # Process rows (sequential to manage Tavily rate limits)
+    # Process rows (sequential to manage Tavily rate limits) with intermediate saves
     results = []
+    save_interval = 5
+    last_saved_count = 0
+    
     for i, row in enumerate(rows, 1):
         try:
             result = process_single_row(row, processor, i)
             results.append(result)
+            
+            # Save intermediate results every 5 processed
+            if len(results) - last_saved_count >= save_interval:
+                df = pd.DataFrame(results)
+                df.to_csv(args.output_file, index=False)
+                last_saved_count = len(results)
+                print(f"💾 Intermediate save: {len(results)} results saved to {args.output_file}")
+                
         except Exception as e:
             print(f"Error processing row {i}: {e}")
 
-    # Save results
+    # Final save
     df = pd.DataFrame(results)
     df.to_csv(args.output_file, index=False)
 

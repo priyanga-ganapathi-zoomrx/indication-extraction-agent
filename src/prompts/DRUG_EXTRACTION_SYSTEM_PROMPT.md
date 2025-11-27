@@ -86,7 +86,8 @@ Identify drugs/regimens administered for therapeutic use in the cure, mitigation
 
 3. **Diagnostic Agents**
 
-   * Include diagnostic agents used for detecting purposes (e.g., 18FDG)
+   * Include diagnostic agents used for detecting purposes.
+   * Do NOT miss PET-imaging or other radiotracer agents used for diagnostic, imaging, or tracer-based detection purposes — capture all such agents explicitly whenever they appear (e.g., FDG, 18F-NaF, 68Ga-DOTATATE, 18F-Fluciclovine).
 
 4. **Cell Therapies**
 

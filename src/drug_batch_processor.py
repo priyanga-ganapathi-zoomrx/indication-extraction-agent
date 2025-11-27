@@ -106,7 +106,9 @@ def extract_drugs_from_response(result: Dict, verification_enabled: bool = False
                 'primary_drugs': [],
                 'secondary_drugs': [],
                 'comparator_drugs': [],
-                'removed_drugs': [],
+                'flagged_drugs': [],
+                'potential_valid_drugs': [],
+                'non_therapeutic_drugs': [],
                 'reasoning': [],
                 'success': False,
             }
@@ -123,7 +125,9 @@ def extract_drugs_from_response(result: Dict, verification_enabled: bool = False
                 'primary_drugs': [],
                 'secondary_drugs': [],
                 'comparator_drugs': [],
-                'removed_drugs': [],
+                'flagged_drugs': [],
+                'potential_valid_drugs': [],
+                'non_therapeutic_drugs': [],
                 'reasoning': [],
                 'success': False,
             }
@@ -173,14 +177,18 @@ def extract_drugs_from_response(result: Dict, verification_enabled: bool = False
             primary_drugs = get_list(parsed, ['Primary Drugs', 'primary_drugs', 'Primary', 'primary'])
             secondary_drugs = get_list(parsed, ['Secondary Drugs', 'secondary_drugs', 'Secondary', 'secondary'])
             comparator_drugs = get_list(parsed, ['Comparator Drugs', 'comparator_drugs', 'Comparator', 'comparator'])
-            removed_drugs = get_list(parsed, ['Removed Drugs', 'removed_drugs', 'Removed', 'removed'])
+            flagged_drugs = get_list(parsed, ['Flagged Drugs', 'flagged_drugs'])
+            potential_valid_drugs = get_list(parsed, ['Potential Valid Drugs', 'potential_valid_drugs'])
+            non_therapeutic_drugs = get_list(parsed, ['Non-Therapeutic Drugs', 'non_therapeutic_drugs'])
             reasoning = get_list(parsed, ['Reasoning', 'reasoning'])
             
             result_dict = {
                 'primary_drugs': primary_drugs,
                 'secondary_drugs': secondary_drugs,
                 'comparator_drugs': comparator_drugs,
-                'removed_drugs': removed_drugs,
+                'flagged_drugs': flagged_drugs,
+                'potential_valid_drugs': potential_valid_drugs,
+                'non_therapeutic_drugs': non_therapeutic_drugs,
                 'reasoning': reasoning,
                 'success': True,
             }
@@ -201,7 +209,9 @@ def extract_drugs_from_response(result: Dict, verification_enabled: bool = False
                 'primary_drugs': [],
                 'secondary_drugs': [],
                 'comparator_drugs': [],
-                'removed_drugs': [],
+                'flagged_drugs': [],
+                'potential_valid_drugs': [],
+                'non_therapeutic_drugs': [],
                 'reasoning': [],
                 'success': False,
             }
@@ -216,7 +226,9 @@ def extract_drugs_from_response(result: Dict, verification_enabled: bool = False
             'primary_drugs': [],
             'secondary_drugs': [],
             'comparator_drugs': [],
-            'removed_drugs': [],
+            'flagged_drugs': [],
+            'potential_valid_drugs': [],
+            'non_therapeutic_drugs': [],
             'reasoning': [],
             'success': False,
         }
@@ -280,7 +292,9 @@ def process_single_abstract(abstract: Dict, agent: DrugExtractionAgent,
             f'{model_name}_primary_drugs': json.dumps(extracted_data['primary_drugs']),
             f'{model_name}_secondary_drugs': json.dumps(extracted_data['secondary_drugs']),
             f'{model_name}_comparator_drugs': json.dumps(extracted_data['comparator_drugs']),
-            f'{model_name}_removed_drugs': json.dumps(extracted_data['removed_drugs']),
+            f'{model_name}_flagged_drugs': json.dumps(extracted_data['flagged_drugs']),
+            f'{model_name}_potential_valid_drugs': json.dumps(extracted_data['potential_valid_drugs']),
+            f'{model_name}_non_therapeutic_drugs': json.dumps(extracted_data['non_therapeutic_drugs']),
             f'{model_name}_reasoning': json.dumps(extracted_data['reasoning']),
             f'{model_name}_success': extracted_data['success'],
             f'{model_name}_llm_calls': result.get('llm_calls', 0)
@@ -313,7 +327,9 @@ def process_single_abstract(abstract: Dict, agent: DrugExtractionAgent,
             f'{model_name}_primary_drugs': json.dumps([]),
             f'{model_name}_secondary_drugs': json.dumps([]),
             f'{model_name}_comparator_drugs': json.dumps([]),
-            f'{model_name}_removed_drugs': json.dumps([]),
+            f'{model_name}_flagged_drugs': json.dumps([]),
+            f'{model_name}_potential_valid_drugs': json.dumps([]),
+            f'{model_name}_non_therapeutic_drugs': json.dumps([]),
             f'{model_name}_reasoning': json.dumps([]),
             f'{model_name}_success': False,
             f'{model_name}_llm_calls': 0

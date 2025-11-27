@@ -383,7 +383,7 @@ class DrugExtractionAgent:
 
             # Ensure the response has content to prevent parsing errors
             if not response.content:
-                response.content = '{"Primary Drugs": [], "Secondary Drugs": [], "Comparator Drugs": [], "Removed Drugs": [], "Reasoning": []}'
+                response.content = '{"Primary Drugs": [], "Secondary Drugs": [], "Comparator Drugs": [], "Flagged Drugs": [], "Potential Valid Drugs": [], "Non-Therapeutic Drugs": [], "Reasoning": []}'
 
             return {
                 "messages": [response],
@@ -393,7 +393,7 @@ class DrugExtractionAgent:
         except Exception as e:
             print(f"✗ Error during validation LLM call: {e}")
             # Return an error message
-            error_content = '{"Primary Drugs": [], "Secondary Drugs": [], "Comparator Drugs": [], "Removed Drugs": [], "Reasoning": []}'
+            error_content = '{"Primary Drugs": [], "Secondary Drugs": [], "Comparator Drugs": [], "Flagged Drugs": [], "Potential Valid Drugs": [], "Non-Therapeutic Drugs": [], "Reasoning": []}'
             error_message = AIMessage(content=error_content)
             return {
                 "messages": [error_message],
@@ -533,7 +533,9 @@ Based on the search results, determine if "{drug_term}" is a valid drug or drug 
                 "Primary Drugs": [],
                 "Secondary Drugs": [],
                 "Comparator Drugs": [],
-                "Removed Drugs": [],
+                "Flagged Drugs": [],
+                "Potential Valid Drugs": [],
+                "Non-Therapeutic Drugs": [],
                 "Reasoning": [],
             }
 
@@ -541,7 +543,9 @@ Based on the search results, determine if "{drug_term}" is a valid drug or drug 
         primary_drugs = validated_data.get("Primary Drugs", [])
         secondary_drugs = validated_data.get("Secondary Drugs", [])
         comparator_drugs = validated_data.get("Comparator Drugs", [])
-        existing_removed = validated_data.get("Removed Drugs", [])
+        existing_flagged = validated_data.get("Flagged Drugs", [])
+        existing_potential_valid = validated_data.get("Potential Valid Drugs", [])
+        existing_non_therapeutic = validated_data.get("Non-Therapeutic Drugs", [])
         existing_reasoning = validated_data.get("Reasoning", [])
 
         all_drugs = list(set(primary_drugs + secondary_drugs + comparator_drugs))
@@ -552,7 +556,9 @@ Based on the search results, determine if "{drug_term}" is a valid drug or drug 
                 "Primary Drugs": primary_drugs,
                 "Secondary Drugs": secondary_drugs,
                 "Comparator Drugs": comparator_drugs,
-                "Removed Drugs": existing_removed,
+                "Flagged Drugs": existing_flagged,
+                "Potential Valid Drugs": existing_potential_valid,
+                "Non-Therapeutic Drugs": existing_non_therapeutic,
                 "Reasoning": existing_reasoning,
             }
             return {
@@ -615,7 +621,9 @@ Based on the search results, determine if "{drug_term}" is a valid drug or drug 
             "Primary Drugs": verified_primary,
             "Secondary Drugs": verified_secondary,
             "Comparator Drugs": verified_comparator,
-            "Removed Drugs": existing_removed,
+            "Flagged Drugs": existing_flagged,
+            "Potential Valid Drugs": existing_potential_valid,
+            "Non-Therapeutic Drugs": existing_non_therapeutic,
             "Verification Removed Drugs": verification_removed,
             "Reasoning": existing_reasoning,
             "Verification Results": verification_results,
