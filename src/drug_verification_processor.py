@@ -9,12 +9,10 @@ Usage:
     python src/drug_verification_processor.py --input_file step1_extraction_results.csv --output_file verification_results.csv
 """
 
-import csv
 import json
 import os
 import sys
 import argparse
-import concurrent.futures
 from datetime import datetime
 from typing import List, Dict, Any
 from concurrent.futures import ThreadPoolExecutor, as_completed
@@ -42,6 +40,7 @@ class DrugVerificationProcessor:
         temperature: float = None,
         max_tokens: int = None,
         max_parallel: int = 5,
+        cache_file: str = "data/drug_verification_cache.json",
     ):
         """Initialize the verification processor.
 
@@ -50,9 +49,15 @@ class DrugVerificationProcessor:
             temperature: Temperature (uses default from settings if not specified)
             max_tokens: Max tokens (uses default from settings if not specified)
             max_parallel: Maximum parallel Tavily queries
+            cache_file: Path to cache file for drug verification results
         """
         self.langfuse_config = get_langfuse_config()
         self.max_parallel = max_parallel
+        self.cache_file = cache_file
+        
+        # Initialize verification cache
+        self.verification_cache: Dict[str, Dict] = {}
+        self._load_cache()
         
         # Create LLM config
         self.llm_config = LLMConfig(
@@ -84,6 +89,38 @@ class DrugVerificationProcessor:
             self.callbacks = [CallbackHandler()]
 
         print(f"✓ Verification processor initialized with model: {self.llm_config.model}")
+        print(f"✓ Cache: {self.cache_file} ({len(self.verification_cache)} drugs cached)")
+
+    def _normalize_drug_name(self, drug_name: str) -> str:
+        """Normalize drug name for cache key consistency."""
+        return drug_name.strip().lower()
+
+    def _load_cache(self):
+        """Load verification cache from disk."""
+        if os.path.exists(self.cache_file):
+            try:
+                with open(self.cache_file, 'r') as f:
+                    self.verification_cache = json.load(f)
+                print(f"✓ Loaded {len(self.verification_cache)} cached drug verifications")
+            except (json.JSONDecodeError, IOError) as e:
+                print(f"⚠ Could not load cache: {e}")
+                self.verification_cache = {}
+
+    def save_cache(self):
+        """Save verification cache to disk."""
+        try:
+            with open(self.cache_file, 'w') as f:
+                json.dump(self.verification_cache, f, indent=2)
+        except IOError as e:
+            print(f"⚠ Could not save cache: {e}")
+
+    def _get_cached(self, drug_name: str) -> Dict | None:
+        """Get cached verification result."""
+        return self.verification_cache.get(self._normalize_drug_name(drug_name))
+
+    def _set_cached(self, drug_name: str, result: Dict):
+        """Cache a verification result."""
+        self.verification_cache[self._normalize_drug_name(drug_name)] = result
 
     def _initialize_tavily(self):
         """Initialize Tavily client."""
@@ -193,65 +230,103 @@ Based on the search results, determine if "{drug_term}" is a valid drug or drug 
             }
 
     def verify_drugs(self, drug_list: List[str], abstract_id: str = None) -> Dict[str, Any]:
-        """Verify a list of drugs.
+        """Verify a list of drugs using cache-first approach.
+        
+        Preserves original drug format for Tavily searches and CSV output.
 
         Args:
             drug_list: List of drug terms to verify
             abstract_id: Optional abstract ID for tracking
 
         Returns:
-            dict: Verification results for all drugs
+            dict: Verification results for all drugs (keyed by ORIGINAL drug format)
         """
         if not drug_list:
             return {"verification_results": {}, "verified_drugs": [], "removed_drugs": []}
 
-        if not self.tavily_client:
-            print(f"⚠ Tavily not available - skipping verification for {len(drug_list)} drugs")
-            return {
-                "verification_results": {},
-                "verified_drugs": drug_list,
-                "removed_drugs": [],
-            }
+        # Deduplicate by normalized name, keeping FIRST original format for each
+        # This avoids duplicate API calls for case variants (e.g., "Aspirin" vs "aspirin")
+        normalized_to_original: Dict[str, str] = {}
+        for drug in drug_list:
+            normalized = self._normalize_drug_name(drug)
+            if normalized not in normalized_to_original:
+                normalized_to_original[normalized] = drug  # Keep first original format
+        
+        # Check cache and collect drugs to verify
+        normalized_results: Dict[str, Dict] = {}  # Results keyed by normalized name
+        drugs_to_verify: List[str] = []  # Original format drugs to verify
+        
+        for normalized, original in normalized_to_original.items():
+            cached = self._get_cached(original)
+            if cached:
+                normalized_results[normalized] = cached
+            else:
+                drugs_to_verify.append(original)  # Use original format for Tavily
+        
+        cached_count = len(normalized_to_original) - len(drugs_to_verify)
+        if cached_count > 0:
+            print(f"  ✓ {cached_count} drug(s) from cache")
+        
+        # Verify uncached drugs (using ORIGINAL format for Tavily)
+        if drugs_to_verify:
+            if not self.tavily_client:
+                print(f"  ⚠ Tavily not available - skipping {len(drugs_to_verify)} drugs")
+                for drug in drugs_to_verify:
+                    normalized = self._normalize_drug_name(drug)
+                    normalized_results[normalized] = {"is_drug": True, "reason": "Not verified (Tavily unavailable)"}
+            else:
+                print(f"  🔍 Verifying {len(drugs_to_verify)} drug(s) via Tavily+LLM...")
+                
+                # Search using ORIGINAL drug format (max 5 concurrent)
+                search_results_map = {}
+                with ThreadPoolExecutor(max_workers=self.max_parallel) as executor:
+                    future_to_drug = {
+                        executor.submit(self._search_drug_term, drug): drug  # Original format
+                        for drug in drugs_to_verify
+                    }
+                    for future in as_completed(future_to_drug):
+                        result = future.result()
+                        search_results_map[result["drug_term"]] = result["results"]
 
-        # Remove duplicates
-        unique_drugs = list(set(drug_list))
-        print(f"  🔍 Verifying {len(unique_drugs)} drug(s)...")
+                # Verify with LLM using ORIGINAL drug format (max 5 concurrent)
+                with ThreadPoolExecutor(max_workers=self.max_parallel) as executor:
+                    future_to_drug = {
+                        executor.submit(
+                            self._verify_single_drug,
+                            drug,  # Original format
+                            search_results_map.get(drug, [])
+                        ): drug
+                        for drug in drugs_to_verify
+                    }
+                    for future in as_completed(future_to_drug):
+                        result = future.result()
+                        drug_term = result["drug_term"]  # Original format
+                        normalized = self._normalize_drug_name(drug_term)
+                        
+                        entry = {
+                            "is_drug": result["is_drug"],
+                            "reason": result["reason"],
+                            "original_searched": drug_term,  # Preserve original format
+                        }
+                        normalized_results[normalized] = entry
+                        # Cache with normalized key
+                        self._set_cached(drug_term, entry)
+                        
+                        status = "✓" if result["is_drug"] else "✗"
+                        print(f"    {status} '{drug_term}': is_drug={result['is_drug']}")
 
-        # Search for all drugs in parallel
-        search_results_map = {}
-        with ThreadPoolExecutor(max_workers=self.max_parallel) as executor:
-            future_to_drug = {
-                executor.submit(self._search_drug_term, drug): drug
-                for drug in unique_drugs
-            }
-            for future in as_completed(future_to_drug):
-                result = future.result()
-                search_results_map[result["drug_term"]] = result["results"]
-
-        # Verify each drug with LLM
+        # Build verification_results keyed by ORIGINAL drug names from input
+        # This preserves the exact format from the input for CSV output
         verification_results = {}
-        with ThreadPoolExecutor(max_workers=self.max_parallel) as executor:
-            future_to_drug = {
-                executor.submit(
-                    self._verify_single_drug,
-                    drug,
-                    search_results_map.get(drug, [])
-                ): drug
-                for drug in unique_drugs
-            }
-            for future in as_completed(future_to_drug):
-                result = future.result()
-                verification_results[result["drug_term"]] = {
-                    "is_drug": result["is_drug"],
-                    "reason": result["reason"],
-                }
-                status = "✓" if result["is_drug"] else "✗"
-                print(f"    {status} '{result['drug_term']}': is_drug={result['is_drug']}")
+        for drug in drug_list:
+            normalized = self._normalize_drug_name(drug)
+            if normalized in normalized_results:
+                verification_results[drug] = normalized_results[normalized]
 
-        # Separate verified and removed drugs
+        # Separate verified and removed drugs (using ORIGINAL names from input)
         verified_drugs = [d for d in drug_list if verification_results.get(d, {}).get("is_drug", True)]
         removed_drugs = [
-            {"Drug": d, "Reason": verification_results[d].get("reason", "Unknown")}
+            {"Drug": d, "Reason": verification_results.get(d, {}).get("reason", "Unknown")}
             for d in drug_list if not verification_results.get(d, {}).get("is_drug", True)
         ]
 
@@ -404,6 +479,7 @@ def main():
     parser.add_argument('--temperature', type=float, default=0, help='Temperature for LLM')
     parser.add_argument('--max_tokens', type=int, default=30000, help='Max tokens for LLM')
     parser.add_argument('--max_parallel', type=int, default=5, help='Maximum parallel Tavily queries')
+    parser.add_argument('--cache_file', default='data/drug_verification_cache.json', help='Cache file path')
 
     args = parser.parse_args()
 
@@ -420,6 +496,7 @@ def main():
     print(f"Model: {args.model or settings.llm.LLM_MODEL}")
     print(f"Number of rows: {args.num_rows or 'all'}")
     print(f"Max parallel queries: {args.max_parallel}")
+    print(f"Cache file: {args.cache_file}")
     print()
 
     # Load extraction results (preserves all columns from input CSV)
@@ -437,6 +514,7 @@ def main():
         temperature=args.temperature,
         max_tokens=args.max_tokens,
         max_parallel=args.max_parallel,
+        cache_file=args.cache_file,
     )
 
     # Process rows (sequential to manage Tavily rate limits) with intermediate saves
@@ -453,8 +531,9 @@ def main():
             if len(results) - last_saved_count >= save_interval:
                 df = pd.DataFrame(results)
                 df.to_csv(args.output_file, index=False)
+                processor.save_cache()
                 last_saved_count = len(results)
-                print(f"💾 Intermediate save: {len(results)} results saved to {args.output_file}")
+                print(f"💾 Saved: {len(results)} rows to CSV, {len(processor.verification_cache)} drugs cached")
                 
         except Exception as e:
             print(f"Error processing row {i}: {e}")
@@ -462,12 +541,15 @@ def main():
     # Final save
     df = pd.DataFrame(results)
     df.to_csv(args.output_file, index=False)
+    processor.save_cache()
 
     # Summary
     print()
     print("📊 Summary:")
-    print(f"Total processed: {len(results)}")
+    print(f"Total rows processed: {len(results)}")
+    print(f"Total drugs cached: {len(processor.verification_cache)}")
     print(f"Results saved to: {args.output_file}")
+    print(f"Cache saved to: {args.cache_file}")
 
 
 if __name__ == "__main__":

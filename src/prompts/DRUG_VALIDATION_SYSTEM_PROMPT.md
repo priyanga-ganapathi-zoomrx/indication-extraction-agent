@@ -99,7 +99,7 @@ You will be given:
 
 9. **Non-Therapeutic Drugs**
 
-   * Provide a separate array `Non-Therapeutic Drugs` that contains only original extracted drug strings (exactly as provided) that you have judged to be **non-therapeutic** based on your flagged assessments (e.g., gene, trial id, prior therapy, endpoint). Populate this array only from `Flagged Drugs` entries whose reason explicitly identifies them as non-therapeutic. Do **not** include ambiguous items unless explicitly classified as non-therapeutic in the reason.
+   * Provide a separate array `Non-Therapeutic Drugs` that contains only original extracted drug strings (exactly as provided) that you have judged to be **non-therapeutic** based on your flagged assessments (e.g., gene, trial id, prior therapy, endpoint, drug class). Populate this array only from `Flagged Drugs` entries whose reason explicitly identifies them as non-therapeutic. Do **not** include ambiguous items unless explicitly classified as non-therapeutic in the reason.
 
 10. **Final QC & Output Formatting**
 
