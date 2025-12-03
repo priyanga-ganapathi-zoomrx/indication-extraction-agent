@@ -1728,5 +1728,240 @@
     "is_drug": true,
     "reason": "Search results indicate Zuberitamab is an approved anti-CD20 monoclonal antibody used for the treatment of diffuse large B-cell lymphoma and chronic ITP, and is included in the National Medical Insurance Drug List.",
     "original_searched": "Zuberitamab"
+  },
+  "gemox": {
+    "is_drug": true,
+    "reason": "Search results indicate GemOx (GEMOX) is a chemotherapy regimen combining gemcitabine and oxaliplatin, used in the treatment of lymphoma and pancreatic cancer.",
+    "original_searched": "GemOx"
+  },
+  "r-gemox": {
+    "is_drug": true,
+    "reason": "Search results describe R-GemOx as a chemotherapy regimen combining rituximab, gemcitabine, and oxaliplatin, used as a therapeutic treatment option for lymphoma.",
+    "original_searched": "R-GemOx"
+  },
+  "mosun-pola": {
+    "is_drug": true,
+    "reason": "Search results consistently describe Mosun-Pola as a combination regimen of mosunetuzumab and polatuzumab vedotin used therapeutically in relapsed/refractory large B-cell lymphoma.",
+    "original_searched": "Mosun-Pola"
+  },
+  "pola r+chp": {
+    "is_drug": true,
+    "reason": "Search results indicate Pola-R-CHP is a chemotherapy regimen combining polatuzumab vedotin, rituximab, cyclophosphamide, doxorubicin, and prednisone, FDA-approved for diffuse large B-cell lymphoma.",
+    "original_searched": "Pola R+CHP"
+  },
+  "r+da-epoch": {
+    "is_drug": true,
+    "reason": "Search results indicate DA-EPOCH-R (also written as R+DA-EPOCH) is a chemotherapy regimen combining rituximab with dose-adjusted EPOCH drugs for lymphoma treatment.",
+    "original_searched": "R+DA-EPOCH"
+  },
+  "did": {
+    "is_drug": false,
+    "reason": "Search results indicate DID refers to Dissociative Identity Disorder, a mental health condition, not a drug or therapeutic agent.",
+    "original_searched": "DId"
+  },
+  "dvd": {
+    "is_drug": true,
+    "reason": "Search results indicate DVd is a chemotherapy regimen consisting of daratumumab, bortezomib, and dexamethasone used for treating multiple myeloma.",
+    "original_searched": "DVd"
+  },
+  "bgb-11417": {
+    "is_drug": true,
+    "reason": "Search results indicate BGB-11417 is a small-molecule BCL-2 inhibitor being tested for efficacy and safety in AML and CLL patients, and is the subject of clinical trials as a therapeutic agent.",
+    "original_searched": "BGB-11417"
+  },
+  "br": {
+    "is_drug": false,
+    "reason": "Search results do not provide clear evidence that 'BR' is a drug or therapeutic regimen; results reference unrelated terms such as benefit-risk assessment and other drug names, but do not identify 'BR' as a specific drug or regimen.",
+    "original_searched": "BR"
+  },
+  "idecabtagene vicleucel;;abecma": {
+    "is_drug": true,
+    "reason": "Search results indicate Idecabtagene Vicleucel (Abecma) is an FDA-approved CAR T cell therapy for relapsed or refractory multiple myeloma.",
+    "original_searched": "Idecabtagene Vicleucel;;Abecma"
+  },
+  "ciltacabtagene autoleucel;;carvykti": {
+    "is_drug": true,
+    "reason": "Search results indicate Ciltacabtagene Autoleucel (Carvykti) is an FDA-approved BCMA-directed autologous T cell immunotherapy for the treatment of relapsed or refractory multiple myeloma.",
+    "original_searched": "Ciltacabtagene Autoleucel;;Carvykti"
+  },
+  "isa-vrd": {
+    "is_drug": true,
+    "reason": "Search results indicate Isa-VRd is a four-drug regimen including isatuximab, used as a combination therapy for multiple myeloma and described as FDA-approved.",
+    "original_searched": "Isa-VRd"
+  },
+  "isard": {
+    "is_drug": false,
+    "reason": "Search results do not mention 'isard' as a drug or therapeutic agent; results reference other drugs such as islatravir, isatuximab, and ibalizumab, but not 'isard'.",
+    "original_searched": "isard"
+  },
+  "hma/ven": {
+    "is_drug": true,
+    "reason": "Search results indicate HMA/VEN refers to a combination regimen of hypomethylating agents (HMA) and venetoclax, which is FDA-approved and used as a treatment option for AML patients.",
+    "original_searched": "HMA/VEN"
+  },
+  "vmp": {
+    "is_drug": true,
+    "reason": "Search results indicate VMP is a regimen consisting of melphalan, prednisone, and bortezomib used for the treatment of plasma cell myeloma.",
+    "original_searched": "VMP"
+  },
+  "tac/mtx": {
+    "is_drug": true,
+    "reason": "Search results indicate tac/MTX refers to the combination of tacrolimus and methotrexate, which is described as a standard prophylactic regimen for graft-versus-host disease in transplant centers.",
+    "original_searched": "tac/MTX"
+  },
+  "flu/mel": {
+    "is_drug": true,
+    "reason": "Search results describe Flu/Mel as a conditioning regimen combining fludarabine and melphalan used therapeutically, particularly in transplant settings.",
+    "original_searched": "Flu/Mel"
+  },
+  "clag-m": {
+    "is_drug": true,
+    "reason": "Search results indicate CLAG-m is a chemotherapy regimen combining cladribine, cytarabine, filgrastim, and mitoxantrone, used for the treatment of acute myeloid leukemia.",
+    "original_searched": "CLAG-m"
+  },
+  "krd": {
+    "is_drug": true,
+    "reason": "Search results indicate KRd is a drug regimen consisting of carfilzomib, lenalidomide (Revlimid), and dexamethasone, FDA-approved for treatment of multiple myeloma.",
+    "original_searched": "KRd"
+  },
+  "vrd": {
+    "is_drug": true,
+    "reason": "Search results indicate VRd is a three-drug regimen (Velcade, Revlimid, dexamethasone) used as initial treatment for multiple myeloma and is FDA-approved.",
+    "original_searched": "VRd"
+  },
+  "isa-rvd": {
+    "is_drug": true,
+    "reason": "Search results describe Isa-RVd as a combination regimen of isatuximab, Revlimid, and Velcade used for the treatment of multiple myeloma.",
+    "original_searched": "Isa-RVd"
+  },
+  "cilta-cel": {
+    "is_drug": true,
+    "reason": "Search results indicate Cilta-Cel (ciltacabtagene autoleucel) is an FDA-approved CAR-T cell therapy for relapsed/refractory multiple myeloma.",
+    "original_searched": "Cilta-Cel"
+  },
+  "belamaf": {
+    "is_drug": true,
+    "reason": "Search results indicate that 'Belamaf' refers to belantamab mafodotin, an FDA-approved BCMA-directed antibody-drug conjugate used for the treatment of relapsed or refractory multiple myeloma.",
+    "original_searched": "Belamaf"
+  },
+  "cacag-ven": {
+    "is_drug": true,
+    "reason": "Search results describe CACAG-VEN as a regimen combining CACAG and venetoclax, used therapeutically in clinical studies for disease treatment.",
+    "original_searched": "CACAG-VEN"
+  },
+  "dec3-ven": {
+    "is_drug": true,
+    "reason": "Search results indicate DEC3-VEN refers to a specific induction therapy regimen combining three-day decitabine and venetoclax, used therapeutically in elderly or unfit patients with AML.",
+    "original_searched": "DEC3-VEN"
+  },
+  "hydroxyurea/hydroxycarbamide": {
+    "is_drug": true,
+    "reason": "Search results indicate Hydroxyurea/Hydroxycarbamide is an FDA-approved antimetabolite medication used to treat sickle cell disease, myeloproliferative neoplasms, and certain cancers.",
+    "original_searched": "Hydroxyurea/Hydroxycarbamide"
+  },
+  "ort": {
+    "is_drug": false,
+    "reason": "Search results indicate ORT refers to the Opioid Risk Tool, a screening instrument for opioid abuse risk, not a drug or therapeutic agent.",
+    "original_searched": "ORT"
+  },
+  "por": {
+    "is_drug": false,
+    "reason": "Search results do not mention 'POR' as a drug, drug regimen, or therapeutic agent; the term does not appear in any context indicating it is used for treatment.",
+    "original_searched": "POR"
+  },
+  "rom": {
+    "is_drug": true,
+    "reason": "Search results indicate ROM is a drug regimen consisting of rifampicin, ofloxacin, and minocycline used for the treatment of leprosy.",
+    "original_searched": "ROM"
+  },
+  "haploidentical peripheral blood hematopoietic cell": {
+    "is_drug": false,
+    "reason": "Search results indicate 'Haploidentical Peripheral Blood Hematopoietic Cell' refers to a cell source used in transplantation procedures, not a drug or drug regimen.",
+    "original_searched": "Haploidentical Peripheral Blood Hematopoietic Cell"
+  },
+  "5-fluoruracil/folinic acid": {
+    "is_drug": true,
+    "reason": "Search results indicate that 5-Fluoruracil and Folinic Acid are used together as a chemotherapy regimen for colorectal cancer, with references to their administration and therapeutic use.",
+    "original_searched": "5-Fluoruracil/Folinic Acid"
+  },
+  "lisocabtagene maraleucel": {
+    "is_drug": true,
+    "reason": "Search results indicate Lisocabtagene Maraleucel is an FDA-approved CAR-T cell therapy used to treat various lymphomas, including diffuse large B-cell lymphoma and mantle cell lymphoma.",
+    "original_searched": "Lisocabtagene Maraleucel"
+  },
+  "stem cell": {
+    "is_drug": true,
+    "reason": "Search results indicate that stem cell therapies are FDA-approved for specific medical conditions and are regulated as drugs or biological products by the FDA.",
+    "original_searched": "Stem Cell"
+  },
+  "kite-363 anti-cd19/cd20 car-t cell": {
+    "is_drug": true,
+    "reason": "Search results indicate KITE-363 anti-CD19/CD20 CAR-T Cell is an autologous CAR T-cell therapy being evaluated in clinical trials for relapsed/refractory B-cell lymphoma, described as a therapeutic agent.",
+    "original_searched": "KITE-363 anti-CD19/CD20 CAR-T Cell"
+  },
+  "ice": {
+    "is_drug": true,
+    "reason": "Search results indicate ICE is a chemotherapy regimen consisting of ifosfamide, carboplatin, and etoposide, used for the treatment of lymphomas.",
+    "original_searched": "ICE"
+  },
+  "glofit-gemox": {
+    "is_drug": true,
+    "reason": "Search results indicate Glofit-GemOx is a bispecific antibody-based regimen (glofitamab plus gemcitabine and oxaliplatin) under FDA and Health Canada review for treatment of relapsed/refractory diffuse large B-cell lymphoma.",
+    "original_searched": "Glofit-GemOx"
+  },
+  "bpd": {
+    "is_drug": false,
+    "reason": "Search results indicate BPD refers to Borderline Personality Disorder and discuss its treatment, but do not mention BPd as a drug or drug regimen.",
+    "original_searched": "BPd"
+  },
+  "pvd": {
+    "is_drug": true,
+    "reason": "Search results indicate PVd is a chemotherapy regimen consisting of pomalidomide, bortezomib, and dexamethasone used in the treatment of multiple myeloma.",
+    "original_searched": "PVd"
+  },
+  "folfiri-ram": {
+    "is_drug": true,
+    "reason": "Search results indicate FOLFIRI-Ram refers to the combination of FOLFIRI chemotherapy regimen plus ramucirumab, used as a therapeutic regimen in cancer treatment.",
+    "original_searched": "FOLFIRI-Ram"
+  },
+  "ram-pac": {
+    "is_drug": true,
+    "reason": "Search results indicate 'Ram-Pac' refers to the combination of ramucirumab and paclitaxel, described as a valid treatment option and regimen for patients with advanced gastric cancer.",
+    "original_searched": "Ram-Pac"
+  },
+  "177lu-vipivotide tetraxetan psma": {
+    "is_drug": true,
+    "reason": "Search results indicate that 177Lu-vipivotide tetraxetan (Pluvicto) is an FDA-approved radioligand therapeutic agent used for the treatment of PSMA-positive metastatic castration-resistant prostate cancer.",
+    "original_searched": "177Lu-vipivotide tetraxetan PSMA"
+  },
+  "thp": {
+    "is_drug": true,
+    "reason": "Search results indicate THP is a chemotherapy regimen consisting of docetaxel, trastuzumab, and pertuzumab, used to treat HER2-positive breast cancer.",
+    "original_searched": "THP"
+  },
+  "ipsc-derived mesenchymal stem cell": {
+    "is_drug": true,
+    "reason": "Search results indicate that iPSC-derived mesenchymal stem cells are being developed as cell therapies for therapeutic use in diseases such as limb ischemia and colitis, with companies advancing these as therapeutic products.",
+    "original_searched": "iPSC-derived mesenchymal stem cell"
+  },
+  "il-15": {
+    "is_drug": true,
+    "reason": "Search results indicate IL-15 (Interleukin-15) is administered as a recombinant protein or derivative in clinical trials for cancer and HIV, and is described as a drug activating the immune system.",
+    "original_searched": "IL-15"
+  },
+  "il-7": {
+    "is_drug": true,
+    "reason": "Search results indicate IL-7 is used as an experimental drug in clinical trials for HIV and cancer, and is described as a protein-based therapy administered for therapeutic purposes.",
+    "original_searched": "IL-7"
+  },
+  "nk cell": {
+    "is_drug": true,
+    "reason": "Search results indicate that NK cell therapies are used as immunotherapies in cancer treatment, with numerous clinical trials and references to NK cell infusions as therapeutic agents.",
+    "original_searched": "NK Cell"
+  },
+  "zcr": {
+    "is_drug": false,
+    "reason": "Search results do not mention 'Zcr' as a drug or therapeutic regimen; no evidence is provided that this term refers to a valid drug or drug regimen.",
+    "original_searched": "Zcr"
   }
 }
