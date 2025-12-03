@@ -80,9 +80,10 @@ Identify drugs/regimens administered for therapeutic use in the cure, mitigation
 
 2. **Drug Regimens**
 
-   * Capture abbreviated regimens only if their expanded (full drug name) form is not present (e.g., FOLFOX, CHOP)
-   * For valid drug regimens **containing only 2–3 letters**, with clearly identifiable drugs, analyze and capture the individual drug names rather than the short code itself
-   **Do not assume general terms as drug regimens** — capture a term as a drug or regimen **only if it is clearly a therapy and used for treatment**. This must be strictly followed to avoid noise terms being captured as drug regimens.
+   * Capture abbreviated regimens if present in the title (e.g., FOLFOX, CHOP)
+   * When both full drug names and abbreviated regimens are present, always capture abbreviated forms.
+     * Example: "Cyclophosphamide, Hydroxydaunorubicin, Oncovin, Prednisone (CHOP)" → capture only "CHOP"*.
+   * **Do not assume general terms as drug regimens** — capture a term as a drug or regimen **only if it is clearly a therapy and used for treatment**. This must be strictly followed to avoid noise terms being captured as drug regimens.
 
 3. **Diagnostic Agents**
 

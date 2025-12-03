@@ -96,6 +96,18 @@ You will be given:
    * Each entry added to `Potential Valid Drugs` must **also** appear in `Flagged Drugs` with a one-line reason: `"missed plausible therapeutic — flagged (confidence: high|medium|low)"`.
    * Do **not** add these items to the original `Primary/Secondary/Comparator` arrays. They are potential candidates for manual QC only.
    * If none are found, return an empty array `[]`.
+   * When the abstract title mentions full drug names along with their synonyms/abbreviations and either of them is already captured as primary/secondary/comparator (full drug name or synonym/abbreviation), **do not add the other as a “Potential Valid Drug.”**
+
+  **Examples:**
+
+  1. *Cyclophosphamide, Hydroxydaunorubicin, Oncovin, Prednisone (CHOP)*
+     – Extracted drug: **CHOP**
+     – **Do not** add *Cyclophosphamide, Hydroxydaunorubicin, Oncovin, Prednisone* as potential valid drugs, because **CHOP is already captured**.
+
+  2. *Idarubicin (Ida)*
+     – Extracted drug: **Idarubicin**
+     – **Do not** add *Ida* as a potential valid drug, because **Idarubicin is already captured**.
+
 
 9. **Non-Therapeutic Drugs**
 
@@ -172,5 +184,3 @@ Notes:
 * Populate `Non-Therapeutic Drugs` with the original extracted drug strings that you explicitly judged non-therapeutic in `Flagged Drugs`.
 * Document every step as ordered, concise `Reasoning` lines with confidence when uncertain.
 * Return **only** the JSON object in the Output Format.
-
-  
