@@ -4,6 +4,12 @@ Batch Processor for Drug Class Extraction Agent
 
 This script processes multiple drugs using the drug class extraction agent
 and saves results to CSV format for analysis.
+
+Features:
+- Reads abstract_id, abstract_title, drug_name, firm, full_abstract from input CSV
+- Handles multiple drugs per row (comma/semicolon separated)
+- Groups results by drug with flattened drug_classes column
+- Preserves all original input columns in output
 """
 
 import argparse
@@ -23,19 +29,19 @@ sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from src.drug_class_agent import DrugClassAgent
 
 
-def load_drugs_from_csv(csv_path: str, max_entries: int = None, randomize: bool = False) -> List[Dict]:
-    """Load drugs from CSV file.
+def load_rows_from_csv(csv_path: str, max_entries: int = None, randomize: bool = False) -> List[Dict]:
+    """Load rows from CSV file.
 
-    Handles multiple drugs per row by expanding into separate entries.
-    For example, a row with "DrugA, DrugB" becomes two entries.
+    Each row may contain multiple drugs (comma/semicolon separated).
+    Returns row-level entries with drug list and original row data.
 
     Args:
         csv_path: Path to the CSV file
-        max_entries: Maximum number of entries to return (after expansion)
+        max_entries: Maximum number of CSV rows to return
         randomize: Whether to randomize the selection
 
     Returns:
-        List of dictionaries with drug data (one per drug)
+        List of dictionaries with row data
     """
     entries = []
 
@@ -56,38 +62,61 @@ def load_drugs_from_csv(csv_path: str, max_entries: int = None, randomize: bool 
             # Find the correct header names for our required fields
             drug_name_col = header_map.get('drug_name') or header_map.get('drug name') or header_map.get('drug')
             firm_col = header_map.get('firm') or header_map.get('company') or header_map.get('sponsor')
+            abstract_id_col = header_map.get('abstract_id') or header_map.get('id')
+            abstract_title_col = header_map.get('abstract_title') or header_map.get('title')
+            full_abstract_col = header_map.get('full_abstract') or header_map.get('abstract')
+            ground_truth_col = header_map.get('drug class - ground truth (manually extracted)') or header_map.get('ground_truth')
 
             if not drug_name_col:
                 print(f"Warning: Could not find drug_name column in {csv_path}")
                 print(f"Available columns: {list(header_map.keys())}")
                 return entries
 
-            rows_processed = 0
-            for row in reader:
-                rows_processed += 1
-
+            for row_id, row in enumerate(reader, start=1):
                 # Parse drug_name as list (comma-separated or semicolon-separated)
-                drug_value = row.get(drug_name_col, '').strip()
-                if drug_value:
-                    drug_names = [d.strip() for d in drug_value.replace(';', ',').split(',') if d.strip()]
+                raw_drug_name = row.get(drug_name_col, '').strip()
+                if raw_drug_name:
+                    individual_drugs = [d.strip() for d in raw_drug_name.replace(';', ',').split(',') if d.strip()]
                 else:
-                    drug_names = []
+                    individual_drugs = []
+
+                if not individual_drugs:
+                    continue
 
                 # Parse firm as list (comma-separated or semicolon-separated)
-                firm_value = row.get(firm_col, '').strip() if firm_col else ''
-                if firm_value:
-                    firms = [f.strip() for f in firm_value.replace(';', ',').split(',') if f.strip()]
+                raw_firm = row.get(firm_col, '').strip() if firm_col else ''
+                if raw_firm:
+                    firms = [f.strip() for f in raw_firm.replace(';', ',').split(',') if f.strip()]
                 else:
                     firms = []
 
-                # Create separate entry for each drug
-                for drug_name in drug_names:
-                    entries.append({
-                        'drug_name': drug_name,
-                        'firm': firms,  # List of firms (shared)
-                    })
+                # Get abstract fields
+                abstract_id = row.get(abstract_id_col, '').strip() if abstract_id_col else ''
+                abstract_title = row.get(abstract_title_col, '').strip() if abstract_title_col else ''
+                full_abstract = row.get(full_abstract_col, '').strip() if full_abstract_col else ''
+                ground_truth = row.get(ground_truth_col, '').strip() if ground_truth_col else ''
 
-            print(f"  Processed {rows_processed} CSV rows -> {len(entries)} drug entries")
+                # Store original row data for output
+                original_row = {
+                    'abstract_id': abstract_id,
+                    'abstract_title': abstract_title,
+                    'drug_name': raw_drug_name,  # Original (may have multiple)
+                    'Drug Class - Ground truth (Manually extracted)': ground_truth,
+                    'firm': raw_firm,
+                    'full_abstract': full_abstract,
+                }
+
+                entries.append({
+                    'row_id': row_id,
+                    'original_row': original_row,
+                    'individual_drugs': individual_drugs,
+                    'firms': firms,
+                    'abstract_id': abstract_id,
+                    'abstract_title': abstract_title,
+                    'full_abstract': full_abstract,
+                })
+
+        print(f"  Loaded {len(entries)} CSV rows")
 
         if randomize and max_entries and len(entries) > max_entries:
             import random
@@ -116,8 +145,8 @@ def extract_drug_class_from_response(result: Dict) -> Dict[str, Any]:
 
         if not drug_class_result:
             return {
-                'drug_classes': [],
-                'content_urls': [],
+                'drug_classes': ['NA'],
+                'content_urls': ['NA'],
                 'steps_taken': [],
                 'success': False,
             }
@@ -149,78 +178,111 @@ def extract_drug_class_from_response(result: Dict) -> Dict[str, Any]:
     except Exception as e:
         print(f"Error extracting drug class: {e}")
         return {
-            'drug_classes': [],
-            'content_urls': [],
+            'drug_classes': ['NA'],
+            'content_urls': ['NA'],
             'steps_taken': [],
             'success': False,
             'error': str(e),
         }
 
 
-def process_single_drug(drug_data: Dict, agent: DrugClassAgent, index: int) -> Dict:
-    """Process a single drug and return the result.
+def process_single_row(entry: Dict, agent: DrugClassAgent, index: int) -> Dict:
+    """Process a single row (may contain multiple drugs) and return grouped results.
 
     Args:
-        drug_data: Drug dictionary with drug_name and firm (list)
+        entry: Row dictionary with individual_drugs list and original row data
         agent: Initialized DrugClassAgent
-        index: Index of the drug for logging
+        index: Index of the row for logging
 
     Returns:
-        Dictionary with processing result
+        Dictionary with grouped processing result
     """
-    drug_name = drug_data['drug_name']
-    firms = drug_data['firm']  # List of firms
+    individual_drugs = entry['individual_drugs']
+    firms = entry['firms']
+    abstract_title = entry['abstract_title']
+    full_abstract = entry['full_abstract']
+    original_row = entry['original_row']
 
-    print(f"Processing drug {index}: {drug_name}")
+    print(f"[{index}] Processing row with drugs: {individual_drugs}")
 
-    try:
-        # Invoke the agent with firm list
-        result = agent.invoke(drug=drug_name, firm=firms)
+    # Process each drug individually - separate groupings for each field
+    drug_classes_grouped = {}
+    content_urls_grouped = {}
+    steps_taken_grouped = {}
+    all_drug_classes = []  # For flattened output
+    success_flags = []
+    total_llm_calls = 0
+    total_search_results = 0
 
-        # Extract drug class data
-        extracted_data = extract_drug_class_from_response(result)
+    for drug in individual_drugs:
+        print(f"  - Processing drug: {drug}")
 
-        # Count search results
-        drug_class_search_count = len(result.get('drug_class_search_results', []))
-        firm_search_count = len(result.get('firm_search_results', []))
-        total_search_results = drug_class_search_count + firm_search_count
+        try:
+            # Invoke the agent with firm list and abstract info
+            result = agent.invoke(
+                drug=drug,
+                firm=firms,
+                abstract_title=abstract_title,
+                full_abstract=full_abstract,
+                abstract_id=entry['abstract_id']
+            )
 
-        # Build result row
-        result_row = {
-            'drug_name': drug_name,
-            'firm': json.dumps(firms),  # Store as JSON array
-            'drug_classes': json.dumps(extracted_data['drug_classes']),
-            'content_urls': json.dumps(extracted_data['content_urls']),
-            'steps_taken': json.dumps(extracted_data['steps_taken']),
-            'success': extracted_data['success'],
-            'llm_calls': result.get('llm_calls', 0),
-            'search_results_count': total_search_results,
-        }
+            # Extract drug class data
+            extracted_data = extract_drug_class_from_response(result)
 
-        return result_row
+            # Count search results
+            drug_class_search_count = len(result.get('drug_class_search_results', []))
+            firm_search_count = len(result.get('firm_search_results', []))
+            total_search_results += drug_class_search_count + firm_search_count
+            total_llm_calls += result.get('llm_calls', 0)
 
-    except Exception as e:
-        print(f"Error processing drug {drug_name}: {e}")
-        # Add error result
-        result_row = {
-            'drug_name': drug_name,
-            'firm': json.dumps(firms),  # Store as JSON array
-            'drug_classes': json.dumps([]),
-            'content_urls': json.dumps([]),
-            'steps_taken': json.dumps([]),
-            'success': False,
-            'llm_calls': 0,
-            'search_results_count': 0,
-        }
-        return result_row
+            # Store grouped results separately
+            drug_classes_grouped[drug] = extracted_data.get("drug_classes", ["NA"])
+            content_urls_grouped[drug] = extracted_data.get("content_urls", ["NA"])
+            steps_taken_grouped[drug] = extracted_data.get("steps_taken", [])
+            success_flags.append(extracted_data.get("success", False))
+
+            # Collect drug classes for flattened output (exclude "NA")
+            drug_classes = extracted_data.get("drug_classes", [])
+            for dc in drug_classes:
+                if dc and dc != "NA" and dc not in all_drug_classes:
+                    all_drug_classes.append(dc)
+
+        except Exception as e:
+            print(f"  Error processing drug {drug}: {e}")
+            drug_classes_grouped[drug] = ["NA"]
+            content_urls_grouped[drug] = ["NA"]
+            steps_taken_grouped[drug] = []
+            success_flags.append(False)
+
+    # If no valid drug classes found, use ["NA"]
+    if not all_drug_classes:
+        all_drug_classes = ["NA"]
+
+    # Determine overall success
+    overall_success = any(success_flags)
+
+    # Build output row (preserve original columns + add new ones)
+    output_row = original_row.copy()
+    output_row.update({
+        "drug_classes_grouped": json.dumps(drug_classes_grouped),  # Only drug classes grouped by drug
+        "content_urls_grouped": json.dumps(content_urls_grouped),  # Content URLs grouped by drug
+        "steps_taken_grouped": json.dumps(steps_taken_grouped),  # Steps taken grouped by drug
+        "drug_classes": json.dumps(all_drug_classes),  # Flattened
+        "success": overall_success,
+        "llm_calls": total_llm_calls,
+        "search_results_count": total_search_results,
+    })
+
+    return output_row
 
 
-def process_drugs_batch(drugs: List[Dict], agent: DrugClassAgent,
-                        output_file: str = None, max_workers: int = 3) -> pd.DataFrame:
-    """Process a batch of drugs and return results DataFrame.
+def process_rows_batch(entries: List[Dict], agent: DrugClassAgent,
+                       output_file: str = None, max_workers: int = 3) -> pd.DataFrame:
+    """Process a batch of rows and return results DataFrame.
 
     Args:
-        drugs: List of drug dictionaries
+        entries: List of row dictionaries
         agent: Initialized DrugClassAgent
         output_file: Optional output file path to save intermediate results
         max_workers: Number of parallel workers (default: 3)
@@ -228,16 +290,16 @@ def process_drugs_batch(drugs: List[Dict], agent: DrugClassAgent,
     Returns:
         DataFrame with processing results
     """
-    print(f"Processing {len(drugs)} drugs (using {max_workers} parallel threads)")
+    print(f"Processing {len(entries)} rows (using {max_workers} parallel threads)")
 
     results = []
 
-    # Process drugs in parallel using ThreadPoolExecutor
+    # Process rows in parallel using ThreadPoolExecutor
     with concurrent.futures.ThreadPoolExecutor(max_workers=max_workers) as executor:
         # Submit all tasks
         future_to_index = {
-            executor.submit(process_single_drug, drug, agent, i): i
-            for i, drug in enumerate(drugs, 1)
+            executor.submit(process_single_row, entry, agent, i): i
+            for i, entry in enumerate(entries, 1)
         }
 
         # Collect results as they complete
@@ -249,13 +311,13 @@ def process_drugs_batch(drugs: List[Dict], agent: DrugClassAgent,
                 results.append((index, result_row))  # Store with index to maintain order
                 completed_count += 1
 
-                # Save intermediate results every 10 drugs
+                # Save intermediate results every 10 rows
                 if output_file and completed_count % 10 == 0:
                     # Sort results by index to maintain original order for intermediate saves
                     sorted_results = [result for _, result in sorted(results)]
                     temp_df = pd.DataFrame(sorted_results)
                     temp_df.to_csv(output_file, index=False)
-                    print(f"Saved intermediate results ({completed_count}/{len(drugs)}) to {output_file}")
+                    print(f"Saved intermediate results ({completed_count}/{len(entries)}) to {output_file}")
 
             except Exception as e:
                 print(f"Error in thread execution: {e}")
@@ -278,14 +340,14 @@ def process_drugs_batch(drugs: List[Dict], agent: DrugClassAgent,
 def main():
     """Main batch processing function."""
     parser = argparse.ArgumentParser(description='Batch Process Drug Class Extraction')
-    parser.add_argument('--input_file', default='data/drug_class_input.csv',
+    parser.add_argument('--input_file', default='data/drug_class_input_500.csv',
                         help='Input CSV file with drugs')
     parser.add_argument('--output_file', default=None,
                         help='Output CSV file (default: auto-generated)')
     parser.add_argument('--max_entries', type=int, default=None,
-                        help='Max entries to process after expansion (default: all)')
+                        help='Max CSV rows to process (default: all)')
     parser.add_argument('--randomize', action='store_true',
-                        help='Randomize entry selection')
+                        help='Randomize row selection')
     parser.add_argument('--extraction_model', default='gpt-4.1',
                         help='Model to use for drug class extraction (default: gpt-4.1)')
     parser.add_argument('--max_workers', type=int, default=3,
@@ -308,19 +370,19 @@ def main():
     print(f"Max workers: {args.max_workers}")
     print()
 
-    # Load drugs (expands rows with multiple drugs into separate entries)
-    print("Loading drugs from CSV...")
-    entries = load_drugs_from_csv(
+    # Load rows from CSV
+    print("Loading rows from CSV...")
+    entries = load_rows_from_csv(
         args.input_file,
         max_entries=args.max_entries,
         randomize=args.randomize
     )
 
     if not entries:
-        print("No drug entries loaded. Exiting.")
+        print("No rows loaded. Exiting.")
         return
 
-    print(f"Total entries to process: {len(entries)}")
+    print(f"Total rows to process: {len(entries)}")
     print()
 
     # Initialize agent
@@ -332,19 +394,19 @@ def main():
     print("✓ Agent initialized successfully!")
     print()
 
-    # Process entries
-    results_df = process_drugs_batch(
+    # Process rows
+    results_df = process_rows_batch(
         entries, agent, args.output_file, max_workers=args.max_workers
     )
 
     # Summary
     total_processed = len(results_df)
-    successful = results_df['success'].sum()
+    successful = results_df['success'].sum() if 'success' in results_df.columns else 0
     success_rate = (successful / total_processed * 100) if total_processed > 0 else 0
 
     print()
     print("📊 Processing Summary:")
-    print(f"Total drugs processed: {total_processed}")
+    print(f"Total rows processed: {total_processed}")
     print(f"Successful extractions: {int(successful)}")
     print(f"Success rate: {success_rate:.1f}%")
     print(f"Results saved to: {args.output_file}")
@@ -352,4 +414,3 @@ def main():
 
 if __name__ == "__main__":
     main()
-

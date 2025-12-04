@@ -31,6 +31,8 @@ class DrugClassState(TypedDict):
     Attributes:
         drug: The drug name to extract class for
         firm: List of pharmaceutical firm/company names
+        abstract_title: The abstract title for context
+        full_abstract: The full abstract text for context
         drug_class_search_results: Results from the first Tavily search (drug class info)
         firm_search_results: Results from the second Tavily search (drug + firm)
         drug_class_result: Final extraction result with drug classes
@@ -39,6 +41,8 @@ class DrugClassState(TypedDict):
 
     drug: str
     firm: list  # List of firm names
+    abstract_title: str
+    full_abstract: str
     drug_class_search_results: list
     firm_search_results: list
     drug_class_result: dict
@@ -319,13 +323,22 @@ class DrugClassAgent:
             print(f"✗ Error during firm search: {e}")
             return {"firm_search_results": []}
 
-    def _format_search_results_for_prompt(self, drug: str, drug_class_results: list, firm_results: list) -> str:
+    def _format_search_results_for_prompt(
+        self,
+        drug: str,
+        drug_class_results: list,
+        firm_results: list,
+        abstract_title: str = "",
+        full_abstract: str = ""
+    ) -> str:
         """Format search results according to the prompt's INPUT specification.
 
         Args:
             drug: The drug name
             drug_class_results: Results from drug class search
             firm_results: Results from firm search
+            abstract_title: The abstract title for context
+            full_abstract: The full abstract text for context
 
         Returns:
             str: Formatted input string for the extraction prompt
@@ -333,23 +346,36 @@ class DrugClassAgent:
         # Combine all results
         all_results = drug_class_results + firm_results
 
-        if not all_results:
-            return f"Drug: {drug}\n\nNo search results available."
-
         # Format the input
         formatted_parts = [f"Drug: {drug}"]
 
-        for i, result in enumerate(all_results, 1):
-            # Use raw_content if available, otherwise fall back to content
-            content = result.get("raw_content") or result.get("content", "No content available")
-            url = result.get("url", "Unknown URL")
+        # Add abstract title if provided
+        if abstract_title:
+            formatted_parts.append(f"\nAbstract title: {abstract_title}")
 
-            # Truncate very long content
-            if len(content) > 5000:
-                content = content[:5000] + "... [truncated]"
+        # Add full abstract if provided
+        if full_abstract:
+            # Truncate very long abstracts
+            abstract_text = full_abstract
+            if len(abstract_text) > 10000:
+                abstract_text = abstract_text[:10000] + "... [truncated]"
+            formatted_parts.append(f"\nFull Abstract Text: {abstract_text}")
 
-            formatted_parts.append(f"\nExtracted Content {i}: {content}")
-            formatted_parts.append(f"Content {i} URL: {url}")
+        # Add search results
+        if not all_results:
+            formatted_parts.append("\nNo search results available.")
+        else:
+            for i, result in enumerate(all_results, 1):
+                # Use raw_content if available, otherwise fall back to content
+                content = result.get("raw_content") or result.get("content", "No content available")
+                url = result.get("url", "Unknown URL")
+
+                # Truncate very long content
+                if len(content) > 5000:
+                    content = content[:5000] + "... [truncated]"
+
+                formatted_parts.append(f"\nExtracted Content {i}: {content}")
+                formatted_parts.append(f"Content {i} URL: {url}")
 
         return "\n".join(formatted_parts)
 
@@ -368,9 +394,13 @@ class DrugClassAgent:
         drug = state.get("drug", "")
         drug_class_results = state.get("drug_class_search_results", [])
         firm_results = state.get("firm_search_results", [])
+        abstract_title = state.get("abstract_title", "")
+        full_abstract = state.get("full_abstract", "")
 
-        # Format search results for the prompt
-        formatted_input = self._format_search_results_for_prompt(drug, drug_class_results, firm_results)
+        # Format search results for the prompt (including abstract info)
+        formatted_input = self._format_search_results_for_prompt(
+            drug, drug_class_results, firm_results, abstract_title, full_abstract
+        )
 
         # Create messages for LLM call
         messages_for_llm = [
@@ -424,7 +454,14 @@ class DrugClassAgent:
                 "llm_calls": state.get("llm_calls", 0) + 1,
             }
 
-    def invoke(self, drug: str, firm: list = None) -> dict:
+    def invoke(
+        self,
+        drug: str,
+        firm: list = None,
+        abstract_title: str = "",
+        full_abstract: str = "",
+        abstract_id: str = ""
+    ) -> dict:
         """Invoke the drug class extraction agent with drug and firm names.
 
         This method runs the search and extraction steps, returning the final response.
@@ -432,6 +469,9 @@ class DrugClassAgent:
         Args:
             drug: The drug name to extract class for
             firm: List of pharmaceutical firm/company names (optional)
+            abstract_title: The abstract title for context (optional)
+            full_abstract: The full abstract text for context (optional)
+            abstract_id: The abstract ID for tagging in Langfuse (optional)
 
         Returns:
             dict: Final state containing drug class extraction result
@@ -443,17 +483,22 @@ class DrugClassAgent:
             # Handle backward compatibility if string is passed
             firm = [firm] if firm else []
 
-        # Build tags for Langfuse tracing (drug name as tag)
+        # Build tags for Langfuse tracing
         tags = [
             drug,  # Drug name as tag
             f"extraction_prompt_version:{getattr(self, 'extraction_prompt_version', 'unknown')}",
             f"extraction_model:{self.extraction_llm_config.model}",
         ]
+        # Add abstract_id as tag if provided
+        if abstract_id:
+            tags.append(f"abstract_id:{abstract_id}")
 
         # Create initial state
         initial_state = {
             "drug": drug,
             "firm": firm,
+            "abstract_title": abstract_title,
+            "full_abstract": full_abstract,
             "drug_class_search_results": [],
             "firm_search_results": [],
             "drug_class_result": {},
@@ -493,6 +538,8 @@ class DrugClassAgent:
             return {
                 "drug": drug,
                 "firm": firm,
+                "abstract_title": abstract_title,
+                "full_abstract": full_abstract,
                 "drug_class_search_results": [],
                 "firm_search_results": [],
                 "drug_class_result": {

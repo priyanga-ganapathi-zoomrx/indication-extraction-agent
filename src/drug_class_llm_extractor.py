@@ -2,15 +2,20 @@
 """
 Drug Class LLM Extractor
 
-This script reads cached Tavily search results and uses LLM to extract drug classes.
-This allows experimenting with the prompt multiple times without consuming
-additional Tavily credits.
+This script reads an input CSV with drug/firm/abstract info, looks up cached
+Tavily search results, and uses LLM to extract drug classes.
 
-Supports both old cache format (flat) and new optimized format (nested).
+Features:
+- Reads abstract_id, abstract_title, drug_name, firm, full_abstract from input CSV
+- Looks up search results from cache (keyed by drug name)
+- Handles multiple drugs per row (comma/semicolon separated)
+- Groups results by drug with flattened drug_classes column
+- Preserves all original input columns in output
 """
 
 import argparse
 import concurrent.futures
+import csv
 import json
 import os
 import re
@@ -43,8 +48,8 @@ def load_cache(cache_file: str) -> Dict:
         Dictionary with cached data
     """
     if not os.path.exists(cache_file):
-        print(f"Error: Cache file not found at {cache_file}")
-        return {}
+        print(f"Warning: Cache file not found at {cache_file}")
+        return {"drugs": {}}
 
     try:
         with open(cache_file, 'r', encoding='utf-8') as f:
@@ -54,79 +59,183 @@ def load_cache(cache_file: str) -> Dict:
             return data
     except Exception as e:
         print(f"Error loading cache: {e}")
-        return {}
+        return {"drugs": {}}
 
 
-def get_entries_from_cache(cache_data: Dict) -> List[Tuple[str, List[str], List[Dict], List[Dict]]]:
-    """Extract all drug+firm entries from cache (supports both old and new format).
+def get_firms_key(firms: List[str]) -> str:
+    """Create a consistent key for a list of firms.
 
     Args:
-        cache_data: Cache dictionary
+        firms: List of firm names
 
     Returns:
-        List of tuples: (drug_name, firms, drug_class_results, firm_results)
+        JSON-serialized key
     """
+    sorted_firms = sorted([f.strip() for f in firms if f.strip()])
+    return json.dumps(sorted_firms)
+
+
+def load_input_csv(csv_path: str, max_entries: int = None) -> List[Dict]:
+    """Load input CSV with drug/firm/abstract information.
+
+    Handles multiple drugs in a single drug_name cell by creating separate entries.
+    Each row maps to one or more processing entries, grouped by row_id.
+
+    Args:
+        csv_path: Path to input CSV
+        max_entries: Maximum number of CSV rows to load
+
+    Returns:
+        List of dictionaries, each representing a processing entry
+    """
+    if not os.path.exists(csv_path):
+        print(f"Error: Input file not found at {csv_path}")
+        return []
+
     entries = []
-    drugs_cache = cache_data.get("drugs", {})
 
-    # Check cache version/format
-    # New format: drugs[drug_name]["drug_class_search"] exists
-    # Old format: drugs[key]["drug_class_search_results"] exists (key is "drug|firms")
+    with open(csv_path, 'r', encoding='utf-8') as f:
+        reader = csv.DictReader(f)
 
-    for key, value in drugs_cache.items():
-        # New optimized format
-        if "drug_class_search" in value and "firm_searches" in value:
-            drug_name = key
-            drug_class_results = value.get("drug_class_search", {}).get("results", [])
+        # Detect column names (case-insensitive matching)
+        fieldnames_lower = {name.lower(): name for name in reader.fieldnames} if reader.fieldnames else {}
 
-            # Iterate through all firm combinations for this drug
-            for firms_key, firm_data in value.get("firm_searches", {}).items():
-                firms = firm_data.get("firms", [])
-                firm_results = firm_data.get("results", [])
-                entries.append((drug_name, firms, drug_class_results, firm_results))
+        # Map expected columns
+        drug_col = next((fieldnames_lower[k] for k in ['drug_name', 'drug'] if k in fieldnames_lower), None)
+        firm_col = next((fieldnames_lower[k] for k in ['firm', 'company'] if k in fieldnames_lower), None)
+        abstract_id_col = next((fieldnames_lower[k] for k in ['abstract_id', 'id'] if k in fieldnames_lower), None)
+        abstract_title_col = next((fieldnames_lower[k] for k in ['abstract_title', 'title'] if k in fieldnames_lower), None)
+        full_abstract_col = next((fieldnames_lower[k] for k in ['full_abstract', 'abstract'] if k in fieldnames_lower), None)
+        ground_truth_col = next((fieldnames_lower[k] for k in ['drug class - ground truth (manually extracted)', 'ground_truth'] if k in fieldnames_lower), None)
 
-        # Old flat format (backward compatibility)
-        elif "drug_class_search_results" in value:
-            drug_name = value.get("drug_name", key.split("|")[0] if "|" in key else key)
-            firms = value.get("firm", [])
-            if isinstance(firms, str):
-                firms = [firms] if firms else []
-            drug_class_results = value.get("drug_class_search_results", [])
-            firm_results = value.get("firm_search_results", [])
-            entries.append((drug_name, firms, drug_class_results, firm_results))
+        row_count = 0
+        for row_id, row in enumerate(reader, start=1):
+            if max_entries and row_count >= max_entries:
+                break
 
+            # Get raw values
+            raw_drug_name = row.get(drug_col, '').strip() if drug_col else ''
+            raw_firm = row.get(firm_col, '').strip() if firm_col else ''
+            abstract_id = row.get(abstract_id_col, '').strip() if abstract_id_col else ''
+            abstract_title = row.get(abstract_title_col, '').strip() if abstract_title_col else ''
+            full_abstract = row.get(full_abstract_col, '').strip() if full_abstract_col else ''
+            ground_truth = row.get(ground_truth_col, '').strip() if ground_truth_col else ''
+
+            if not raw_drug_name:
+                continue
+
+            # Parse firms (comma or semicolon separated)
+            firms = [f.strip() for f in raw_firm.replace(';', ',').split(',') if f.strip()]
+
+            # Parse multiple drugs in a single cell (comma or semicolon separated)
+            individual_drugs = [d.strip() for d in raw_drug_name.replace(';', ',').split(',') if d.strip()]
+
+            # Store original row data for output
+            original_row = {
+                'abstract_id': abstract_id,
+                'abstract_title': abstract_title,
+                'drug_name': raw_drug_name,  # Original (may have multiple)
+                'Drug Class - Ground truth (Manually extracted)': ground_truth,
+                'firm': raw_firm,
+                'full_abstract': full_abstract,
+            }
+
+            entries.append({
+                'row_id': row_id,
+                'original_row': original_row,
+                'individual_drugs': individual_drugs,
+                'firms': firms,
+                'abstract_id': abstract_id,
+                'abstract_title': abstract_title,
+                'full_abstract': full_abstract,
+            })
+
+            row_count += 1
+
+    print(f"✓ Loaded {len(entries)} rows from input CSV")
     return entries
 
 
-def format_search_results_for_prompt(drug: str, drug_class_results: List[Dict], firm_results: List[Dict]) -> str:
+def get_search_results_from_cache(
+    cache_data: Dict,
+    drug_name: str,
+    firms: List[str]
+) -> Tuple[List[Dict], List[Dict]]:
+    """Look up search results from cache for a drug+firm combination.
+
+    Args:
+        cache_data: Cache dictionary
+        drug_name: Drug name to look up
+        firms: List of firm names
+
+    Returns:
+        Tuple of (drug_class_results, firm_results)
+    """
+    drugs_cache = cache_data.get("drugs", {})
+
+    # Look up drug in cache
+    drug_data = drugs_cache.get(drug_name, {})
+
+    if not drug_data:
+        return [], []
+
+    # Get drug class search results (shared for all firms)
+    drug_class_results = drug_data.get("drug_class_search", {}).get("results", [])
+
+    # Get firm-specific results
+    firms_key = get_firms_key(firms)
+    firm_results = drug_data.get("firm_searches", {}).get(firms_key, {}).get("results", [])
+
+    return drug_class_results, firm_results
+
+
+def format_search_results_for_prompt(
+    drug: str,
+    drug_class_results: List[Dict],
+    firm_results: List[Dict],
+    abstract_title: str = "",
+    full_abstract: str = ""
+) -> str:
     """Format search results according to the prompt's INPUT specification.
 
     Args:
         drug: The drug name
         drug_class_results: Results from drug class search
         firm_results: Results from firm search
+        abstract_title: Abstract title for context
+        full_abstract: Full abstract text for context
 
     Returns:
         str: Formatted input string for the extraction prompt
     """
     all_results = drug_class_results + firm_results
 
-    if not all_results:
-        return f"Drug: {drug}\n\nNo search results available."
-
     formatted_parts = [f"Drug: {drug}"]
 
-    for i, result in enumerate(all_results, 1):
-        # Use raw_content if available, otherwise fall back to content
-        content = result.get("raw_content") or result.get("content", "No content available")
-        url = result.get("url", "Unknown URL")
+    # Add abstract title if provided
+    if abstract_title:
+        formatted_parts.append(f"\nAbstract title: {abstract_title}")
 
-        # Truncate very long content
-        if len(content) > 5000:
-            content = content[:5000] + "... [truncated]"
+    # Add full abstract if provided
+    if full_abstract:
+        abstract_text = full_abstract
+        if len(abstract_text) > 10000:
+            abstract_text = abstract_text[:10000] + "... [truncated]"
+        formatted_parts.append(f"\nFull Abstract Text: {abstract_text}")
 
-        formatted_parts.append(f"\nExtracted Content {i}: {content}")
-        formatted_parts.append(f"Content {i} URL: {url}")
+    # Add search results
+    if not all_results:
+        formatted_parts.append("\nNo search results available.")
+    else:
+        for i, result in enumerate(all_results, 1):
+            content = result.get("raw_content") or result.get("content", "No content available")
+            url = result.get("url", "Unknown URL")
+
+            if len(content) > 5000:
+                content = content[:5000] + "... [truncated]"
+
+            formatted_parts.append(f"\nExtracted Content {i}: {content}")
+            formatted_parts.append(f"Content {i} URL: {url}")
 
     return "\n".join(formatted_parts)
 
@@ -135,9 +244,13 @@ def extract_drug_class(
     drug_name: str,
     drug_class_results: List[Dict],
     firm_results: List[Dict],
+    abstract_title: str,
+    full_abstract: str,
     llm,
     system_prompt: str,
-    langfuse_callback=None
+    langfuse_callback=None,
+    abstract_id: str = "",
+    prompt_version: str = ""
 ) -> Dict[str, Any]:
     """Extract drug class using LLM.
 
@@ -145,31 +258,47 @@ def extract_drug_class(
         drug_name: Name of the drug
         drug_class_results: Cached drug class search results
         firm_results: Cached firm search results
+        abstract_title: Abstract title for context
+        full_abstract: Full abstract text for context
         llm: Initialized LLM
         system_prompt: System prompt for extraction
         langfuse_callback: Optional Langfuse callback handler
+        abstract_id: Abstract ID for Langfuse tagging
+        prompt_version: Prompt version for Langfuse tagging
 
     Returns:
         Dictionary with extraction results
     """
-    # Format input for prompt
-    formatted_input = format_search_results_for_prompt(drug_name, drug_class_results, firm_results)
+    formatted_input = format_search_results_for_prompt(
+        drug_name, drug_class_results, firm_results, abstract_title, full_abstract
+    )
 
     messages = [
         SystemMessage(content=system_prompt),
         HumanMessage(content=formatted_input),
     ]
 
+    # Build tags for Langfuse tracing
+    tags = [drug_name]
+    if abstract_id:
+        tags.append(f"abstract_id:{abstract_id}")
+    if prompt_version:
+        tags.append(f"prompt_version:{prompt_version}")
+
     try:
-        # Invoke LLM
         if langfuse_callback:
-            response: AIMessage = llm.invoke(messages, config={"callbacks": [langfuse_callback]})
+            response: AIMessage = llm.invoke(
+                messages,
+                config={
+                    "callbacks": [langfuse_callback],
+                    "metadata": {"langfuse_tags": tags},
+                }
+            )
         else:
             response: AIMessage = llm.invoke(messages)
 
         content = response.content
 
-        # Parse JSON response
         try:
             json_match = re.search(r'\{.*\}', content, re.DOTALL)
             if json_match:
@@ -180,19 +309,16 @@ def extract_drug_class(
                     "content_urls": parsed.get("content_urls", ["NA"]),
                     "steps_taken": parsed.get("steps_taken", []),
                     "success": True,
-                    "raw_response": content,
                 }
         except json.JSONDecodeError as e:
             print(f"  ⚠ JSON parsing error for {drug_name}: {e}")
 
-        # Return with raw response if parsing fails
         return {
             "drug_name": drug_name,
             "drug_classes": ["NA"],
             "content_urls": ["NA"],
             "steps_taken": [],
             "success": False,
-            "raw_response": content,
             "error": "JSON parsing failed",
         }
 
@@ -208,55 +334,104 @@ def extract_drug_class(
         }
 
 
-def process_single_entry(
-    entry: Tuple[str, List[str], List[Dict], List[Dict]],
+def process_single_row(
+    entry: Dict,
+    cache_data: Dict,
     llm,
     system_prompt: str,
     index: int,
-    langfuse_callback=None
+    langfuse_callback=None,
+    prompt_version: str = ""
 ) -> Dict:
-    """Process a single drug+firm entry from cache.
+    """Process a single row from input CSV.
+
+    Handles multiple drugs in a row by processing each individually and grouping results.
 
     Args:
-        entry: Tuple of (drug_name, firms, drug_class_results, firm_results)
+        entry: Entry dict with row info and individual_drugs list
+        cache_data: Cache dictionary
         llm: Initialized LLM
         system_prompt: System prompt
         index: Index for logging
         langfuse_callback: Optional Langfuse callback
+        prompt_version: Prompt version for Langfuse tagging
 
     Returns:
-        Dictionary with processing result
+        Dictionary with grouped results for the row
     """
-    drug_name, firms, drug_class_results, firm_results = entry
+    individual_drugs = entry['individual_drugs']
+    firms = entry['firms']
+    abstract_title = entry['abstract_title']
+    full_abstract = entry['full_abstract']
+    abstract_id = entry['abstract_id']
+    original_row = entry['original_row']
 
-    print(f"[{index}] Processing: {drug_name}")
+    print(f"[{index}] Processing row with drugs: {individual_drugs}")
 
-    # Extract drug class
-    result = extract_drug_class(
-        drug_name=drug_name,
-        drug_class_results=drug_class_results,
-        firm_results=firm_results,
-        llm=llm,
-        system_prompt=system_prompt,
-        langfuse_callback=langfuse_callback,
-    )
+    # Process each drug individually - separate groupings for each field
+    drug_classes_grouped = {}
+    content_urls_grouped = {}
+    steps_taken_grouped = {}
+    all_drug_classes = []  # For flattened output
+    success_flags = []
 
-    # Build output row
-    return {
-        "drug_name": drug_name,
-        "firm": json.dumps(firms),  # Store as JSON array
-        "drug_classes": json.dumps(result.get("drug_classes", [])),
-        "content_urls": json.dumps(result.get("content_urls", [])),
-        "steps_taken": json.dumps(result.get("steps_taken", [])),
-        "success": result.get("success", False),
-        "raw_response": result.get("raw_response", ""),
-        "error": result.get("error", ""),
-    }
+    for drug in individual_drugs:
+        # Get search results from cache
+        drug_class_results, firm_results = get_search_results_from_cache(
+            cache_data, drug, firms
+        )
+
+        # Extract drug class
+        result = extract_drug_class(
+            drug_name=drug,
+            drug_class_results=drug_class_results,
+            firm_results=firm_results,
+            abstract_title=abstract_title,
+            full_abstract=full_abstract,
+            llm=llm,
+            system_prompt=system_prompt,
+            langfuse_callback=langfuse_callback,
+            abstract_id=abstract_id,
+            prompt_version=prompt_version,
+        )
+
+        # Store grouped results separately
+        drug_classes_grouped[drug] = result.get("drug_classes", ["NA"])
+        content_urls_grouped[drug] = result.get("content_urls", ["NA"])
+        steps_taken_grouped[drug] = result.get("steps_taken", [])
+        success_flags.append(result.get("success", False))
+
+        # Collect drug classes for flattened output (exclude "NA")
+        drug_classes = result.get("drug_classes", [])
+        for dc in drug_classes:
+            if dc and dc != "NA" and dc not in all_drug_classes:
+                all_drug_classes.append(dc)
+
+    # If no valid drug classes found, use ["NA"]
+    if not all_drug_classes:
+        all_drug_classes = ["NA"]
+
+    # Determine overall success
+    overall_success = any(success_flags)
+
+    # Build output row (preserve original columns + add new ones)
+    output_row = original_row.copy()
+    output_row.update({
+        "drug_classes_grouped": json.dumps(drug_classes_grouped),  # Only drug classes grouped by drug
+        "content_urls_grouped": json.dumps(content_urls_grouped),  # Content URLs grouped by drug
+        "steps_taken_grouped": json.dumps(steps_taken_grouped),  # Steps taken grouped by drug
+        "drug_classes": json.dumps(all_drug_classes),  # Flattened
+        "success": overall_success,
+    })
+
+    return output_row
 
 
 def main():
     """Main function for LLM extraction from cached data."""
     parser = argparse.ArgumentParser(description='Extract drug classes from cached search results')
+    parser.add_argument('--input_file', default='data/drug_class_input_500.csv',
+                        help='Input CSV file (default: data/drug_class_input_500.csv)')
     parser.add_argument('--cache_file', default='data/drug_search_cache.json',
                         help='Input JSON cache file (default: data/drug_search_cache.json)')
     parser.add_argument('--output_file', default=None,
@@ -268,9 +443,9 @@ def main():
     parser.add_argument('--max_tokens', type=int, default=4096,
                         help='LLM max tokens (default: 4096)')
     parser.add_argument('--max_entries', type=int, default=None,
-                        help='Maximum entries to process (default: all)')
-    parser.add_argument('--max_workers', type=int, default=3,
-                        help='Parallel workers (default: 3)')
+                        help='Maximum CSV rows to process (default: all)')
+    parser.add_argument('--max_workers', type=int, default=1,
+                        help='Parallel workers (default: 1)')
     parser.add_argument('--disable_langfuse', action='store_true',
                         help='Disable Langfuse tracing')
 
@@ -284,6 +459,7 @@ def main():
 
     print("🧬 Drug Class LLM Extractor")
     print("=" * 60)
+    print(f"Input file: {args.input_file}")
     print(f"Cache file: {args.cache_file}")
     print(f"Output file: {args.output_file}")
     print(f"Model: {args.model}")
@@ -294,21 +470,16 @@ def main():
     print(f"Langfuse: {'disabled' if args.disable_langfuse else 'enabled'}")
     print()
 
+    # Load input CSV
+    print("Loading input CSV...")
+    entries = load_input_csv(args.input_file, args.max_entries)
+    if not entries:
+        print("No entries found in input CSV.")
+        return
+
     # Load cache
     print("Loading cache...")
     cache_data = load_cache(args.cache_file)
-    if not cache_data or not cache_data.get("drugs"):
-        print("No cached data found. Run drug_class_search_fetcher.py first.")
-        return
-
-    # Get all entries from cache (supports both formats)
-    entries = get_entries_from_cache(cache_data)
-    print(f"Found {len(entries)} drug+firm entries in cache")
-
-    if args.max_entries:
-        entries = entries[:args.max_entries]
-
-    print(f"Processing {len(entries)} entries")
 
     # Initialize Langfuse
     langfuse_config = get_langfuse_config() if not args.disable_langfuse else None
@@ -346,23 +517,23 @@ def main():
     # Load system prompt
     print("\nLoading prompt...")
     system_prompt, prompt_version = get_system_prompt(
-        langfuse_client=None,  # Use local file for experimentation
+        langfuse_client=None,
         prompt_name="DRUG_CLASS_EXTRACTION_FROM_SEARCH",
         fallback_to_file=True,
     )
     print(f"✓ Prompt loaded (version: {prompt_version})")
 
     # Process entries
-    print("\nExtracting drug classes...")
+    print(f"\nProcessing {len(entries)} rows...")
     print("-" * 60)
 
     results = []
 
-    # Process sequentially for better logging (or use parallel if needed)
     if args.max_workers == 1:
+        # Sequential processing
         for i, entry in enumerate(entries, 1):
-            result = process_single_entry(
-                entry, llm, system_prompt, i, langfuse_callback
+            result = process_single_row(
+                entry, cache_data, llm, system_prompt, i, langfuse_callback, prompt_version
             )
             results.append(result)
     else:
@@ -370,12 +541,14 @@ def main():
         with concurrent.futures.ThreadPoolExecutor(max_workers=args.max_workers) as executor:
             future_to_idx = {
                 executor.submit(
-                    process_single_entry,
+                    process_single_row,
                     entry,
+                    cache_data,
                     llm,
                     system_prompt,
                     i,
-                    langfuse_callback
+                    langfuse_callback,
+                    prompt_version
                 ): i
                 for i, entry in enumerate(entries, 1)
             }
@@ -386,7 +559,7 @@ def main():
                     result = future.result()
                     results.append((idx, result))
                 except Exception as e:
-                    print(f"Error processing entry {idx}: {e}")
+                    print(f"Error processing row {idx}: {e}")
 
         # Sort by index if parallel
         if results and isinstance(results[0], tuple):
@@ -404,7 +577,7 @@ def main():
     success_rate = (successful / total * 100) if total > 0 else 0
 
     print("📊 Summary:")
-    print(f"  Total processed: {total}")
+    print(f"  Total rows processed: {total}")
     print(f"  Successful: {int(successful)}")
     print(f"  Success rate: {success_rate:.1f}%")
     print(f"  Results saved to: {args.output_file}")
