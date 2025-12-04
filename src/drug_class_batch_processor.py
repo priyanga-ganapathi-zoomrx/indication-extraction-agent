@@ -23,22 +23,25 @@ sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from src.drug_class_agent import DrugClassAgent
 
 
-def load_drugs_from_csv(csv_path: str, max_drugs: int = None, randomize: bool = False) -> List[Dict]:
+def load_drugs_from_csv(csv_path: str, max_entries: int = None, randomize: bool = False) -> List[Dict]:
     """Load drugs from CSV file.
+
+    Handles multiple drugs per row by expanding into separate entries.
+    For example, a row with "DrugA, DrugB" becomes two entries.
 
     Args:
         csv_path: Path to the CSV file
-        max_drugs: Maximum number of drugs to load
+        max_entries: Maximum number of entries to return (after expansion)
         randomize: Whether to randomize the selection
 
     Returns:
-        List of dictionaries with drug data
+        List of dictionaries with drug data (one per drug)
     """
-    drugs = []
+    entries = []
 
     if not os.path.exists(csv_path):
         print(f"Error: CSV file not found at {csv_path}")
-        return drugs
+        return entries
 
     try:
         with open(csv_path, 'r', encoding='utf-8-sig') as file:
@@ -57,25 +60,42 @@ def load_drugs_from_csv(csv_path: str, max_drugs: int = None, randomize: bool = 
             if not drug_name_col:
                 print(f"Warning: Could not find drug_name column in {csv_path}")
                 print(f"Available columns: {list(header_map.keys())}")
-                return drugs
+                return entries
 
+            rows_processed = 0
             for row in reader:
-                drug_data = {
-                    'drug_name': row.get(drug_name_col, '').strip(),
-                    'firm': row.get(firm_col, '').strip() if firm_col else '',
-                }
+                rows_processed += 1
 
-                # Only add if we have a drug name
-                if drug_data['drug_name']:
-                    drugs.append(drug_data)
+                # Parse drug_name as list (comma-separated or semicolon-separated)
+                drug_value = row.get(drug_name_col, '').strip()
+                if drug_value:
+                    drug_names = [d.strip() for d in drug_value.replace(';', ',').split(',') if d.strip()]
+                else:
+                    drug_names = []
 
-        if randomize and max_drugs and len(drugs) > max_drugs:
+                # Parse firm as list (comma-separated or semicolon-separated)
+                firm_value = row.get(firm_col, '').strip() if firm_col else ''
+                if firm_value:
+                    firms = [f.strip() for f in firm_value.replace(';', ',').split(',') if f.strip()]
+                else:
+                    firms = []
+
+                # Create separate entry for each drug
+                for drug_name in drug_names:
+                    entries.append({
+                        'drug_name': drug_name,
+                        'firm': firms,  # List of firms (shared)
+                    })
+
+            print(f"  Processed {rows_processed} CSV rows -> {len(entries)} drug entries")
+
+        if randomize and max_entries and len(entries) > max_entries:
             import random
-            drugs = random.sample(drugs, max_drugs)
-        elif max_drugs and len(drugs) > max_drugs:
-            drugs = drugs[:max_drugs]
+            entries = random.sample(entries, max_entries)
+        elif max_entries and len(entries) > max_entries:
+            entries = entries[:max_entries]
 
-        return drugs
+        return entries
 
     except Exception as e:
         print(f"Error reading CSV file: {e}")
@@ -141,7 +161,7 @@ def process_single_drug(drug_data: Dict, agent: DrugClassAgent, index: int) -> D
     """Process a single drug and return the result.
 
     Args:
-        drug_data: Drug dictionary with drug_name and firm
+        drug_data: Drug dictionary with drug_name and firm (list)
         agent: Initialized DrugClassAgent
         index: Index of the drug for logging
 
@@ -149,13 +169,13 @@ def process_single_drug(drug_data: Dict, agent: DrugClassAgent, index: int) -> D
         Dictionary with processing result
     """
     drug_name = drug_data['drug_name']
-    firm = drug_data['firm']
+    firms = drug_data['firm']  # List of firms
 
     print(f"Processing drug {index}: {drug_name}")
 
     try:
-        # Invoke the agent
-        result = agent.invoke(drug=drug_name, firm=firm)
+        # Invoke the agent with firm list
+        result = agent.invoke(drug=drug_name, firm=firms)
 
         # Extract drug class data
         extracted_data = extract_drug_class_from_response(result)
@@ -168,7 +188,7 @@ def process_single_drug(drug_data: Dict, agent: DrugClassAgent, index: int) -> D
         # Build result row
         result_row = {
             'drug_name': drug_name,
-            'firm': firm,
+            'firm': json.dumps(firms),  # Store as JSON array
             'drug_classes': json.dumps(extracted_data['drug_classes']),
             'content_urls': json.dumps(extracted_data['content_urls']),
             'steps_taken': json.dumps(extracted_data['steps_taken']),
@@ -184,7 +204,7 @@ def process_single_drug(drug_data: Dict, agent: DrugClassAgent, index: int) -> D
         # Add error result
         result_row = {
             'drug_name': drug_name,
-            'firm': firm,
+            'firm': json.dumps(firms),  # Store as JSON array
             'drug_classes': json.dumps([]),
             'content_urls': json.dumps([]),
             'steps_taken': json.dumps([]),
@@ -262,10 +282,10 @@ def main():
                         help='Input CSV file with drugs')
     parser.add_argument('--output_file', default=None,
                         help='Output CSV file (default: auto-generated)')
-    parser.add_argument('--num_drugs', type=int, default=None,
-                        help='Number of drugs to process (default: all)')
+    parser.add_argument('--max_entries', type=int, default=None,
+                        help='Max entries to process after expansion (default: all)')
     parser.add_argument('--randomize', action='store_true',
-                        help='Randomize drug selection')
+                        help='Randomize entry selection')
     parser.add_argument('--extraction_model', default='gpt-4.1',
                         help='Model to use for drug class extraction (default: gpt-4.1)')
     parser.add_argument('--max_workers', type=int, default=3,
@@ -283,24 +303,24 @@ def main():
     print(f"Input file: {args.input_file}")
     print(f"Output file: {args.output_file}")
     print(f"Extraction model: {args.extraction_model}")
-    print(f"Number of drugs: {args.num_drugs or 'all'}")
+    print(f"Max entries: {args.max_entries or 'all'}")
     print(f"Randomize: {args.randomize}")
     print(f"Max workers: {args.max_workers}")
     print()
 
-    # Load drugs
-    print("Loading drugs...")
-    drugs = load_drugs_from_csv(
+    # Load drugs (expands rows with multiple drugs into separate entries)
+    print("Loading drugs from CSV...")
+    entries = load_drugs_from_csv(
         args.input_file,
-        max_drugs=args.num_drugs,
+        max_entries=args.max_entries,
         randomize=args.randomize
     )
 
-    if not drugs:
-        print("No drugs loaded. Exiting.")
+    if not entries:
+        print("No drug entries loaded. Exiting.")
         return
 
-    print(f"Loaded {len(drugs)} drugs")
+    print(f"Total entries to process: {len(entries)}")
     print()
 
     # Initialize agent
@@ -312,9 +332,9 @@ def main():
     print("✓ Agent initialized successfully!")
     print()
 
-    # Process drugs
+    # Process entries
     results_df = process_drugs_batch(
-        drugs, agent, args.output_file, max_workers=args.max_workers
+        entries, agent, args.output_file, max_workers=args.max_workers
     )
 
     # Summary

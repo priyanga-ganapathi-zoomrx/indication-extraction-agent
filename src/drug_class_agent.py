@@ -30,7 +30,7 @@ class DrugClassState(TypedDict):
 
     Attributes:
         drug: The drug name to extract class for
-        firm: The pharmaceutical firm/company name
+        firm: List of pharmaceutical firm/company names
         drug_class_search_results: Results from the first Tavily search (drug class info)
         firm_search_results: Results from the second Tavily search (drug + firm)
         drug_class_result: Final extraction result with drug classes
@@ -38,7 +38,7 @@ class DrugClassState(TypedDict):
     """
 
     drug: str
-    firm: str
+    firm: list  # List of firm names
     drug_class_search_results: list
     firm_search_results: list
     drug_class_result: dict
@@ -264,24 +264,34 @@ class DrugClassAgent:
     def _firm_search_node(self, state: DrugClassState) -> dict:
         """Second Tavily search node for drug + firm information.
 
-        Query format: {Drug} {firm}
+        Query format:
+        - Single firm: ({drug} AND {firm})
+        - Multiple firms: ({drug} AND ({firm1} OR {firm2} OR ...))
+
         Config: search_depth="advanced", include_raw_content=True, max_results=3
 
         Args:
-            state: Current state containing drug and firm names
+            state: Current state containing drug and firm names (list)
 
         Returns:
             dict: Updated state with firm_search_results
         """
         drug = state.get("drug", "")
-        firm = state.get("firm", "")
+        firms = state.get("firm", [])
 
         if not self._tavily_client or not drug:
             print(f"⚠ Skipping firm search: {'No Tavily client' if not self._tavily_client else 'No drug name'}")
             return {"firm_search_results": []}
 
-        # Build the search query
-        query = f"{drug} {firm}" if firm else drug
+        # Build the search query based on number of firms
+        if not firms or len(firms) == 0:
+            query = drug
+        elif len(firms) == 1:
+            query = f'({drug} AND {firms[0]})'
+        else:
+            # Multiple firms: ({drug} AND ({firm1} OR {firm2} OR ...))
+            firms_or = " OR ".join(firms)
+            query = f'({drug} AND ({firms_or}))'
 
         try:
             print(f"🔍 Searching for drug + firm info: {query}")
@@ -414,18 +424,25 @@ class DrugClassAgent:
                 "llm_calls": state.get("llm_calls", 0) + 1,
             }
 
-    def invoke(self, drug: str, firm: str = "") -> dict:
+    def invoke(self, drug: str, firm: list = None) -> dict:
         """Invoke the drug class extraction agent with drug and firm names.
 
         This method runs the search and extraction steps, returning the final response.
 
         Args:
             drug: The drug name to extract class for
-            firm: The pharmaceutical firm/company name (optional)
+            firm: List of pharmaceutical firm/company names (optional)
 
         Returns:
             dict: Final state containing drug class extraction result
         """
+        # Normalize firm to list
+        if firm is None:
+            firm = []
+        elif isinstance(firm, str):
+            # Handle backward compatibility if string is passed
+            firm = [firm] if firm else []
+
         # Build tags for Langfuse tracing (drug name as tag)
         tags = [
             drug,  # Drug name as tag
@@ -461,7 +478,7 @@ class DrugClassAgent:
             print(f"\n{'='*60}")
             print(f"🚀 Starting Drug Class Extraction for: {drug}")
             if firm:
-                print(f"   Firm: {firm}")
+                print(f"   Firms: {', '.join(firm)}")
             print(f"{'='*60}\n")
             
             result = self.graph.invoke(initial_state, config)
