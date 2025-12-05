@@ -417,9 +417,9 @@ def process_single_row(
     # Build output row (preserve original columns + add new ones)
     output_row = original_row.copy()
     output_row.update({
-        "drug_classes_grouped": json.dumps(drug_classes_grouped),  # Only drug classes grouped by drug
-        "content_urls_grouped": json.dumps(content_urls_grouped),  # Content URLs grouped by drug
-        "steps_taken_grouped": json.dumps(steps_taken_grouped),  # Steps taken grouped by drug
+        "drug_classes_grouped": json.dumps(drug_classes_grouped, indent=2),  # Only drug classes grouped by drug (pretty-printed)
+        "content_urls_grouped": json.dumps(content_urls_grouped, indent=2),  # Content URLs grouped by drug (pretty-printed)
+        "steps_taken_grouped": json.dumps(steps_taken_grouped, indent=2),  # Steps taken grouped by drug (pretty-printed)
         "drug_classes": json.dumps(all_drug_classes),  # Flattened
         "success": overall_success,
     })
