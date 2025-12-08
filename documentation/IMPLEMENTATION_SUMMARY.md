@@ -134,7 +134,7 @@ Models use the `provider/model-name` format:
 
 ```python
 # Anthropic Claude
-model = "anthropic/claude-sonnet-4-20250514"
+model = "anthropic/claude-sonnet-4-5-20250929"
 
 # OpenAI GPT-4
 model = "openai/gpt-4"

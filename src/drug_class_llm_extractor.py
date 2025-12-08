@@ -20,10 +20,9 @@ import json
 import os
 import re
 import sys
+import threading
 from datetime import datetime
 from typing import Any, Dict, List, Tuple
-
-import pandas as pd
 
 # Add project root to sys.path to allow running as script
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
@@ -430,8 +429,8 @@ def process_single_row(
 def main():
     """Main function for LLM extraction from cached data."""
     parser = argparse.ArgumentParser(description='Extract drug classes from cached search results')
-    parser.add_argument('--input_file', default='data/drug_class_input_500.csv',
-                        help='Input CSV file (default: data/drug_class_input_500.csv)')
+    parser.add_argument('--input_file', default='data/drug_class_asco_100.csv',
+                        help='Input CSV file (default: data/drug_class_asco_100.csv)')
     parser.add_argument('--cache_file', default='data/drug_search_cache.json',
                         help='Input JSON cache file (default: data/drug_search_cache.json)')
     parser.add_argument('--output_file', default=None,
@@ -527,58 +526,74 @@ def main():
     print(f"\nProcessing {len(entries)} rows...")
     print("-" * 60)
 
-    results = []
+    # Define output fieldnames (original columns + new columns)
+    output_fieldnames = [
+        'abstract_id', 'abstract_title', 'drug_name',
+        'Drug Class - Ground truth (Manually extracted)', 'firm', 'full_abstract',
+        'drug_classes_grouped', 'content_urls_grouped', 'steps_taken_grouped',
+        'drug_classes', 'success'
+    ]
 
-    if args.max_workers == 1:
-        # Sequential processing
-        for i, entry in enumerate(entries, 1):
-            result = process_single_row(
-                entry, cache_data, llm, system_prompt, i, langfuse_callback, prompt_version
-            )
-            results.append(result)
-    else:
-        # Parallel processing
-        with concurrent.futures.ThreadPoolExecutor(max_workers=args.max_workers) as executor:
-            future_to_idx = {
-                executor.submit(
-                    process_single_row,
-                    entry,
-                    cache_data,
-                    llm,
-                    system_prompt,
-                    i,
-                    langfuse_callback,
-                    prompt_version
-                ): i
-                for i, entry in enumerate(entries, 1)
-            }
+    # Track results for summary
+    results_count = 0
+    success_count = 0
+    write_lock = threading.Lock()
 
-            for future in concurrent.futures.as_completed(future_to_idx):
-                idx = future_to_idx[future]
-                try:
-                    result = future.result()
-                    results.append((idx, result))
-                except Exception as e:
-                    print(f"Error processing row {idx}: {e}")
+    # Open CSV file for incremental writing
+    with open(args.output_file, 'w', newline='', encoding='utf-8') as csvfile:
+        writer = csv.DictWriter(csvfile, fieldnames=output_fieldnames, extrasaction='ignore')
+        writer.writeheader()
 
-        # Sort by index if parallel
-        if results and isinstance(results[0], tuple):
-            results.sort(key=lambda x: x[0])
-            results = [r[1] for r in results]
+        def write_result(result: Dict, idx: int):
+            """Write a single result to CSV (thread-safe)."""
+            nonlocal results_count, success_count
+            with write_lock:
+                writer.writerow(result)
+                csvfile.flush()  # Ensure data is written immediately
+                results_count += 1
+                if result.get('success'):
+                    success_count += 1
+                print(f"  ✓ Row {idx} saved to CSV")
 
-    # Save results
-    print(f"\n{'=' * 60}")
-    results_df = pd.DataFrame(results)
-    results_df.to_csv(args.output_file, index=False)
+        if args.max_workers == 1:
+            # Sequential processing
+            for i, entry in enumerate(entries, 1):
+                result = process_single_row(
+                    entry, cache_data, llm, system_prompt, i, langfuse_callback, prompt_version
+                )
+                write_result(result, i)
+        else:
+            # Parallel processing
+            with concurrent.futures.ThreadPoolExecutor(max_workers=args.max_workers) as executor:
+                future_to_idx = {
+                    executor.submit(
+                        process_single_row,
+                        entry,
+                        cache_data,
+                        llm,
+                        system_prompt,
+                        i,
+                        langfuse_callback,
+                        prompt_version
+                    ): i
+                    for i, entry in enumerate(entries, 1)
+                }
+
+                for future in concurrent.futures.as_completed(future_to_idx):
+                    idx = future_to_idx[future]
+                    try:
+                        result = future.result()
+                        write_result(result, idx)
+                    except Exception as e:
+                        print(f"Error processing row {idx}: {e}")
 
     # Summary
-    total = len(results_df)
-    successful = results_df['success'].sum() if 'success' in results_df.columns else 0
-    success_rate = (successful / total * 100) if total > 0 else 0
+    print(f"\n{'=' * 60}")
+    success_rate = (success_count / results_count * 100) if results_count > 0 else 0
 
     print("📊 Summary:")
-    print(f"  Total rows processed: {total}")
-    print(f"  Successful: {int(successful)}")
+    print(f"  Total rows processed: {results_count}")
+    print(f"  Successful: {success_count}")
     print(f"  Success rate: {success_rate:.1f}%")
     print(f"  Results saved to: {args.output_file}")
 

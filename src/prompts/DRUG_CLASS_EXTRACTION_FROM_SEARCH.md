@@ -39,10 +39,26 @@ All extraction decisions must be based **only** on these provided contents.
 
 ## EXTRACTION LOGIC & PRIORITY
 
+### Abstract Title Priority**
+
+If the **abstract title** mentions a drug class for the given drug, **that class must be prioritized over all others**, including MoA.
+You must:
+
+* **Capture only the drug class mentioned in the abstract title**
+* **Ignore all classes (MoA, therapeutic, chemical, mode) from other sources**
+* **Do not derive or infer anything further**
+
+---
+
 1. **Class Priority Rules**
 
    * **Mechanism of Action (MoA)** — **highest priority** (e.g., *PDL1-Inhibitor*, *FLAP Inhibitor*, *GLP-1 Agonist*).
      * If the extracted content or full abstract text mentions MoA, **capture only the MoA** and **ignore all other classes**, even if they are also present.
+
+     * If multiple MoAs appear, choose:
+
+       1. **The most specific MoA**, OR
+       2. **The MoA that appears across multiple sources** when several are equally specific.
 
    * **All remaining classes have equal (lower) priority:**
      * **Chemical Class** (e.g., *Thiazide*, *Benzodiazepine*)
@@ -57,15 +73,26 @@ All extraction decisions must be based **only** on these provided contents.
 
 3. **Chemotherapy regimens:** If the primary drug is a regimen and component drugs are explicitly listed in the extracted content, include the drug class for **each component** as separate elements in the list.
 
-4. **Cellular Therapy Enumeration** — Recognize and capture these exact terms when present :
+4. **Cellular Therapy Enumeration**
 
-  * `CAR T Therapy` (or `CAR T-Cell Therapy` / `CAR T-Targeted Therapy`)
-  * `Dendritic Cell Therapy`
-  * `NK Cell Therapy`
-  * `Adoptive Cell Therapy`
-  * `OrthoCAR-T Cell Therapy`
-  * `mfCAR-T Cell Therapy`
-  * `TIL Therapy` (Tumor-infiltrating lymphocytes Therapy)
+When a cell type is mentioned, you must convert it to **exactly** the following format:
+
+| Mentioned Cell Type                | Drug Class Output                              |
+| ---------------------------------- | ---------------------------------------------- |
+| Stem cell                          | **Stem cell therapy**                          |
+| Autologous hematopoietic cell      | **Autologous hematopoietic cell therapy**      |
+| Autologous hematopoietic stem cell | **Autologous hematopoietic stem cell therapy** |
+| CAR-T cell                         | **CAR-T cell therapy**                         |
+| NK cell                            | **NK cell therapy**                            |
+| Dendritic cell                     | **Dendritic cell therapy**                     |
+
+
+**Rules:**
+
+* Retain the exact cell type as it appears (no paraphrasing).
+* Only append the word **therapy**.
+* For cell therapies, **do NOT refer to other sources** to infer or expand modality/class.
+* Do NOT change capitalization beyond normal title case formatting.
 
 5. **Platform therapies:** Include platform + target (e.g., `AR-Targeted PROTAC`, `CD3/CD20-Targeted BITE`).
 
@@ -98,6 +125,15 @@ All extraction decisions must be based **only** on these provided contents.
 
 17. **Agonist / Antagonist** — Capture `Agonist` and `Antagonist` when explicitly stated .
 
+### Do Not Capture Abbreviated Drug Classes**
+
+When drug classes appear only as **abbreviations**, ignore them.
+Examples NOT to capture:
+
+* ADC (unless spelled out)
+* ICI (unless spelled out)
+* TKI (unless spelled out)
+
 
 ### Additional Rule Extensions
 
@@ -110,12 +146,6 @@ All extraction decisions must be based **only** on these provided contents.
 * `Platelet-rich Plasma` should be mapped to the MoA: `Plasma Therapy`.
 * `Stem Cell` should be captured as `Stem Cell Therapy` under Drug Class.
 * MoAs should be captured **only for primary drugs**, not secondary/comparator drugs.
-
-* Map specific biological cell types to their corresponding therapy classes:
-  * `Stem Cell` → `Stem Cell Therapy`
-  * `NK Cell` → `NK Cell Therapy`
-  * `CAR T-Cell` → `CAR T-Cell Therapy` / `CAR-T Therapy`
-  * `Dendritic Cell` → `Dendritic Cell Therapy`
 
 ---
 
@@ -143,6 +173,9 @@ All extraction decisions must be based **only** on these provided contents.
 * **If no drug class is mentioned in extracted content, full abstract text or abstract title** — Leave the drug class field **blank** when the input does **not** mention any drug class or MOA. Do **not** infer or generate one.
 
 * **Do not capture non-relevant terms** — Do **not** capture diseases, conditions, procedures, interventions, clinical endpoints, or any unrelated biomedical terms as drug classes.
+
+* Do **not** capture abbreviations such as `ADC`, `ICI`, `TKI`, `BITE`, etc.
+  Capture **only spelled-out** versions.
 
 ---
 
