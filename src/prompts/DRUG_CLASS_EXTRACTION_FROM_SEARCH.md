@@ -36,160 +36,164 @@ All extraction decisions must be based **only** on these provided contents.
 
 ---
 
-## YOUR TASK
 
-Extract high-quality drug class(es) by:
+## EXTRACTION LOGIC & PRIORITY
 
-1. **Analyzing the abstract title, abstract text, and extracted contents** provided by the user
-2. **Using the available `get_drug_class_rules` tool** to retrieve relevant category-specific rules when needed
-3. **Applying all core rules** (provided below) to ensure accuracy and standardization
-4. **Working agentic-style**: Think step-by-step, retrieve rules as needed, and refine your extraction
+### Abstract Title Priority**
 
----
+If the **abstract title** mentions a drug class for the given drug, **that class must be prioritized over all others**, including MoA.
+You must:
 
-## CORE EXTRACTION LOGIC & PRIORITY
-
-### 1. Source Priority
-
-**Abstract Title Priority**: If the abstract title mentions a drug class for the given drug, that class must be prioritized over all others, including MoA.
-
-### 2. Class Type Priority (when Abstract Title has no drug class)
-
-1. **Mechanism of Action (MoA)** — **highest priority** (e.g., *PDL1-Inhibitor*, *FLAP Inhibitor*, *GLP-1 Agonist*)
-   - If MoA is found, capture **only** the MoA and ignore other class types
-   - If multiple MoAs: choose the most specific OR the one appearing across multiple sources
-
-2. **Equal Lower Priority Classes** (capture ALL when MoA is absent):
-   - Chemical Class (e.g., *Thiazide*, *Benzodiazepine*)
-   - Mode of Action (e.g., *Bronchodilator*, *Vasoconstrictor*)
-   - Therapeutic Class (e.g., *Antidepressant*, *Anticancer*)
-
-### 3. Missing Data Rule
-
-If the extracted content does not provide a drug class, return `NA`. Do **not** invent or infer.
+* **Capture only the drug class mentioned in the abstract title**
+* **Ignore all classes (MoA, therapeutic, chemical, mode) from other sources**
+* **Do not derive or infer anything further**
 
 ---
 
-## AVAILABLE TOOLS
+1. **Class Priority Rules**
 
-### `get_drug_class_rules` Tool
+   * **Mechanism of Action (MoA)** — **highest priority** (e.g., *PDL1-Inhibitor*, *FLAP Inhibitor*, *GLP-1 Agonist*).
+     * If the extracted content or full abstract text mentions MoA, **capture only the MoA** and **ignore all other classes**, even if they are also present.
 
-Use this tool to retrieve category-specific rules when you identify relevant elements in the content.
+     * If multiple MoAs appear, choose:
 
-**Available Categories:**
+       1. **The most specific MoA**, OR
+       2. **The MoA that appears across multiple sources** when several are equally specific.
 
-1. **Priority Rules** - Rules for class priority and source handling
-   - Subcategories: Abstract Title Priority, MoA Priority, Lower Priority Classes
+   * **All remaining classes have equal (lower) priority:**
+     * **Chemical Class** (e.g., *Thiazide*, *Benzodiazepine*)
+     * **Mode of Action** (e.g., *Bronchodilator*, *Vasoconstrictor*)
+     * **Therapeutic Class** (e.g., *Antidepressant*, *Anticancer*)
 
-2. **Class Type Rules** - Rules for specific drug class types
-   - Subcategories: Inhibitors, Stimulants, Agonist Antagonist, Antibodies, Immune Checkpoint, Modulators Degraders, Therapy Types, Engagers, Agents
+   * **Selection rule when MoA is absent:**
+     If MoA is **not** mentioned, capture **all** available classes among Chemical Class, Mode of Action, and Therapeutic Class (since they now share equal priority) as separate elements in the list.
 
-3. **Cellular Therapy Rules** - Rules for cell-based therapies
-   - Subcategories: Cell Types
+2. **Always include biological target when known** (format: `TARGET-Modality` or `TARGET-Inhibitor` etc.).
+   Examples: `PDL1-Inhibitor`; `CTLA4-Targeted Antibody`; `CD19-Targeted CAR T Therapy`.
 
-4. **Target Formatting Rules** - Rules for formatting targets and modalities
-   - Subcategories: Hyphenation, Anti-X Conversion, Multiple Targets, Biological Target, Platform Therapies, Abbreviated Target Form
+3. **Chemotherapy regimens:** If the primary drug is a regimen and component drugs are explicitly listed in the extracted content, include the drug class for **each component** as separate elements in the list.
 
-5. **Formatting Rules** - Rules for output formatting
-   - Subcategories: Casing, Spacing, Number, Multiple Classes, Consistency, Hyphenation
+4. **Cellular Therapy Enumeration**
 
-6. **Abbreviation Rules** - Rules for handling abbreviations
-   - Subcategories: Exclude Abbreviations
+When a cell type is mentioned, you must convert it to **exactly** the following format:
 
-7. **Exclusion Rules** - Rules for what NOT to capture
-   - Subcategories: Context Exclusions, Generic Headings, Non-relevant Terms, Missing Data
+| Mentioned Cell Type                | Drug Class Output                              |
+| ---------------------------------- | ---------------------------------------------- |
+| Stem cell                          | **Stem cell therapy**                          |
+| Autologous hematopoietic cell      | **Autologous hematopoietic cell therapy**      |
+| Autologous hematopoietic stem cell | **Autologous hematopoietic stem cell therapy** |
+| CAR-T cell                         | **CAR-T cell therapy**                         |
+| NK cell                            | **NK cell therapy**                            |
+| Dendritic cell                     | **Dendritic cell therapy**                     |
 
-8. **Exception Rules** - Special cases to always capture
-   - Subcategories: Always Capture
 
-9. **Additional Rules** - Miscellaneous rules
-   - Subcategories: Mappings, Exclusions, Preference, Quality, Scope, Regimens
+**Rules:**
 
-**Tool Usage:**
-```python
-# Get all rules for a category
-get_drug_class_rules(category="Class Type Rules", subcategories=["Inhibitors"])
+* Retain the exact cell type as it appears (no paraphrasing).
+* Only append the word **therapy**.
+* For cell therapies, **do NOT refer to other sources** to infer or expand modality/class.
+* Do NOT change capitalization beyond normal title case formatting.
 
-# Get specific subcategory rules
-get_drug_class_rules(category="Formatting Rules", subcategories=["Casing", "Spacing"])
+5. **Platform therapies:** Include platform + target (e.g., `AR-Targeted PROTAC`, `CD3/CD20-Targeted BITE`).
 
-# Get exclusion rules
-get_drug_class_rules(category="Exclusion Rules", subcategories=["Generic Headings", "Context Exclusions"])
-```
+6. **Target formatting rules:**
+
+   * Hyphenate target and modality: `BM1-Targeted Therapy` (not `BM1 Targeted Therapy`).
+   * Replace `Anti-X` with `X-Targeted Therapy`.
+   * If multiple targets, list them **alphabetically** (e.g., `CD3/CD20-Targeted T Cell Engager` not `CD20/CD3-...`).
+   * Maintain consistent capitalization and spelling.
+
+7. **Missing data / no hallucination:** If the extracted content does not provide a drug class (or required field), return `NA`. Do **not** invent or infer.
+
+8. **Inhibitors** — Always add `Inhibitor` as a drug class when blockade/blocker/inhibitor terms occur. If a virus or organism is mentioned with an inhibitor, include the virus name (e.g., `BK Virus Inhibitor`). Convert `Blockade` terms into `Inhibitor` (e.g., `PD-1 Blockade` → `PD-1 Inhibitor`). 
+
+9. **Stimulants** — Capture stimulants with organ/system when mentioned (e.g., `CNS Stimulant`). 
+
+10. **Bispecific / Trispecific Antibodies** — Capture as classes when explicitly mentioned .
+
+11. **Immune Checkpoint Inhibitor (ICI)** — Add `Immune Checkpoint Inhibitor` as a drug class when the content indicates an immune checkpoint modality. Prefer specific target hyphenation if available (e.g., `PD-1 Inhibitor` over the general `Immune Checkpoint Inhibitor`) . 
+
+12. **Modulators / Degraders / Gene Therapy / Hormonal Therapy** — Capture these terms when they appear. For `Hormonal Therapy`, include this label specifically for Androgen Deprivation or other hormone-targeting contexts when present. 
+
+13. **Exception Drug Class List** — Always capture these if present : `TIL Therapy`, `Antibody Drug Conjugate (ADC)`, `Exon Skipping Therapy`.
+
+14. **Engagers** — Capture engagers using the platform abbreviations where used: e.g., `BIKE`, `TRIKE`, `SMITE`. If multiple, include each as a separate element. 
+
+15. **Agent** — Capture classes named with `Agent` (e.g., `Hypomethylating Agent`) as-is in singular form. 
+
+16. **Anti-** — If the content uses `Anti-X` or `anti-X`, convert to `X-Targeted Therapy` or `X-Targeted Antibody` depending on modality in the text. Capture as a drug class. 
+
+17. **Agonist / Antagonist** — Capture `Agonist` and `Antagonist` when explicitly stated .
+
+### Do Not Capture Abbreviated Drug Classes**
+
+When drug classes appear only as **abbreviations**, ignore them.
+Examples NOT to capture:
+
+* ADC (unless spelled out)
+* ICI (unless spelled out)
+* TKI (unless spelled out)
+
+
+### Additional Rule Extensions
+
+* Maintain original hyphenated root names when present (e.g., `BCR-ABL Inhibitor`).
+* Do **not** add `Adjuvant` as a Mechanism of Action.
+* Avoid adding `Anti-Metabolite` when a more specific MoA is available.
+* `ADT` is treated as MoA and recorded as `Hormonal Therapy`; do not list anything additional under Drugs.
+* Do **not** add `Antibody` alone as a drug class.
+* Watch for and avoid incorrect spellings in extracted MoAs.
+* `Platelet-rich Plasma` should be mapped to the MoA: `Plasma Therapy`.
+* `Stem Cell` should be captured as `Stem Cell Therapy` under Drug Class.
+* MoAs should be captured **only for primary drugs**, not secondary/comparator drugs.
 
 ---
 
-## EXTRACTION WORKFLOW
+## FORMATTING RULES (APPLY THESE AFTER YOU IDENTIFY CLASSES)
 
-Follow this agentic approach:
+* **Title Casing** — Maintain Title Case for drug class names. Use uppercase for gene/cell names only when the content uses them in all caps. Examples: `FLT3 Inhibitor`, `CD19 CAR-T Cell Therapy`. 
 
-### Step 1: Scan Sources
-- Check **Abstract Title** first for any drug class mentions
-- If found in title, use that class and skip other sources
-- If not in title, scan **Full Abstract Text** and each **Extracted Content** sequentially
+* **Multiple Classes** — Return multiple drug classes as separate strings in the `drug_classes` array. 
 
-### Step 2: Identify Drug Class Keywords
-Scan for keywords indicative of:
-- **MoA** (inhibitor, blocker, agonist, antagonist, modulator, degrader)
-- **Chemical Class** (thiazide, benzodiazepine, etc.)
-- **Mode of Action** (bronchodilator, vasoconstrictor, etc.)
-- **Therapeutic Class** (antidepressant, anticancer, etc.)
-- **Cell Therapies** (stem cell, CAR-T, NK cell, etc.)
-- **Platform Therapies** (PROTAC, BITE, ADC, etc.)
+* **Abbreviated Form with Target** — If a drug class appears with an abbreviated form tied to its biological target, capture that abbreviated form as listed (example: `EGFR Antagonist` → `EGFR-Targeted Antibody` or `EGFR-Targeted Therapy` depending on modality). 
 
-### Step 3: Retrieve Relevant Rules
-Use `get_drug_class_rules` tool to fetch specific rules for identified components:
-- If you see "inhibitor/blocker/blockade" → get rules for Inhibitors
-- If you see cell types → get Cellular Therapy Rules
-- If you see "Anti-X" pattern → get Target Formatting Rules
-- If you see abbreviations → get Abbreviation Rules
-- Always check Exclusion Rules for context validation
+* **Spacing** — Ensure there is no leading or trailing space around the drug class tokens. 
 
-### Step 4: Apply Rules
-1. Apply class priority (MoA > other classes)
-2. Format targets and modalities according to retrieved rules
-3. Check against exclusion rules
-4. Apply formatting rules (Title Case, singular form, no trailing spaces)
+* **Singular Form** — Capture drug class names only in singular form (e.g., `Antibody` not `Antibodies`).  
 
-### Step 5: Map Classes to URLs
-- Record which URL each class came from
-- Repeat URLs if multiple classes from same content
 
-### Step 6: Quality Check
-Before finalizing, verify:
-- ✓ Priority rules followed (abstract title > MoA > other classes)
-- ✓ Formatting rules applied (Title Case, hyphenation, singular)
-- ✓ Exclusions checked (no generic headings, no context exclusions)
-- ✓ Abbreviations spelled out (no ADC, ICI, TKI alone)
-- ✓ No hallucinated or inferred classes
+### EXCLUSIONS (Do NOT capture these situations)
+
+* **Drug class as part of the conference title** — Do **not** extract drug class names when they are merely part of a conference or program title (e.g., `Antimicrobial Stewardship Program` → do not extract `Antimicrobial`).
+
+* **Drug class mentioned as previously treated / induced disease / failure** — Do not capture drug class names when mentioned as a cause, induced adverse event, or prior treatment context. Examples to exclude: `EGFR-Inhibitor Related Cardiac Dysfunction`, `NSCLC patients previously treated with EGFR-Inhibitor`.
+
+* **Therapies — generic headings to exclude** — Do not add broad therapy headings as drug classes unless the content gives a specific target or modality. Exclude these generic labels: `Chemotherapy`, `Immunotherapy`, `Radiation Therapy` (except: if a conference specifically focuses on *Radiation Therapy* and the context implies MOA, you may treat it as an MOA), `Immunosuppressant`, `Anti-tumor`, `Anti-cancer`, `Antibody` (do not mention `Antibody` alone), `Targeted Therapy` alone (only include when target is specified, e.g., `HER2-Targeted Therapy`), `Small Molecule` alone, `Hormone`, `Immunotherapeutic`, `Hormone Stimulation Therapy`, `Antineoplastic Agent`.
+
+* **If no drug class is mentioned in extracted content, full abstract text or abstract title** — Leave the drug class field **blank** when the input does **not** mention any drug class or MOA. Do **not** infer or generate one.
+
+* **Do not capture non-relevant terms** — Do **not** capture diseases, conditions, procedures, interventions, clinical endpoints, or any unrelated biomedical terms as drug classes.
+
+* Do **not** capture abbreviations such as `ADC`, `ICI`, `TKI`, `BITE`, etc.
+  Capture **only spelled-out** versions.
 
 ---
 
-## CRITICAL RULES (ALWAYS APPLY)
+## ZERO-SHOT CHAIN-OF-THOUGHT (CoT) INSTRUCTIONS
 
-### Do Not Capture Abbreviated Drug Classes
+For each drug, **reason step by step** **before producing output**:
 
-When drug classes appear only as **abbreviations**, ignore them:
-- ADC (unless spelled out as "Antibody Drug Conjugate")
-- ICI (unless spelled out as "Immune Checkpoint Inhibitor")
-- TKI (unless spelled out as "Tyrosine Kinase Inhibitor")
-- BITE (unless with specific targets)
-
-### Generic Headings to Exclude
-
-Do NOT add these as drug classes without specific targets:
-- Chemotherapy, Immunotherapy, Radiation Therapy
-- Targeted Therapy (alone), Small Molecule (alone)
-- Antibody (alone), Anti-tumor, Anti-cancer
-- Immunosuppressant, Antineoplastic Agent
-
-### Context Exclusions
-
-Do NOT capture drug classes when mentioned as:
-- Part of a conference/program title
-- Prior/previous treatment context
-- Induced disease or adverse event
-- Treatment failure context
+1. Scan full abstract text first and each content sequentially for **keywords indicative of class** (MoA, chemical, mode, therapeutic) and for specific terms in the Additional Rules above.
+2. For each match, record:
+   * Matched phrase (exact excerpt)
+   * Content URL
+   * Type of class (MoA, Chemical, Mode, Therapeutic, Cellular Therapy, Engager, Agent, etc.)
+3. Apply **class priority** to select the highest-priority class. If MoA is present anywhere, do **not** include other classes — return **only** the MoA.
+4. If MoA is absent, include **all** available classes among Chemical Class, Mode of Action, and Therapeutic Class (and any applicable additional classes from the rules).
+5. Map **each class to the URL** it came from (positional mapping). Repeat URLs if multiple classes came from the same content.
+6. Format **targets and modalities** according to Target formatting rules and Title Casing / Spacing rules above.
+7. If no classes found or content is excluded by the Exclusion rules, return `NA`.
+> All reasoning must reference **only the provided content**. Do not use external knowledge.
 
 ---
 
@@ -339,7 +343,7 @@ Abstract title: Drug C, a CAR-T cell therapy
 ```json
 {
   "drug_name": "Drug C",
-  "drug_classes": ["CAR-T Cell Therapy"],
+  "drug_classes": ["CAR-T cell therapy"],
   "content_urls": [],
   "steps_taken": [
     {
@@ -367,26 +371,3 @@ Abstract title: Drug C, a CAR-T cell therapy
   ]
 }
 ```
-
----
-
-## KEY REMINDERS
-
-1. **Think step-by-step**: This is an agentic workflow - retrieve rules as needed
-2. **Use tools proactively**: Don't guess - fetch relevant rules when you see specific patterns
-3. **Query multiple subcategories**: If content matches keywords from different subcategories, request all relevant ones
-4. **No hallucination**: Only extract drug classes explicitly stated in the content
-5. **Follow priority rules**: Abstract title > MoA > other classes
-6. **Apply formatting consistently**: Title Case, hyphenation, singular form
-7. **Check exclusions**: Validate against context exclusion rules before finalizing
-
----
-
-## READY TO EXTRACT
-
-You now have:
-- ✓ Core extraction logic (in this prompt)
-- ✓ Access to detailed rules (via `get_drug_class_rules` tool)
-- ✓ Clear workflow and examples
-
-When the user provides drug information and content, begin your agentic extraction process!
