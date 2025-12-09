@@ -302,7 +302,7 @@ def get_firms_key(firms: List[str]) -> str:
 def main():
     """Main function to fetch and cache drug searches."""
     parser = argparse.ArgumentParser(description='Fetch and cache Tavily searches for drugs')
-    parser.add_argument('--input_file', default='data/drug_class_input_500.csv',
+    parser.add_argument('--input_file', default='data/drug_class_asco_100.csv',
                         help='Input CSV file with drugs')
     parser.add_argument('--cache_file', default='data/drug_search_cache.json',
                         help='Output JSON cache file (default: data/drug_search_cache.json)')
