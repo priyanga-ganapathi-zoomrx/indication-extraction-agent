@@ -82,28 +82,28 @@ Use this tool to retrieve category-specific rules when you identify relevant ele
    - Subcategories: Abstract Title Priority, MoA Priority, Lower Priority Classes
 
 2. **Class Type Rules** - Rules for specific drug class types
-   - Subcategories: Inhibitors, Stimulants, Agonist Antagonist, Antibodies, Immune Checkpoint, Modulators Degraders, Therapy Types, Engagers, Agents
+   - Subcategories: Inhibitors, Stimulants, Agonist Antagonist, Antibodies, Immune Checkpoint, Modulators Degraders, Therapy Types, Engagers, Agents, Diagnostic Agents, Supplements, Vaccines
 
 3. **Cellular Therapy Rules** - Rules for cell-based therapies
    - Subcategories: Cell Types
 
 4. **Target Formatting Rules** - Rules for formatting targets and modalities
-   - Subcategories: Hyphenation, Anti-X Conversion, Multiple Targets, Biological Target, Platform Therapies, Abbreviated Target Form
+   - Subcategories: Hyphenation, Anti-X Conversion, Multiple Targets, Biological Target, Platform Therapies
 
 5. **Formatting Rules** - Rules for output formatting
-   - Subcategories: Casing, Spacing, Number, Multiple Classes, Consistency, Hyphenation
+   - Subcategories: Casing, Spacing, Number, Multiple Classes, Exact Wording
 
 6. **Abbreviation Rules** - Rules for handling abbreviations
    - Subcategories: Exclude Abbreviations
 
 7. **Exclusion Rules** - Rules for what NOT to capture
-   - Subcategories: Context Exclusions, Generic Headings, Non-relevant Terms, Missing Data
+   - Subcategories: Context Exclusions, Generic Headings, Non-relevant Terms, Missing Data, Exclusions
 
 8. **Exception Rules** - Special cases to always capture
    - Subcategories: Always Capture
 
 9. **Additional Rules** - Miscellaneous rules
-   - Subcategories: Mappings, Exclusions, Preference, Quality, Scope, Regimens
+   - Subcategories: Mappings, Preference, Quality, Scope, Regimens
 
 **Tool Usage:**
 ```python
@@ -111,10 +111,16 @@ Use this tool to retrieve category-specific rules when you identify relevant ele
 get_drug_class_rules(category="Class Type Rules", subcategories=["Inhibitors"])
 
 # Get specific subcategory rules
-get_drug_class_rules(category="Formatting Rules", subcategories=["Casing", "Spacing"])
+get_drug_class_rules(category="Formatting Rules", subcategories=["Casing", "Spacing", "Exact Wording"])
 
 # Get exclusion rules
 get_drug_class_rules(category="Exclusion Rules", subcategories=["Generic Headings", "Context Exclusions"])
+
+# Get rules for special drug types
+get_drug_class_rules(category="Class Type Rules", subcategories=["Vaccines", "Diagnostic Agents", "Supplements"])
+
+# Get regimen handling rules
+get_drug_class_rules(category="Additional Rules", subcategories=["Regimens"])
 ```
 
 ---
@@ -134,8 +140,6 @@ Scan for keywords indicative of:
 - **Chemical Class** (thiazide, benzodiazepine, etc.)
 - **Mode of Action** (bronchodilator, vasoconstrictor, etc.)
 - **Therapeutic Class** (antidepressant, anticancer, etc.)
-- **Cell Therapies** (stem cell, CAR-T, NK cell, etc.)
-- **Platform Therapies** (PROTAC, BITE, ADC, etc.)
 
 ### Step 3: Retrieve Relevant Rules
 Use `get_drug_class_rules` tool to fetch specific rules for identified components:
@@ -161,43 +165,6 @@ Before finalizing, verify and score quality metrics:
 - **Rule Adherence** (1.0): All retrieved rules applied correctly
 - **Clinical Accuracy** (0.0-1.0): Drug classes are clinically meaningful
 - **Formatting Compliance** (1.0): Title Case, hyphenation, singular form applied
-
-Checklist:
-- ✓ Priority rules followed (abstract title > MoA > other classes)
-- ✓ Formatting rules applied (Title Case, hyphenation, singular)
-- ✓ Exclusions checked (no generic headings, no context exclusions)
-- ✓ Abbreviations spelled out (no ADC, ICI, TKI alone)
-- ✓ No hallucinated or inferred classes
-- ✓ Selected source correctly identified
-- ✓ Confidence score reflects extraction certainty
-
----
-
-## CRITICAL RULES (ALWAYS APPLY)
-
-### Do Not Capture Abbreviated Drug Classes
-
-When drug classes appear only as **abbreviations**, ignore them:
-- ADC (unless spelled out as "Antibody Drug Conjugate")
-- ICI (unless spelled out as "Immune Checkpoint Inhibitor")
-- TKI (unless spelled out as "Tyrosine Kinase Inhibitor")
-- BITE (unless with specific targets)
-
-### Generic Headings to Exclude
-
-Do NOT add these as drug classes without specific targets:
-- Chemotherapy, Immunotherapy, Radiation Therapy
-- Targeted Therapy (alone), Small Molecule (alone)
-- Antibody (alone), Anti-tumor, Anti-cancer
-- Immunosuppressant, Antineoplastic Agent
-
-### Context Exclusions
-
-Do NOT capture drug classes when mentioned as:
-- Part of a conference/program title
-- Prior/previous treatment context
-- Induced disease or adverse event
-- Treatment failure context
 
 ---
 
