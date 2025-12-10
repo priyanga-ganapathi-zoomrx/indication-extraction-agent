@@ -19,6 +19,7 @@ import concurrent.futures
 import csv
 import json
 import os
+import re
 import sys
 import threading
 from datetime import datetime
@@ -343,11 +344,26 @@ def process_single_row(
 
     # Build output row (preserve original columns + add new ones)
     output_row = original_row.copy()
+    
+    # Format reasoning with actual newlines for better CSV readability
+    # Add newlines before numbered points (1., 2., 3., etc.) for readability
+    reasoning_formatted = {}
+    for drug, reasoning in reasoning_grouped.items():
+        if isinstance(reasoning, str):
+            # First, replace any existing \n with actual newlines
+            formatted = reasoning.replace('\\n', '\n')
+            # Then, add newlines before numbered points (2., 3., 4., etc.) if not already preceded by newline
+            # This pattern matches: space/text followed by a number and period (but not at start)
+            formatted = re.sub(r'(?<!\n)\s+(\d+\.)\s+', r'\n\1 ', formatted)
+            reasoning_formatted[drug] = formatted
+        else:
+            reasoning_formatted[drug] = reasoning
+    
     output_row.update({
         "drug_classes_grouped": json.dumps(drug_classes_grouped, indent=2),
         "selected_sources_grouped": json.dumps(selected_sources_grouped, indent=2),
         "confidence_scores_grouped": json.dumps(confidence_scores_grouped, indent=2),
-        "reasoning_grouped": json.dumps(reasoning_grouped, indent=2),
+        "reasoning_grouped": json.dumps(reasoning_formatted, indent=2).replace('\\n', '\n'),
         "rules_retrieved_grouped": json.dumps(rules_retrieved_grouped, indent=2),
         "components_identified_grouped": json.dumps(components_identified_grouped, indent=2),
         "quality_metrics_grouped": json.dumps(quality_metrics_grouped, indent=2),
@@ -448,8 +464,8 @@ def process_rows_batch(
 def main():
     """Main batch processing function."""
     parser = argparse.ArgumentParser(description='Batch Process Drug Class Extraction using ReAct Agent')
-    parser.add_argument('--input_file', default='data/drug_class_asco_100.csv',
-                        help='Input CSV file with drugs (default: data/drug_class_asco_100.csv)')
+    parser.add_argument('--input_file', default='data/drug_class_input_150.csv',
+                        help='Input CSV file with drugs (default: data/drug_class_input_150.csv)')
     parser.add_argument('--cache_file', default='data/drug_search_cache.json',
                         help='Input JSON cache file with search results (default: data/drug_search_cache.json)')
     parser.add_argument('--output_file', default=None,
