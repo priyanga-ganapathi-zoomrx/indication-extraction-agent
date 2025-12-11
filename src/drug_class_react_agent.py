@@ -1,56 +1,40 @@
-"""Drug Class Extraction Agent using LangGraph ReAct Pattern.
+"""Drug Class Extraction Agent using 3-Message Structure for Reasoning Models.
 
-This module implements a drug class extraction agent using the LangGraph framework with
-ReAct pattern (Reasoning + Acting). The agent uses tool calling for rule retrieval,
-following the same pattern as the indication extraction agent.
+This module implements a drug class extraction agent optimized for Gemini reasoning models.
+It uses a 3-message structure:
+1. System Prompt - Role, task, workflow, output format
+2. Rules Message - All 40 extraction rules organized by application sequence
+3. Input Message - Drug info, abstract, and search results
 
-Key differences from the sequential drug_class_agent.py:
-- Uses ReAct loop with conditional edges for tool calling
-- LLM decides when to call the get_drug_class_rules tool
-- Accepts pre-fetched/cached search results as input
+Key changes from the previous ReAct pattern:
+- No tool calling - all rules provided upfront in message 2
+- Simplified graph with single LLM call
+- Optimized for reasoning models that perform internal reasoning
 """
 
-import operator
-import os
 import json
+import os
 import re
-from typing import Annotated, List, Literal, Dict, Any
+from typing import Any, Dict, List
 
-from langchain_core.messages import AIMessage, BaseMessage, HumanMessage, SystemMessage
+from langchain_core.messages import AIMessage, HumanMessage, SystemMessage
 from langchain_core.runnables.config import RunnableConfig
 from langfuse import Langfuse
 from langfuse.langchain import CallbackHandler
-from langgraph.graph import END, START, StateGraph
-from langgraph.prebuilt import ToolNode
-from typing_extensions import TypedDict
 
 from src.config import settings
 from src.langfuse_config import get_langfuse_config
 from src.llm_handler import LLMConfig, create_llm
 from src.prompts import get_system_prompt
-from src.rule_tool import get_drug_class_tools
-
-
-class DrugClassMessagesState(TypedDict):
-    """State schema for the drug class extraction agent.
-
-    Attributes:
-        messages: List of messages in the conversation, using operator.add to append
-        llm_calls: Counter for the number of LLM calls made
-    """
-
-    messages: Annotated[list[BaseMessage], operator.add]
-    llm_calls: int
 
 
 class DrugClassReActAgent:
-    """Drug Class Extraction Agent using ReAct pattern with tool calling.
+    """Drug Class Extraction Agent using 3-Message Structure.
 
-    This agent uses LangGraph to create a stateful conversation flow that can:
-    - Extract drug classes from search results, abstract title, and abstract text
-    - Call the get_drug_class_rules tool to retrieve category-specific extraction rules
-    - Handle errors gracefully
-    - Trace all operations with Langfuse
+    This agent uses a simplified architecture optimized for reasoning models:
+    - Parses prompt file into 3 separate message sections
+    - Sends system prompt, rules, and input as 3 messages
+    - No tool calling - LLM has all rules upfront for reasoning
     """
 
     def __init__(
@@ -60,7 +44,7 @@ class DrugClassReActAgent:
         temperature: float = None,
         max_tokens: int = None,
     ):
-        """Initialize the Drug Class ReAct Agent.
+        """Initialize the Drug Class Extraction Agent.
 
         Args:
             agent_name: Name of the agent for identification and logging
@@ -73,24 +57,16 @@ class DrugClassReActAgent:
         self._temperature = temperature
         self._max_tokens = max_tokens
 
-        # Get drug class tools
-        self.tools = get_drug_class_tools()
-        self.tools_by_name = {tool.name: tool for tool in self.tools}
-
         # Initialize Langfuse
         self.langfuse_config = get_langfuse_config()
         self.langfuse = self._initialize_langfuse() if self.langfuse_config else None
 
-        # Initialize LLM
+        # Initialize LLM (no tool binding for reasoning models)
         self.llm_config = self._get_llm_config()
         self.llm = create_llm(self.llm_config)
-        self.llm_with_tools = self.llm.bind_tools(self.tools)
 
-        # System prompt
-        self.system_prompt = self._get_system_prompt()
-
-        # Build the graph
-        self.graph = self._build_graph()
+        # Load and parse the 3-message prompt structure
+        self.system_prompt, self.rules_message, self.input_template = self._load_prompt_sections()
 
     def _initialize_langfuse(self) -> Langfuse | None:
         """Initialize Langfuse client for tracing and observability.
@@ -133,163 +109,126 @@ class DrugClassReActAgent:
             name=self.agent_name,
         )
 
-    def _get_system_prompt(self) -> str:
-        """Get the system prompt for the drug class extraction agent.
+    def _load_prompt_sections(self) -> tuple[str, str, str]:
+        """Load and parse the 3-message prompt structure from file.
 
-        Fetches the prompt from Langfuse if configured, otherwise falls back to local file.
+        The prompt file contains sections marked with HTML-style comments:
+        - <!-- MESSAGE_1_START: SYSTEM_PROMPT --> ... <!-- MESSAGE_1_END: SYSTEM_PROMPT -->
+        - <!-- MESSAGE_2_START: RULES_MESSAGE --> ... <!-- MESSAGE_2_END: RULES_MESSAGE -->
+        - <!-- MESSAGE_3_START: INPUT_TEMPLATE --> ... <!-- MESSAGE_3_END: INPUT_TEMPLATE -->
 
         Returns:
-            str: System prompt content
+            Tuple of (system_prompt, rules_message, input_template)
         """
+        # Fetch the full prompt content
         prompt_content, prompt_version = get_system_prompt(
             langfuse_client=self.langfuse,
             prompt_name="DRUG_CLASS_EXTRACTION_FROM_SEARCH_REACT_PATTERN",
             fallback_to_file=True,
         )
-        # Store the prompt version for tagging
         self.prompt_version = prompt_version
-        return prompt_content
 
-    def _build_graph(self) -> StateGraph:
-        """Build the LangGraph state graph for the drug class extraction agent.
+        # Extract sections using regex
+        def extract_section(content: str, section_name: str) -> str:
+            """Extract content between MESSAGE_X_START and MESSAGE_X_END markers."""
+            pattern = rf'<!-- MESSAGE_\d+_START: {section_name} -->\s*(.*?)\s*<!-- MESSAGE_\d+_END: {section_name} -->'
+            match = re.search(pattern, content, re.DOTALL)
+            if match:
+                # Clean up the extracted content
+                section = match.group(1).strip()
+                # Remove the markdown header if present (e.g., "## SYSTEM_PROMPT")
+                section = re.sub(rf'^##\s*{section_name}\s*\n+', '', section)
+                return section
+            return ""
 
-        Returns:
-            StateGraph: Compiled state graph ready for execution
-        """
-        # Create the state graph
-        graph = StateGraph(DrugClassMessagesState)
+        system_prompt = extract_section(prompt_content, "SYSTEM_PROMPT")
+        rules_message = extract_section(prompt_content, "RULES_MESSAGE")
+        input_template = extract_section(prompt_content, "INPUT_TEMPLATE")
 
-        # Add nodes
-        graph.add_node("llm_call", self._llm_call_node)
-        graph.add_node("tool_node", ToolNode(self.tools))
+        if not system_prompt:
+            print("⚠ Warning: Could not extract SYSTEM_PROMPT section from prompt file")
+        if not rules_message:
+            print("⚠ Warning: Could not extract RULES_MESSAGE section from prompt file")
+        if not input_template:
+            print("⚠ Warning: Could not extract INPUT_TEMPLATE section from prompt file")
 
-        # Add edges
-        graph.add_edge(START, "llm_call")
-        graph.add_conditional_edges(
-            "llm_call", self._should_continue, ["tool_node", END]
-        )
-        graph.add_edge("tool_node", "llm_call")
+        return system_prompt, rules_message, input_template
 
-        # Compile the graph
-        return graph.compile()
-
-    def _llm_call_node(self, state: DrugClassMessagesState) -> dict:
-        """LLM node that decides whether to call a tool or respond.
-
-        This node handles:
-        - Adding the system prompt
-        - Invoking the LLM with tools
-        - Error handling for LLM calls
-        - Ensuring messages have content to prevent parsing errors
+    def _format_search_results(self, drug_class_results: List[Dict], firm_results: List[Dict]) -> str:
+        """Format search results for the input message.
 
         Args:
-            state: Current state containing messages and llm_calls counter
-
-        Returns:
-            dict: Updated state with new message and incremented llm_calls
-        """
-        messages_for_llm = [SystemMessage(content=self.system_prompt)] + state.get(
-            "messages", []
-        )
-
-        try:
-            response: AIMessage = self.llm_with_tools.invoke(messages_for_llm)
-
-            # Ensure the response has content to prevent parsing errors
-            if not response.content and not response.tool_calls:
-                response.content = "[Thinking...]"
-
-            return {
-                "messages": [response],
-                "llm_calls": state.get("llm_calls", 0) + 1,
-            }
-        except Exception as e:
-            print(f"✗ Error during LLM call: {e}")
-            # Return an error message instead of crashing
-            error_message = AIMessage(
-                content=f"I encountered an error while processing your request: {str(e)}"
-            )
-            return {
-                "messages": [error_message],
-                "llm_calls": state.get("llm_calls", 0) + 1,
-            }
-
-    def _should_continue(self, state: DrugClassMessagesState) -> Literal["tool_node", END]:
-        """Determine whether to continue to tool execution or end.
-
-        Args:
-            state: Current state containing messages
-
-        Returns:
-            str: Next node to execute ("tool_node" or END)
-        """
-        messages = state.get("messages", [])
-        if not messages:
-            return END
-
-        last_message = messages[-1]
-
-        # If the LLM makes a tool call, route to the tool node
-        if (
-            isinstance(last_message, AIMessage)
-            and hasattr(last_message, "tool_calls")
-            and last_message.tool_calls
-        ):
-            return "tool_node"
-
-        # Otherwise, we're done
-        return END
-
-    def _format_search_results_for_prompt(
-        self,
-        drug: str,
-        drug_class_results: List[Dict],
-        firm_results: List[Dict],
-        abstract_title: str = "",
-        full_abstract: str = ""
-    ) -> str:
-        """Format search results according to the prompt's INPUT specification.
-
-        Args:
-            drug: The drug name
             drug_class_results: Results from drug class search (cached)
             firm_results: Results from firm search (cached)
-            abstract_title: Abstract title for context
-            full_abstract: Full abstract text for context
 
         Returns:
-            str: Formatted input string for the extraction prompt
+            str: Formatted search results string
         """
         all_results = (drug_class_results or []) + (firm_results or [])
 
-        formatted_parts = [f"Drug: {drug}"]
-
-        # Add abstract title if provided
-        if abstract_title:
-            formatted_parts.append(f"\nAbstract title: {abstract_title}")
-
-        # Add full abstract if provided
-        if full_abstract:
-            abstract_text = full_abstract
-            if len(abstract_text) > 10000:
-                abstract_text = abstract_text[:10000] + "... [truncated]"
-            formatted_parts.append(f"\nAbstract Text: {abstract_text}")
-
-        # Add search results
         if not all_results:
-            formatted_parts.append("\nNo search results available.")
-        else:
-            for i, result in enumerate(all_results, 1):
-                content = result.get("raw_content") or result.get("content", "No content available")
-                url = result.get("url", "Unknown URL")
+            return "No search results available."
 
-                if len(content) > 5000:
-                    content = content[:5000] + "... [truncated]"
+        formatted_parts = []
+        for i, result in enumerate(all_results, 1):
+            content = result.get("raw_content") or result.get("content", "No content available")
+            url = result.get("url", "Unknown URL")
 
-                formatted_parts.append(f"\nExtracted Content {i}: {content}")
-                formatted_parts.append(f"Content {i} URL: {url}")
+            if len(content) > 5000:
+                content = content[:5000] + "... [truncated]"
+
+            formatted_parts.append(f"### Result {i}")
+            formatted_parts.append(f"**URL**: {url}")
+            formatted_parts.append(f"**Content**: {content}")
+            formatted_parts.append("")
 
         return "\n".join(formatted_parts)
+
+    def _build_input_message(
+        self,
+        drug: str,
+        abstract_title: str,
+        full_abstract: str,
+        drug_class_results: List[Dict],
+        firm_results: List[Dict],
+    ) -> str:
+        """Build the input message (Message 3) from template.
+
+        Args:
+            drug: The drug name
+            abstract_title: Abstract title
+            full_abstract: Full abstract text
+            drug_class_results: Drug class search results
+            firm_results: Firm search results
+
+        Returns:
+            str: Formatted input message
+        """
+        # Truncate abstract if too long
+        abstract_text = full_abstract or ""
+        if len(abstract_text) > 10000:
+            abstract_text = abstract_text[:10000] + "... [truncated]"
+
+        # Format search results
+        search_results = self._format_search_results(drug_class_results, firm_results)
+
+        # Build the input message using template placeholders
+        input_message = f"""# EXTRACTION INPUT
+
+## Drug
+{drug}
+
+## Abstract Title
+{abstract_title or "Not provided"}
+
+## Full Abstract Text
+{abstract_text or "Not provided"}
+
+## Search Results
+
+{search_results}"""
+
+        return input_message
 
     def invoke(
         self,
@@ -300,7 +239,7 @@ class DrugClassReActAgent:
         firm_results: List[Dict] = None,
         abstract_id: str = None
     ) -> dict:
-        """Invoke the drug class extraction agent with drug info and search results.
+        """Invoke the drug class extraction agent with 3-message structure.
 
         Args:
             drug: The drug name to extract class for
@@ -311,31 +250,31 @@ class DrugClassReActAgent:
             abstract_id: The abstract ID for tracking in Langfuse (optional)
 
         Returns:
-            dict: Final state containing all messages and metadata
+            dict: Result containing messages and metadata
         """
         # Build tags for Langfuse tracing
         tags = [
-            drug,  # Drug name as tag
+            drug,
             f"prompt_version:{getattr(self, 'prompt_version', 'unknown')}",
             f"model:{self.llm_config.model}",
         ]
         if abstract_id:
             tags.append(f"abstract_id:{abstract_id}")
 
-        # Format the input message with the drug info and search results
-        input_content = self._format_search_results_for_prompt(
+        # Build the 3 messages
+        input_message = self._build_input_message(
             drug=drug,
-            drug_class_results=drug_class_results or [],
-            firm_results=firm_results or [],
             abstract_title=abstract_title,
             full_abstract=full_abstract,
+            drug_class_results=drug_class_results or [],
+            firm_results=firm_results or [],
         )
 
-        # Create initial state
-        initial_state = {
-            "messages": [HumanMessage(content=input_content)],
-            "llm_calls": 0,
-        }
+        messages = [
+            SystemMessage(content=self.system_prompt),
+            HumanMessage(content=self.rules_message),
+            HumanMessage(content=input_message),
+        ]
 
         # Set environment variables for Langfuse callback handler
         if self.langfuse:
@@ -343,9 +282,8 @@ class DrugClassReActAgent:
             os.environ["LANGFUSE_SECRET_KEY"] = self.langfuse_config.secret_key
             os.environ["LANGFUSE_HOST"] = self.langfuse_config.host
 
-        # Configure with Langfuse tracing and tags
+        # Configure with Langfuse tracing
         config = RunnableConfig(
-            recursion_limit=100,
             callbacks=(
                 [CallbackHandler()]
                 if self.langfuse
@@ -354,20 +292,20 @@ class DrugClassReActAgent:
             metadata={"langfuse_tags": tags} if self.langfuse else {},
         )
 
-        # Invoke the graph
+        # Invoke the LLM
         try:
-            result = self.graph.invoke(initial_state, config)
-            return result
-        except Exception as e:
-            print(f"✗ Error during agent invocation: {e}")
+            response: AIMessage = self.llm.invoke(messages, config)
             return {
-                "messages": [
-                    HumanMessage(content=input_content),
-                    AIMessage(
-                        content=f"I encountered an error during drug class extraction: {str(e)}. Please try again."
-                    ),
+                "messages": messages + [response],
+                "llm_calls": 1,
+            }
+        except Exception as e:
+            print(f"✗ Error during LLM call: {e}")
+            return {
+                "messages": messages + [
+                    AIMessage(content=f"I encountered an error during drug class extraction: {str(e)}. Please try again.")
                 ],
-                "llm_calls": initial_state.get("llm_calls", 0),
+                "llm_calls": 1,
             }
 
     def parse_response(self, result: dict) -> Dict[str, Any]:
@@ -377,7 +315,7 @@ class DrugClassReActAgent:
             result: Agent invocation result containing messages
 
         Returns:
-            Dictionary with extracted fields matching the prompt's output format
+            Dictionary with extracted fields matching the new output format
         """
         try:
             messages = result.get('messages', [])
@@ -419,6 +357,8 @@ class DrugClassReActAgent:
     def _extract_fields(self, parsed: dict) -> Dict[str, Any]:
         """Extract fields from parsed JSON response.
 
+        Updated to match the new output format without tool-related fields.
+
         Args:
             parsed: Parsed JSON dictionary
 
@@ -433,8 +373,8 @@ class DrugClassReActAgent:
             'selected_sources': parsed.get('selected_sources', []),
             'confidence_score': parsed.get('confidence_score'),
             'reasoning': parsed.get('reasoning', ''),
-            'rules_retrieved': parsed.get('rules_retrieved', []),
-            'components_identified': parsed.get('components_identified', []),
+            'extraction_details': parsed.get('extraction_details', []),
+            'exclusions_applied': parsed.get('exclusions_applied', []),
             'quality_metrics_completeness': quality_metrics.get('completeness'),
             'quality_metrics_rule_adherence': quality_metrics.get('rule_adherence'),
             'quality_metrics_clinical_accuracy': quality_metrics.get('clinical_accuracy'),
@@ -457,8 +397,8 @@ class DrugClassReActAgent:
             'selected_sources': [],
             'confidence_score': None,
             'reasoning': '',
-            'rules_retrieved': [],
-            'components_identified': [],
+            'extraction_details': [],
+            'exclusions_applied': [],
             'quality_metrics_completeness': None,
             'quality_metrics_rule_adherence': None,
             'quality_metrics_clinical_accuracy': None,
@@ -468,23 +408,3 @@ class DrugClassReActAgent:
         if error:
             response['error'] = error
         return response
-
-    def visualize(self, output_path: str = "drug_class_react_agent_graph.png"):
-        """Visualize the agent's graph structure.
-
-        Args:
-            output_path: Path to save the graph visualization
-        """
-        try:
-            from IPython.display import Image
-
-            graph_image = self.graph.get_graph(xray=True).draw_mermaid_png()
-            with open(output_path, "wb") as f:
-                f.write(graph_image)
-            print(f"✓ Graph visualization saved to {output_path}")
-            return Image(graph_image)
-        except Exception as e:
-            print(f"✗ Error visualizing graph: {e}")
-            print("Note: Graph visualization requires graphviz to be installed.")
-            return None
-

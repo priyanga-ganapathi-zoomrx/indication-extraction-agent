@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
 """
-Batch Processor for Drug Class ReAct Extraction Agent
+Batch Processor for Drug Class Extraction Agent
 
-This script processes multiple drugs using the drug class ReAct extraction agent
+This script processes multiple drugs using the drug class extraction agent
 and saves results to CSV format for analysis.
 
 Features:
@@ -11,7 +11,7 @@ Features:
 - Handles multiple drugs per row (comma/semicolon separated)
 - Groups results by drug with flattened drug_classes column
 - Preserves all original input columns in output
-- Uses ReAct pattern with tool calling for rule retrieval
+- Uses 3-message structure optimized for Gemini reasoning models
 """
 
 import argparse
@@ -281,8 +281,8 @@ def process_single_row(
     selected_sources_grouped = {}
     confidence_scores_grouped = {}
     reasoning_grouped = {}
-    rules_retrieved_grouped = {}
-    components_identified_grouped = {}
+    extraction_details_grouped = {}
+    exclusions_applied_grouped = {}
     quality_metrics_grouped = {}
     all_drug_classes = []  # For flattened output
     success_flags = []
@@ -307,8 +307,8 @@ def process_single_row(
             selected_sources_grouped[drug] = result.get("selected_sources", [])
             confidence_scores_grouped[drug] = result.get("confidence_score")
             reasoning_grouped[drug] = result.get("reasoning", "")
-            rules_retrieved_grouped[drug] = result.get("rules_retrieved", [])
-            components_identified_grouped[drug] = result.get("components_identified", [])
+            extraction_details_grouped[drug] = result.get("extraction_details", [])
+            exclusions_applied_grouped[drug] = result.get("exclusions_applied", [])
             quality_metrics_grouped[drug] = {
                 "completeness": result.get("quality_metrics_completeness"),
                 "rule_adherence": result.get("quality_metrics_rule_adherence"),
@@ -330,8 +330,8 @@ def process_single_row(
             selected_sources_grouped[drug] = []
             confidence_scores_grouped[drug] = None
             reasoning_grouped[drug] = f"Error: {str(e)}"
-            rules_retrieved_grouped[drug] = []
-            components_identified_grouped[drug] = []
+            extraction_details_grouped[drug] = []
+            exclusions_applied_grouped[drug] = []
             quality_metrics_grouped[drug] = {}
             success_flags.append(False)
 
@@ -364,8 +364,8 @@ def process_single_row(
         "selected_sources_grouped": json.dumps(selected_sources_grouped, indent=2),
         "confidence_scores_grouped": json.dumps(confidence_scores_grouped, indent=2),
         "reasoning_grouped": json.dumps(reasoning_formatted, indent=2).replace('\\n', '\n'),
-        "rules_retrieved_grouped": json.dumps(rules_retrieved_grouped, indent=2),
-        "components_identified_grouped": json.dumps(components_identified_grouped, indent=2),
+        "extraction_details_grouped": json.dumps(extraction_details_grouped, indent=2),
+        "exclusions_applied_grouped": json.dumps(exclusions_applied_grouped, indent=2),
         "quality_metrics_grouped": json.dumps(quality_metrics_grouped, indent=2),
         "drug_classes": json.dumps(all_drug_classes),  # Flattened
         "success": overall_success,
@@ -404,7 +404,7 @@ def process_rows_batch(
         'abstract_id', 'abstract_title', 'drug_name',
         'Drug Class - Ground truth (Manually extracted)', 'firm', 'full_abstract',
         'drug_classes_grouped', 'selected_sources_grouped', 'confidence_scores_grouped',
-        'reasoning_grouped', 'rules_retrieved_grouped', 'components_identified_grouped',
+        'reasoning_grouped', 'extraction_details_grouped', 'exclusions_applied_grouped',
         'quality_metrics_grouped', 'drug_classes', 'success', 'llm_calls'
     ]
 
