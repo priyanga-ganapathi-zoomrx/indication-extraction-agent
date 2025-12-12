@@ -68,10 +68,18 @@ def initialize_tavily():
         return None
 
 
-def load_drugs_from_csv(csv_path: str, max_entries: int = None) -> List[Dict]:
+def load_drugs_from_csv(csv_path: str, max_entries: int = None, use_flattened_components: bool = False) -> List[Dict]:
     """Load drugs from CSV file.
 
     Handles multiple drugs and firms per row by expanding into separate entries.
+    
+    If use_flattened_components=True:
+    - Reads from 'flattened_components' column (JSON array of drug components)
+    - Falls back to 'drug_name' if 'flattened_components' not found
+    
+    If use_flattened_components=False (default):
+    - Reads from 'drug_name' column (comma/semicolon separated)
+
     For example, a row with "DrugA, DrugB" and "Firm1, Firm2" becomes:
     - Entry 1: drug_name="DrugA", firms=["Firm1", "Firm2"]
     - Entry 2: drug_name="DrugB", firms=["Firm1", "Firm2"]
@@ -79,6 +87,7 @@ def load_drugs_from_csv(csv_path: str, max_entries: int = None) -> List[Dict]:
     Args:
         csv_path: Path to the CSV file
         max_entries: Maximum number of entries to return (after expansion)
+        use_flattened_components: If True, read drugs from 'flattened_components' JSON column
 
     Returns:
         List of dictionaries with drug data (one per drug, may have multiple entries per CSV row)
@@ -98,24 +107,55 @@ def load_drugs_from_csv(csv_path: str, max_entries: int = None) -> List[Dict]:
             else:
                 header_map = {}
 
+            # Determine which column to use for drug names
+            flattened_components_col = header_map.get('flattened_components')
             drug_name_col = header_map.get('drug_name') or header_map.get('drug name') or header_map.get('drug')
             firm_col = header_map.get('firm') or header_map.get('company') or header_map.get('sponsor')
 
-            if not drug_name_col:
-                print(f"Warning: Could not find drug_name column in {csv_path}")
+            # Choose column based on flag and availability
+            if use_flattened_components and flattened_components_col:
+                source_col = flattened_components_col
+                is_json_column = True
+                print("  Using 'flattened_components' column for drug names (JSON array)")
+            elif use_flattened_components and not flattened_components_col:
+                print("  Warning: 'flattened_components' column not found, falling back to 'drug_name'")
+                source_col = drug_name_col
+                is_json_column = False
+            else:
+                source_col = drug_name_col
+                is_json_column = False
+
+            if not source_col:
+                print(f"Warning: Could not find drug column in {csv_path}")
+                print(f"Available columns: {list(header_map.keys())}")
                 return entries
 
             rows_processed = 0
             for row in reader:
                 rows_processed += 1
 
-                # Parse drug_name as list (comma-separated or semicolon-separated)
-                drug_value = row.get(drug_name_col, '').strip()
+                # Parse drugs from the source column
+                drug_value = row.get(source_col, '').strip()
+                drug_names = []
+
                 if drug_value:
-                    # Split by comma or semicolon and strip whitespace
-                    drug_names = [d.strip() for d in drug_value.replace(';', ',').split(',') if d.strip()]
-                else:
-                    drug_names = []
+                    if is_json_column:
+                        # Parse JSON array from flattened_components column
+                        try:
+                            parsed = json.loads(drug_value)
+                            if isinstance(parsed, list):
+                                drug_names = [d.strip() for d in parsed if d and str(d).strip()]
+                            else:
+                                drug_names = [str(parsed).strip()] if parsed else []
+                        except json.JSONDecodeError:
+                            # Fallback: treat as comma-separated string
+                            drug_names = [d.strip() for d in drug_value.replace(';', ',').split(',') if d.strip()]
+                    else:
+                        # Split by comma or semicolon and strip whitespace
+                        drug_names = [d.strip() for d in drug_value.replace(';', ',').split(',') if d.strip()]
+
+                if not drug_names:
+                    continue
 
                 # Parse firm as list (comma-separated or semicolon-separated)
                 firm_value = row.get(firm_col, '').strip() if firm_col else ''
@@ -302,7 +342,7 @@ def get_firms_key(firms: List[str]) -> str:
 def main():
     """Main function to fetch and cache drug searches."""
     parser = argparse.ArgumentParser(description='Fetch and cache Tavily searches for drugs')
-    parser.add_argument('--input_file', default='data/drug_class_input_150.csv',
+    parser.add_argument('--input_file', default='data/drug_class_input_regimen_150.csv',
                         help='Input CSV file with drugs')
     parser.add_argument('--cache_file', default='data/drug_search_cache.json',
                         help='Output JSON cache file (default: data/drug_search_cache.json)')
@@ -312,6 +352,8 @@ def main():
                         help='Force re-fetch all searches')
     parser.add_argument('--force_refresh_firm', action='store_true',
                         help='Force re-fetch only firm searches (keep drug class searches)')
+    parser.add_argument('--use_drug_name', action='store_true',
+                        help='Use drug_name column instead of flattened_components (default: use flattened_components)')
 
     args = parser.parse_args()
 
@@ -322,6 +364,7 @@ def main():
     print(f"Max entries: {args.max_entries or 'all'}")
     print(f"Force refresh all: {args.force_refresh}")
     print(f"Force refresh firm only: {args.force_refresh_firm}")
+    print(f"Use flattened_components: {not args.use_drug_name}")
     print()
 
     # Initialize Tavily
@@ -332,7 +375,11 @@ def main():
 
     # Load drugs from CSV (expands rows with multiple drugs into separate entries)
     print("\nLoading drugs from CSV...")
-    entries = load_drugs_from_csv(args.input_file, max_entries=args.max_entries)
+    entries = load_drugs_from_csv(
+        args.input_file,
+        max_entries=args.max_entries,
+        use_flattened_components=not args.use_drug_name
+    )
     if not entries:
         print("No drug entries loaded. Exiting.")
         return

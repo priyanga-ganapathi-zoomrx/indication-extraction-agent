@@ -6,9 +6,10 @@ This script processes multiple drugs using the drug class extraction agent
 and saves results to CSV format for analysis.
 
 Features:
-- Reads abstract_id, abstract_title, drug_name, firm, full_abstract from input CSV
+- Reads abstract_id, abstract_title, flattened_components (or drug_name), firm, full_abstract from input CSV
+- Uses flattened_components column (JSON array) by default for drug names
 - Loads pre-fetched search results from cache JSON file
-- Handles multiple drugs per row (comma/semicolon separated)
+- Handles multiple drugs per row (from flattened_components JSON array)
 - Groups results by drug with flattened drug_classes column
 - Preserves all original input columns in output
 - Uses 3-message structure optimized for Gemini reasoning models
@@ -103,16 +104,17 @@ def get_search_results_from_cache(
     return drug_class_results, firm_results
 
 
-def load_rows_from_csv(csv_path: str, max_entries: int = None, randomize: bool = False) -> List[Dict]:
+def load_rows_from_csv(csv_path: str, max_entries: int = None, randomize: bool = False, use_drug_name: bool = False) -> List[Dict]:
     """Load rows from CSV file.
 
-    Each row may contain multiple drugs (comma/semicolon separated).
-    Returns row-level entries with drug list and original row data.
+    By default, uses flattened_components column (JSON array) for drug names.
+    If use_drug_name=True or flattened_components not found, falls back to drug_name column.
 
     Args:
         csv_path: Path to the CSV file
         max_entries: Maximum number of CSV rows to return
         randomize: Whether to randomize the selection
+        use_drug_name: If True, use drug_name column instead of flattened_components
 
     Returns:
         List of dictionaries with row data
@@ -127,13 +129,14 @@ def load_rows_from_csv(csv_path: str, max_entries: int = None, randomize: bool =
         with open(csv_path, 'r', encoding='utf-8-sig') as file:
             reader = csv.DictReader(file)
 
+            # Store original fieldnames
+            original_fieldnames = reader.fieldnames or []
+
             # Normalize headers mapping
-            if reader.fieldnames:
-                header_map = {h.lower().strip(): h for h in reader.fieldnames}
-            else:
-                header_map = {}
+            header_map = {h.lower().strip(): h for h in original_fieldnames}
 
             # Find the correct header names for our required fields
+            flattened_components_col = header_map.get('flattened_components')
             drug_name_col = header_map.get('drug_name') or header_map.get('drug name') or header_map.get('drug')
             firm_col = header_map.get('firm') or header_map.get('company') or header_map.get('sponsor')
             abstract_id_col = header_map.get('abstract_id') or header_map.get('id')
@@ -141,18 +144,45 @@ def load_rows_from_csv(csv_path: str, max_entries: int = None, randomize: bool =
             full_abstract_col = header_map.get('full_abstract') or header_map.get('abstract')
             ground_truth_col = header_map.get('drug class - ground truth (manually extracted)') or header_map.get('ground_truth')
 
-            if not drug_name_col:
-                print(f"Warning: Could not find drug_name column in {csv_path}")
+            # Determine which column to use for drug names
+            if not use_drug_name and flattened_components_col:
+                source_col = flattened_components_col
+                is_json_column = True
+                print("  Using 'flattened_components' column for drug names (JSON array)")
+            elif not use_drug_name and not flattened_components_col:
+                print("  Warning: 'flattened_components' column not found, falling back to 'drug_name'")
+                source_col = drug_name_col
+                is_json_column = False
+            else:
+                source_col = drug_name_col
+                is_json_column = False
+                print("  Using 'drug_name' column for drug names")
+
+            if not source_col:
+                print(f"Warning: Could not find drug column in {csv_path}")
                 print(f"Available columns: {list(header_map.keys())}")
                 return entries
 
             for row_id, row in enumerate(reader, start=1):
-                # Parse drug_name as list (comma-separated or semicolon-separated)
-                raw_drug_name = row.get(drug_name_col, '').strip()
-                if raw_drug_name:
-                    individual_drugs = [d.strip() for d in raw_drug_name.replace(';', ',').split(',') if d.strip()]
-                else:
-                    individual_drugs = []
+                # Parse drugs from the source column
+                drug_value = row.get(source_col, '').strip()
+                individual_drugs = []
+
+                if drug_value:
+                    if is_json_column:
+                        # Parse JSON array from flattened_components column
+                        try:
+                            parsed = json.loads(drug_value)
+                            if isinstance(parsed, list):
+                                individual_drugs = [d.strip() for d in parsed if d and str(d).strip()]
+                            else:
+                                individual_drugs = [str(parsed).strip()] if parsed else []
+                        except json.JSONDecodeError:
+                            # Fallback: treat as comma-separated string
+                            individual_drugs = [d.strip() for d in drug_value.replace(';', ',').split(',') if d.strip()]
+                    else:
+                        # Split by comma or semicolon and strip whitespace
+                        individual_drugs = [d.strip() for d in drug_value.replace(';', ',').split(',') if d.strip()]
 
                 if not individual_drugs:
                     continue
@@ -170,19 +200,25 @@ def load_rows_from_csv(csv_path: str, max_entries: int = None, randomize: bool =
                 full_abstract = row.get(full_abstract_col, '').strip() if full_abstract_col else ''
                 ground_truth = row.get(ground_truth_col, '').strip() if ground_truth_col else ''
 
-                # Store original row data for output
-                original_row = {
+                # Get original drug_name for output (regimen name)
+                raw_drug_name = row.get(drug_name_col, '').strip() if drug_name_col else ''
+
+                # Store original row data for output (all columns from input)
+                original_row = {col: row.get(col, '') for col in original_fieldnames}
+                # Ensure key columns are present with correct names
+                original_row.update({
                     'abstract_id': abstract_id,
                     'abstract_title': abstract_title,
-                    'drug_name': raw_drug_name,  # Original (may have multiple)
+                    'drug_name': raw_drug_name,
                     'Drug Class - Ground truth (Manually extracted)': ground_truth,
                     'firm': raw_firm,
                     'full_abstract': full_abstract,
-                }
+                })
 
                 entries.append({
                     'row_id': row_id,
                     'original_row': original_row,
+                    'original_fieldnames': original_fieldnames,
                     'individual_drugs': individual_drugs,
                     'firms': firms,
                     'abstract_id': abstract_id,
@@ -282,8 +318,6 @@ def process_single_row(
     confidence_scores_grouped = {}
     reasoning_grouped = {}
     extraction_details_grouped = {}
-    exclusions_applied_grouped = {}
-    quality_metrics_grouped = {}
     all_drug_classes = []  # For flattened output
     success_flags = []
     total_llm_calls = 0
@@ -308,13 +342,6 @@ def process_single_row(
             confidence_scores_grouped[drug] = result.get("confidence_score")
             reasoning_grouped[drug] = result.get("reasoning", "")
             extraction_details_grouped[drug] = result.get("extraction_details", [])
-            exclusions_applied_grouped[drug] = result.get("exclusions_applied", [])
-            quality_metrics_grouped[drug] = {
-                "completeness": result.get("quality_metrics_completeness"),
-                "rule_adherence": result.get("quality_metrics_rule_adherence"),
-                "clinical_accuracy": result.get("quality_metrics_clinical_accuracy"),
-                "formatting_compliance": result.get("quality_metrics_formatting_compliance"),
-            }
             success_flags.append(result.get("success", False))
             total_llm_calls += result.get("llm_calls", 0)
 
@@ -331,8 +358,6 @@ def process_single_row(
             confidence_scores_grouped[drug] = None
             reasoning_grouped[drug] = f"Error: {str(e)}"
             extraction_details_grouped[drug] = []
-            exclusions_applied_grouped[drug] = []
-            quality_metrics_grouped[drug] = {}
             success_flags.append(False)
 
     # If no valid drug classes found, use ["NA"]
@@ -365,8 +390,6 @@ def process_single_row(
         "confidence_scores_grouped": json.dumps(confidence_scores_grouped, indent=2),
         "reasoning_grouped": json.dumps(reasoning_formatted, indent=2).replace('\\n', '\n'),
         "extraction_details_grouped": json.dumps(extraction_details_grouped, indent=2),
-        "exclusions_applied_grouped": json.dumps(exclusions_applied_grouped, indent=2),
-        "quality_metrics_grouped": json.dumps(quality_metrics_grouped, indent=2),
         "drug_classes": json.dumps(all_drug_classes),  # Flattened
         "success": overall_success,
         "llm_calls": total_llm_calls,
@@ -399,14 +422,17 @@ def process_rows_batch(
     results = []
     write_lock = threading.Lock()
 
-    # Define output fieldnames
-    output_fieldnames = [
-        'abstract_id', 'abstract_title', 'drug_name',
-        'Drug Class - Ground truth (Manually extracted)', 'firm', 'full_abstract',
+    # Get original fieldnames from first entry and add new processing columns
+    original_fieldnames = entries[0].get('original_fieldnames', []) if entries else []
+    
+    # New columns added by processing
+    new_columns = [
         'drug_classes_grouped', 'selected_sources_grouped', 'confidence_scores_grouped',
-        'reasoning_grouped', 'extraction_details_grouped', 'exclusions_applied_grouped',
-        'quality_metrics_grouped', 'drug_classes', 'success', 'llm_calls'
+        'reasoning_grouped', 'extraction_details_grouped', 'drug_classes', 'success', 'llm_calls'
     ]
+    
+    # Combine: all original columns + new columns (avoiding duplicates)
+    output_fieldnames = list(original_fieldnames) + [col for col in new_columns if col not in original_fieldnames]
 
     # Open CSV file for incremental writing
     with open(output_file, 'w', newline='', encoding='utf-8') as csvfile:
@@ -464,15 +490,15 @@ def process_rows_batch(
 def main():
     """Main batch processing function."""
     parser = argparse.ArgumentParser(description='Batch Process Drug Class Extraction using ReAct Agent')
-    parser.add_argument('--input_file', default='data/drug_class_input_150.csv',
-                        help='Input CSV file with drugs (default: data/drug_class_input_150.csv)')
+    parser.add_argument('--input_file', default='data/drug_class_input_regimen_150.csv',
+                        help='Input CSV file with drugs (default: data/drug_class_input_regimen_150.csv)')
     parser.add_argument('--cache_file', default='data/drug_search_cache.json',
                         help='Input JSON cache file with search results (default: data/drug_search_cache.json)')
     parser.add_argument('--output_file', default=None,
                         help='Output CSV file (default: auto-generated)')
-    parser.add_argument('--model', default='gemini/gemini-2.5-pro',
-                        help='LLM model to use (default: gemini/gemini-2.5-pro)')
-    parser.add_argument('--temperature', type=float, default=0.0,
+    parser.add_argument('--model', default='gemini/gemini-3-pro-preview',
+                        help='LLM model to use (default: gemini/gemini-3-pro-preview)')
+    parser.add_argument('--temperature', type=float, default=1,
                         help='LLM temperature (default: 0.0)')
     parser.add_argument('--max_tokens', type=int, default=50000,
                         help='LLM max tokens (default: 50000)')
@@ -482,6 +508,8 @@ def main():
                         help='Parallel workers (default: 1)')
     parser.add_argument('--randomize', action='store_true',
                         help='Randomize row selection')
+    parser.add_argument('--use_drug_name', action='store_true',
+                        help='Use drug_name column instead of flattened_components (default: use flattened_components)')
 
     args = parser.parse_args()
 
@@ -502,11 +530,12 @@ def main():
     print(f"Max entries: {args.max_entries or 'all'}")
     print(f"Max workers: {args.max_workers}")
     print(f"Randomize: {args.randomize}")
+    print(f"Use flattened_components: {not args.use_drug_name}")
     print()
 
     # Load input CSV
     print("Loading input CSV...")
-    entries = load_rows_from_csv(args.input_file, args.max_entries, args.randomize)
+    entries = load_rows_from_csv(args.input_file, args.max_entries, args.randomize, args.use_drug_name)
     if not entries:
         print("No entries found in input CSV.")
         return

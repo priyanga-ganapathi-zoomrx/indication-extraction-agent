@@ -106,19 +106,7 @@ Return a valid JSON object:
         "Rule 3: Apply Title Case"
       ]
     }
-  ],
-  "exclusions_applied": [
-    {
-      "excluded_text": "chemotherapy",
-      "reason": "Rule 36: Generic heading excluded"
-    }
-  ],
-  "quality_metrics": {
-    "completeness": 1.0,
-    "rule_adherence": 1.0,
-    "clinical_accuracy": 0.95,
-    "formatting_compliance": 1.0
-  }
+  ]
 }
 ```
 
@@ -128,8 +116,6 @@ Return a valid JSON object:
 - `confidence_score`: 0.0-1.0 confidence in extraction
 - `reasoning`: Brief explanation of key decisions
 - `extraction_details`: Each identified class with evidence and rules applied (use "Rule X: reason" format)
-- `exclusions_applied`: Classes that were filtered out with rule reference
-- `quality_metrics`: Self-assessment scores (completeness, rule_adherence, clinical_accuracy, formatting_compliance)
 
 Return ONLY the JSON object, no additional text.
 
