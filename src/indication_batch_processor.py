@@ -7,7 +7,9 @@ and saves results to CSV format compatible with the analysis script.
 """
 
 import csv
+import json
 import os
+import re
 import pandas as pd
 from datetime import datetime
 from typing import List, Dict, Any
@@ -106,9 +108,6 @@ def extract_indication_from_response(result: Dict) -> Dict[str, Any]:
             }
 
         # Try to parse JSON response if present
-        import json
-        import re
-
         # Look for JSON in the response
         json_match = re.search(r'```json\s*(.*?)\s*```', content, re.DOTALL)
         if json_match:
@@ -244,7 +243,6 @@ def process_single_abstract(abstract: Dict, agent: IndicationExtractionAgent,
         extracted_data = extract_indication_from_response(result)
 
         # Build result row with all JSON fields
-        import json
         result_row = {
             'abstract_id': abstract['abstract_id'],
             'session_title': abstract['session_title'],
@@ -256,8 +254,8 @@ def process_single_abstract(abstract: Dict, agent: IndicationExtractionAgent,
             f'{model_name}_selected_source': extracted_data['selected_source'],
             f'{model_name}_confidence_score': extracted_data['confidence_score'],
             f'{model_name}_reasoning': extracted_data['reasoning'],
-            f'{model_name}_rules_retrieved': json.dumps(extracted_data['rules_retrieved']),  # Convert list to JSON string
-            f'{model_name}_components_identified': json.dumps(extracted_data['components_identified']),  # Convert list to JSON string
+            f'{model_name}_rules_retrieved': json.dumps(extracted_data['rules_retrieved']),
+            f'{model_name}_components_identified': json.dumps(extracted_data['components_identified']),
             f'{model_name}_quality_metrics_completeness': extracted_data['quality_metrics_completeness'],
             f'{model_name}_quality_metrics_rule_adherence': extracted_data['quality_metrics_rule_adherence'],
             f'{model_name}_quality_metrics_clinical_accuracy': extracted_data['quality_metrics_clinical_accuracy'],
@@ -293,7 +291,8 @@ def process_single_abstract(abstract: Dict, agent: IndicationExtractionAgent,
 
 
 def process_abstracts_batch(abstracts: List[Dict], agent: IndicationExtractionAgent,
-                          model_name: str, output_file: str = None) -> pd.DataFrame:
+                          model_name: str, output_file: str = None,
+                          num_workers: int = 3) -> pd.DataFrame:
     """Process a batch of abstracts and return results DataFrame.
 
     Args:
@@ -301,16 +300,17 @@ def process_abstracts_batch(abstracts: List[Dict], agent: IndicationExtractionAg
         agent: Initialized IndicationExtractionAgent
         model_name: Name of the model being used
         output_file: Optional output file path to save intermediate results
+        num_workers: Number of parallel workers (default: 3)
 
     Returns:
         DataFrame with processing results
     """
-    print(f"Processing {len(abstracts)} abstracts with model: {model_name} (using 3 parallel threads)")
+    print(f"Processing {len(abstracts)} abstracts with model: {model_name} (using {num_workers} parallel threads)")
 
     results = []
 
     # Process abstracts in parallel using ThreadPoolExecutor
-    with concurrent.futures.ThreadPoolExecutor(max_workers=3) as executor:
+    with concurrent.futures.ThreadPoolExecutor(max_workers=num_workers) as executor:
         # Submit all tasks
         future_to_index = {
             executor.submit(process_single_abstract, abstract, agent, model_name, i): i
@@ -365,6 +365,8 @@ def main():
                        help='Randomize abstract selection')
     parser.add_argument('--model_name', default='default_model',
                        help='Name of the model for column naming')
+    parser.add_argument('--num_workers', type=int, default=3,
+                       help='Number of parallel workers (default: 3)')
 
     args = parser.parse_args()
 
@@ -380,6 +382,7 @@ def main():
     print(f"Model name: {args.model_name}")
     print(f"Number of abstracts: {args.num_abstracts or 'all'}")
     print(f"Randomize: {args.randomize}")
+    print(f"Parallel workers: {args.num_workers}")
     print()
 
     # Load abstracts
@@ -404,7 +407,9 @@ def main():
     print()
 
     # Process abstracts
-    results_df = process_abstracts_batch(abstracts, agent, args.model_name, args.output_file)
+    results_df = process_abstracts_batch(
+        abstracts, agent, args.model_name, args.output_file, args.num_workers
+    )
 
     # Summary
     total_processed = len(results_df)

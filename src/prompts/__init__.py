@@ -1,9 +1,14 @@
-"""Prompts package for indication extraction."""
+"""Prompts package for indication extraction and validation."""
 
 import os
 from typing import Optional
 
 from langfuse import Langfuse
+
+
+# Available prompt names
+EXTRACTION_PROMPT_NAME = "MEDICAL_INDICATION_EXTRACTION_SYSTEM_PROMPT"
+VALIDATION_PROMPT_NAME = "INDICATION_VALIDATION_SYSTEM_PROMPT"
 
 
 def get_system_prompt(
@@ -70,3 +75,47 @@ def get_system_prompt(
                 f"Failed to fetch prompt from Langfuse and local file: "
                 f"Langfuse error: {e}, File error: {file_error}"
             )
+
+
+def get_extraction_prompt(
+    langfuse_client: Optional[Langfuse] = None,
+    fallback_to_file: bool = True,
+) -> tuple[str, str]:
+    """Load the indication extraction system prompt.
+
+    Convenience function for loading the extraction prompt.
+
+    Args:
+        langfuse_client: Optional Langfuse client instance
+        fallback_to_file: If True, fallback to local file if Langfuse fails
+
+    Returns:
+        tuple[str, str]: A tuple of (prompt_content, prompt_version)
+    """
+    return get_system_prompt(
+        langfuse_client=langfuse_client,
+        prompt_name=EXTRACTION_PROMPT_NAME,
+        fallback_to_file=fallback_to_file,
+    )
+
+
+def get_validation_prompt(
+    langfuse_client: Optional[Langfuse] = None,
+    fallback_to_file: bool = True,
+) -> tuple[str, str]:
+    """Load the indication validation system prompt.
+
+    Convenience function for loading the validation prompt.
+
+    Args:
+        langfuse_client: Optional Langfuse client instance
+        fallback_to_file: If True, fallback to local file if Langfuse fails
+
+    Returns:
+        tuple[str, str]: A tuple of (prompt_content, prompt_version)
+    """
+    return get_system_prompt(
+        langfuse_client=langfuse_client,
+        prompt_name=VALIDATION_PROMPT_NAME,
+        fallback_to_file=fallback_to_file,
+    )
