@@ -19,7 +19,6 @@ from typing import Dict, List
 import concurrent.futures
 
 from src.indication_validator_agent import IndicationValidationAgent
-from src.config import settings
 
 
 def load_extractions_from_csv(
@@ -164,23 +163,11 @@ def validate_single_extraction(
             result_row['needs_qc'] = True
             return result_row
 
-        # Skip validation if indication is empty
+        # If the indication is empty, still run validation to confirm whether
+        # an indication should have been extracted (previously we skipped here).
         indication = extraction['extraction_result'].get('indication', '')
         if not indication or indication.strip() == '':
-            print("  Skipping validation - empty indication")
-            result_row['validation_status'] = 'FAIL'
-            result_row['validation_confidence'] = 0.0
-            result_row['validation_issues'] = json.dumps([{
-                'check_type': 'empty_indication',
-                'severity': 'high',
-                'description': 'Indication is empty',
-                'evidence': '',
-                'component': ''
-            }])
-            result_row['validation_reasoning'] = 'Empty indication, validation skipped'
-            result_row['validation_llm_calls'] = 0
-            result_row['needs_qc'] = True
-            return result_row
+            print("  Indication is empty - validating to confirm no extractable indication")
 
         # Run validation
         validation_result = validator.invoke(

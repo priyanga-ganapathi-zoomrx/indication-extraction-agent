@@ -65,6 +65,16 @@ components_identified: [
 
 ---
 
+## HANDLING EMPTY GENERATED INDICATIONS
+
+If `generated_indication` is empty/blank, treat it as the extractor claiming **"no indication to extract."** You still must run validation:
+- Scan both titles for any disease/condition/biomarker/stage terms.
+- If a valid indication is clearly present, mark **FAIL** with a **HIGH severity omission** issue (describe that the extractor returned nothing despite evidence).
+- If no indication truly exists, you may use **PASS** (or **REVIEW** if uncertain) but clearly explain why no indication is expected.
+- Continue to complete the checks/performed section so reviewers see your reasoning.
+
+---
+
 ## SECTION 3: SIX VALIDATION CHECKS
 
 Perform each of these checks systematically:
@@ -131,6 +141,7 @@ When verifying, check the `rule_applied` field in `components_identified` to und
 3. Flag any terms that appear in the source but were NOT captured
 4. Consider exclusion rules: Some terms SHOULD be omitted (gender, ethnicity, drug-induced, etc.)
    - Do not flag correctly excluded terms as omissions
+5. If `generated_indication` is empty but the titles contain any valid indication components, treat this as a **high-severity omission** and mark **FAIL** (issue type: omission) with explicit evidence.
 
 **Error Types:**
 - Missed disease: A disease term in source not captured

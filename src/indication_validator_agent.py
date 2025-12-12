@@ -262,6 +262,23 @@ class IndicationValidationAgent:
         Returns:
             str: Formatted input message
         """
+        generated_indication = extraction_result.get('indication', '')
+        indication_display = (
+            generated_indication
+            if str(generated_indication).strip()
+            else "(EMPTY - extractor returned nothing; validate whether an indication should exist)"
+        )
+
+        empty_notice = ""
+        if not str(generated_indication).strip():
+            empty_notice = """
+
+IMPORTANT:
+- The extractor returned an empty indication.
+- Your job is to determine if an indication SHOULD exist based on the titles.
+- If the titles clearly contain a valid indication, treat this as a high-severity omission/FAIL.
+- If no indication exists in the titles, you may mark PASS/REVIEW but must explain why no indication is expected."""
+
         input_content = f"""## Validation Input
 
 ### Original Titles
@@ -269,14 +286,14 @@ class IndicationValidationAgent:
 - **abstract_title**: {abstract_title}
 
 ### Extraction Result to Validate
-- **generated_indication**: {extraction_result.get('indication', '')}
+- **generated_indication**: {indication_display}
 - **selected_source**: {extraction_result.get('selected_source', '')}
 - **confidence_score**: {extraction_result.get('confidence_score', 'N/A')}
 - **reasoning**: {extraction_result.get('reasoning', '')}
 - **rules_retrieved**: {json.dumps(extraction_result.get('rules_retrieved', []), indent=2)}
 - **components_identified**: {json.dumps(extraction_result.get('components_identified', []), indent=2)}
 
-Please perform all 6 validation checks and return your validation result in the specified JSON format."""
+Please perform all 6 validation checks and return your validation result in the specified JSON format.{empty_notice}"""
 
         return input_content
 
