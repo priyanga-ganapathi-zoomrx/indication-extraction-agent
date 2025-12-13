@@ -61,11 +61,29 @@ class LiteLLMIndicationAgent:
         
         # Get system prompt
         # We'll use a simple fallback if Langfuse is not set up or fails, similar to the original agent
-        self.system_prompt, self.prompt_version = get_system_prompt(
-            langfuse_client=None,  # We can add Langfuse support later if needed
-            prompt_name="MEDICAL_INDICATION_EXTRACTION_SYSTEM_PROMPT",
-            fallback_to_file=True,
-        )
+        # Get system prompt
+        # Force load from local file
+        import os
+        prompt_name = "MEDICAL_INDICATION_EXTRACTION_SYSTEM_PROMPT.md"
+        print(f"ℹ Loading prompt from local file: {prompt_name}...")
+        
+        try:
+            # Get the directory where this file (litellm_agent.py) is located
+            current_dir = os.path.dirname(os.path.abspath(__file__))
+            # Construct path to prompts directory
+            prompt_path = os.path.join(current_dir, "prompts", prompt_name)
+            
+            with open(prompt_path, 'r', encoding='utf-8') as f:
+                self.system_prompt = f.read().strip()
+            
+            print("✓ Successfully loaded prompt from local file")
+            self.prompt_version = "local_file"
+            
+        except Exception as e:
+            print(f"✗ Error loading local prompt file: {e}")
+            # Fallback to a basic prompt if file reading fails
+            self.system_prompt = "You are a medical indication extraction assistant."
+            self.prompt_version = "fallback"
 
     def _initialize_langfuse(self):
         """Initialize Langfuse configuration for LiteLLM."""
@@ -170,3 +188,150 @@ class LiteLLMIndicationAgent:
                 return response_message.content
 
 
+class AnalysisResponse(BaseModel):
+    reasoning_trace: str
+    identified_terms: List[Dict[str, str]]
+    retrieved_rules: List[Dict[str, Any]]
+
+class GenerationResponse(BaseModel):
+    reasoning_trace: str
+    selected_source: str
+    generated_indication: str
+
+class HybridIndicationAgent:
+    """Hybrid Indication Extraction Agent (Gemini 3 + Gemini 2.5)."""
+
+    def __init__(self):
+        """Initialize the agent."""
+        self.tools = get_tools()
+        self.tools_map = {tool.name: tool for tool in self.tools}
+        self.tools_schema = [convert_to_openai_tool(tool) for tool in self.tools]
+        
+        self._initialize_langfuse()
+        self._load_prompts()
+
+    def _initialize_langfuse(self):
+        """Initialize Langfuse configuration."""
+        if settings.langfuse.LANGFUSE_PUBLIC_KEY and settings.langfuse.LANGFUSE_SECRET_KEY:
+            os.environ["LANGFUSE_PUBLIC_KEY"] = settings.langfuse.LANGFUSE_PUBLIC_KEY
+            os.environ["LANGFUSE_SECRET_KEY"] = settings.langfuse.LANGFUSE_SECRET_KEY
+            os.environ["LANGFUSE_HOST"] = settings.langfuse.LANGFUSE_HOST
+            litellm.callbacks = ["langfuse_otel"]
+
+    def _load_prompts(self):
+        """Load system prompts."""
+        current_dir = os.path.dirname(os.path.abspath(__file__))
+        
+        try:
+            with open(os.path.join(current_dir, "prompts", "ANALYSIS_SYSTEM_PROMPT.md"), 'r') as f:
+                self.analysis_prompt = f.read().strip()
+            with open(os.path.join(current_dir, "prompts", "GENERATION_SYSTEM_PROMPT.md"), 'r') as f:
+                self.generation_prompt = f.read().strip()
+            print("✓ Loaded Hybrid Prompts")
+        except Exception as e:
+            print(f"✗ Error loading prompts: {e}")
+            self.analysis_prompt = "Analyze clinical text."
+            self.generation_prompt = "Generate indication."
+
+    def run_analysis(self, abstract_title: str, session_title: str, metadata: Dict) -> AnalysisResponse:
+        """Stage 1: Analysis with Gemini 3."""
+        messages = [
+            {"role": "system", "content": self.analysis_prompt},
+            {"role": "user", "content": f"session_title: {session_title}\nabstract_title: {abstract_title}"}
+        ]
+        
+        # Use Gemini 3 for Analysis
+        model = "gemini/gemini-3-pro-preview"  # Or configured G3 model
+        
+        while True:
+            response = litellm.completion(
+                model=model,
+                messages=messages,
+                tools=self.tools_schema,
+                tool_choice="auto",
+                metadata=metadata,
+                response_format=AnalysisResponse
+            )
+            
+            msg = response.choices[0].message
+            messages.append(msg.model_dump())
+            
+            if msg.tool_calls:
+                for tool_call in msg.tool_calls:
+                    fn_name = tool_call.function.name
+                    args = json.loads(tool_call.function.arguments)
+                    if fn_name in self.tools_map:
+                        res = self.tools_map[fn_name].invoke(args)
+                        messages.append({
+                            "tool_call_id": tool_call.id,
+                            "role": "tool",
+                            "name": fn_name,
+                            "content": str(res)
+                        })
+            else:
+                try:
+                    return json.loads(msg.content)
+                except:
+                    return {"reasoning_trace": "Error parsing", "retrieved_rules": []}
+
+    def run_generation(self, abstract_title: str, session_title: str, analysis: Dict, metadata: Dict) -> GenerationResponse:
+        """Stage 2: Generation with Gemini 2.5."""
+        # Construct input with rules
+        rules_text = json.dumps(analysis.get("retrieved_rules", []), indent=2)
+        input_content = f"""
+session_title: {session_title}
+abstract_title: {abstract_title}
+retrieved_rules:
+{rules_text}
+"""
+        messages = [
+            {"role": "system", "content": self.generation_prompt},
+            {"role": "user", "content": input_content}
+        ]
+        
+        # Use Gemini 2.5 (or 1.5 Pro) for Generation
+        # Assuming 'gemini/gemini-1.5-pro' is the equivalent for "2.5" behavior requested
+        model = "gemini/gemini-1.5-pro" 
+        
+        response = litellm.completion(
+            model=model,
+            messages=messages,
+            metadata=metadata,
+            response_format=GenerationResponse
+        )
+        
+        try:
+            return json.loads(response.choices[0].message.content)
+        except:
+            return {"generated_indication": response.choices[0].message.content}
+
+    def run(self, abstract_title: str, session_title: str = "", abstract_id: str = None) -> str:
+        """Run the full hybrid pipeline."""
+        print(f"🚀 Starting Hybrid Pipeline for {abstract_id}")
+        
+        metadata = {
+            "agent_name": "HybridIndicationAgent",
+            "abstract_id": abstract_id,
+            "tags": ["hybrid_pipeline"]
+        }
+        
+        # Stage 1
+        print("  1️⃣  Running Analysis (Gemini 3)...")
+        analysis_result = self.run_analysis(abstract_title, session_title, metadata)
+        
+        # Stage 2
+        print("  2️⃣  Running Generation (Gemini 1.5 Pro)...")
+        generation_result = self.run_generation(abstract_title, session_title, analysis_result, metadata)
+        
+        # Merge results for final output format
+        final_output = {
+            "generated_indication": generation_result.get("generated_indication", ""),
+            "selected_source": generation_result.get("selected_source", ""),
+            "confidence_score": 1.0, # Placeholder
+            "reasoning_trace": f"ANALYSIS: {analysis_result.get('reasoning_trace')} || GENERATION: {generation_result.get('reasoning_trace')}",
+            "rules_retrieved": analysis_result.get("retrieved_rules", []),
+            "components_identified": [], # Could parse from analysis if needed
+            "quality_metrics": {}
+        }
+        
+        return json.dumps(final_output)

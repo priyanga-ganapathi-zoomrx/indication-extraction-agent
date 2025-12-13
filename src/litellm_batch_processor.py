@@ -125,7 +125,7 @@ def extract_indication_from_response(response_content: str) -> Dict[str, Any]:
             'indication': str(parsed.get('generated_indication', '')).strip(),
             'success': True,
             'selected_source': parsed.get('selected_source', ''),
-            'reasoning': parsed.get('reasoning', ''),
+            'reasoning': parsed.get('reasoning_trace', parsed.get('reasoning', '')),
             'confidence_score': parsed.get('confidence_score', None),
             'rules_retrieved': parsed.get('rules_retrieved', []),
             'components_identified': parsed.get('components_identified', []),
@@ -334,8 +334,13 @@ def main():
 
     # Initialize agent
     print("Initializing LiteLLM Indication Extraction Agent...")
-    agent = LiteLLMIndicationAgent()
-    print("✓ Agent initialized successfully!")
+    if args.model_name == "hybrid":
+        from src.litellm_agent import HybridIndicationAgent
+        agent = HybridIndicationAgent()
+        print("✓ Hybrid Agent (Gemini 3 + 2.5) initialized!")
+    else:
+        agent = LiteLLMIndicationAgent()
+        print("✓ Standard Agent initialized!")
     print()
 
     # Process abstracts
