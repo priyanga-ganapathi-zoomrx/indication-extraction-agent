@@ -214,7 +214,15 @@ class IndicationValidationAgent:
         else:
             system_msg = SystemMessage(content=self.system_prompt)
 
-        messages_for_llm = [system_msg] + state.get("messages", [])
+        # Get messages from state
+        messages = state.get("messages", [])
+
+        # Apply incremental caching on subsequent LLM calls (after tool use)
+        # This caches the growing conversation prefix including tool results
+        if self.enable_caching and state.get("llm_calls", 0) > 0:
+            messages = self._apply_incremental_caching(messages)
+
+        messages_for_llm = [system_msg] + messages
 
         try:
             response: AIMessage = self.llm_with_tools.invoke(messages_for_llm)
@@ -273,6 +281,56 @@ class IndicationValidationAgent:
 
         # Otherwise, we're done
         return END
+
+    def _apply_incremental_caching(self, messages: list[BaseMessage]) -> list[BaseMessage]:
+        """Add cache_control to the last ToolMessage for incremental caching.
+
+        This enables caching of the conversation history prefix on subsequent
+        LLM calls during multi-turn tool-use scenarios. By marking the last
+        ToolMessage with cache_control, the entire prefix (system prompt +
+        reference rules + validation input + AI response + tool results) gets
+        cached for any further iterations.
+
+        Args:
+            messages: List of messages from the conversation state
+
+        Returns:
+            list[BaseMessage]: Modified messages with cache_control on last ToolMessage
+        """
+        # Find the last ToolMessage index
+        last_tool_idx = None
+        for i in range(len(messages) - 1, -1, -1):
+            if isinstance(messages[i], ToolMessage):
+                last_tool_idx = i
+                break
+
+        if last_tool_idx is None:
+            return messages  # No tool messages, return as-is
+
+        # Create a modified copy of the messages list
+        modified_messages = list(messages)
+        tool_msg = modified_messages[last_tool_idx]
+        content = tool_msg.content
+
+        # Convert content to cacheable format with cache_control
+        if isinstance(content, str):
+            cached_content = [
+                {"type": "text", "text": content, "cache_control": {"type": "ephemeral"}}
+            ]
+        else:
+            # Content is already a list, add cache_control to the last block
+            cached_content = list(content)
+            if cached_content and isinstance(cached_content[-1], dict):
+                cached_content[-1] = {**cached_content[-1], "cache_control": {"type": "ephemeral"}}
+
+        # Create new ToolMessage with cached content
+        modified_messages[last_tool_idx] = ToolMessage(
+            content=cached_content,
+            tool_call_id=tool_msg.tool_call_id,
+            name=getattr(tool_msg, 'name', None),
+        )
+
+        return modified_messages
 
     def _format_validation_input(
         self,
