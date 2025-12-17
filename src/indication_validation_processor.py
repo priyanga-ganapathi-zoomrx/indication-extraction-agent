@@ -294,6 +294,8 @@ def main():
                        help='Number of rows to skip from the beginning')
     parser.add_argument('--num_workers', type=int, default=3,
                        help='Number of parallel workers (default: 3)')
+    parser.add_argument('--enable_caching', action='store_true',
+                       help='Enable prompt caching for Anthropic models (reduces costs)')
 
     args = parser.parse_args()
 
@@ -312,6 +314,7 @@ def main():
     print(f"Max rows: {args.max_rows or 'all'}")
     print(f"Skip rows: {args.skip_rows}")
     print(f"Parallel workers: {args.num_workers}")
+    print(f"Prompt caching: {'enabled' if args.enable_caching else 'disabled'}")
     print()
 
     # Load extraction results
@@ -332,7 +335,11 @@ def main():
 
     # Initialize validation agent
     print("Initializing Indication Validation Agent...")
-    validator = IndicationValidationAgent(agent_name="ValidationProcessor", llm_model=args.llm_model)
+    validator = IndicationValidationAgent(
+        agent_name="ValidationProcessor",
+        llm_model=args.llm_model,
+        enable_caching=args.enable_caching
+    )
     print("✓ Validation Agent initialized successfully!")
     print()
 

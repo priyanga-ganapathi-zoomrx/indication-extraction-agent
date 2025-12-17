@@ -49,15 +49,22 @@ class IndicationValidationAgent:
     - Formatting compliance
     """
 
-    def __init__(self, agent_name: str = "IndicationValidationAgent", llm_model: str | None = None):
+    def __init__(
+        self,
+        agent_name: str = "IndicationValidationAgent",
+        llm_model: str | None = None,
+        enable_caching: bool = False,
+    ):
         """Initialize the Indication Validation Agent.
 
         Args:
             agent_name: Name of the agent for identification and logging
             llm_model: Optional override for the LLM model name
+            enable_caching: Enable Anthropic prompt caching for reduced costs
         """
         self.agent_name = agent_name
         self._llm_model = llm_model
+        self.enable_caching = enable_caching
         self.tools = get_tools()  # Same tools as extraction agent
         self.tools_by_name = {tool.name: tool for tool in self.tools}
 
@@ -76,6 +83,10 @@ class IndicationValidationAgent:
         
         # Reference prompt (extraction rules - loaded dynamically)
         self.extraction_rules_prompt = self._get_extraction_rules_prompt()
+
+        # Log caching status
+        if self.enable_caching:
+            print(f"✓ Prompt caching enabled for {self.agent_name}")
 
         # Build the graph
         self.graph = self._build_graph()
@@ -194,12 +205,29 @@ class IndicationValidationAgent:
         Returns:
             dict: Updated state with new message and incremented llm_calls
         """
-        messages_for_llm = [SystemMessage(content=self.system_prompt)] + state.get(
-            "messages", []
-        )
+        # Build system message with optional caching
+        if self.enable_caching:
+            # Use content blocks with cache_control for Anthropic prompt caching
+            system_msg = SystemMessage(content=[
+                {"type": "text", "text": self.system_prompt, "cache_control": {"type": "ephemeral"}}
+            ])
+        else:
+            system_msg = SystemMessage(content=self.system_prompt)
+
+        messages_for_llm = [system_msg] + state.get("messages", [])
 
         try:
             response: AIMessage = self.llm_with_tools.invoke(messages_for_llm)
+
+            # Log cache performance metrics if caching is enabled
+            if self.enable_caching and hasattr(response, "usage_metadata"):
+                usage = response.usage_metadata
+                if usage:
+                    input_token_details = usage.get("input_token_details", {})
+                    cache_creation = input_token_details.get("cache_creation", 0)
+                    cache_read = input_token_details.get("cache_read", 0)
+                    if cache_creation > 0 or cache_read > 0:
+                        print(f"  📦 Cache stats - creation: {cache_creation}, read: {cache_read}")
 
             # Ensure the response has content to prevent parsing errors
             if not response.content and not response.tool_calls:
@@ -339,17 +367,26 @@ The following is the complete extraction rules document that the extractor was i
 
 END OF REFERENCE RULES DOCUMENT"""
 
+        # Build reference rules message with optional caching
+        if self.enable_caching:
+            # Use content blocks with cache_control for Anthropic prompt caching
+            reference_rules_message = HumanMessage(content=[
+                {"type": "text", "text": reference_rules_content, "cache_control": {"type": "ephemeral"}}
+            ])
+        else:
+            reference_rules_message = HumanMessage(content=reference_rules_content)
+
         # Format the validation input message
         input_content = self._format_validation_input(
             session_title, abstract_title, extraction_result
         )
 
         # Create initial state with two messages:
-        # 1. Reference rules document
-        # 2. Validation input to check
+        # 1. Reference rules document (cacheable)
+        # 2. Validation input to check (dynamic)
         initial_state = {
             "messages": [
-                HumanMessage(content=reference_rules_content),
+                reference_rules_message,
                 HumanMessage(content=input_content),
             ],
             "llm_calls": 0,
