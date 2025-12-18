@@ -367,6 +367,8 @@ def main():
                        help='Name of the model for column naming')
     parser.add_argument('--num_workers', type=int, default=3,
                        help='Number of parallel workers (default: 3)')
+    parser.add_argument('--enable_caching', action='store_true',
+                       help='Enable prompt caching for Gemini models (reduces costs)')
 
     args = parser.parse_args()
 
@@ -383,6 +385,7 @@ def main():
     print(f"Number of abstracts: {args.num_abstracts or 'all'}")
     print(f"Randomize: {args.randomize}")
     print(f"Parallel workers: {args.num_workers}")
+    print(f"Prompt caching: {'enabled' if args.enable_caching else 'disabled'}")
     print()
 
     # Load abstracts
@@ -402,7 +405,10 @@ def main():
 
     # Initialize agent
     print("Initializing Indication Extraction Agent...")
-    agent = IndicationExtractionAgent(agent_name=f"BatchProcessor_{args.model_name}")
+    agent = IndicationExtractionAgent(
+        agent_name=f"BatchProcessor_{args.model_name}",
+        enable_caching=args.enable_caching
+    )
     print("✓ Agent initialized successfully!")
     print()
 

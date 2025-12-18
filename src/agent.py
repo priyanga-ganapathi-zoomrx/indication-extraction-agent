@@ -45,13 +45,15 @@ class IndicationExtractionAgent:
     - Trace all operations with Langfuse
     """
 
-    def __init__(self, agent_name: str = "IndicationExtractionAgent"):
+    def __init__(self, agent_name: str = "IndicationExtractionAgent", enable_caching: bool = False):
         """Initialize the Indication Extraction Agent.
 
         Args:
             agent_name: Name of the agent for identification and logging
+            enable_caching: Enable prompt caching for Gemini models (reduces costs)
         """
         self.agent_name = agent_name
+        self.enable_caching = enable_caching
         self.tools = get_tools()
         self.tools_by_name = {tool.name: tool for tool in self.tools}
 
@@ -166,9 +168,19 @@ class IndicationExtractionAgent:
         Returns:
             dict: Updated state with new message and incremented llm_calls
         """
-        messages_for_llm = [SystemMessage(content=self.system_prompt)] + state.get(
-            "messages", []
-        )
+        # Format system message with cache_control if caching is enabled
+        if self.enable_caching:
+            system_message = SystemMessage(content=[
+                {
+                    "type": "text",
+                    "text": self.system_prompt,
+                    "cache_control": {"type": "ephemeral"}
+                }
+            ])
+        else:
+            system_message = SystemMessage(content=self.system_prompt)
+
+        messages_for_llm = [system_message] + state.get("messages", [])
 
         try:
             response: AIMessage = self.llm_with_tools.invoke(messages_for_llm)
