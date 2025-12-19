@@ -79,6 +79,7 @@ Identify drugs/regimens administered for therapeutic use in the cure, mitigation
 
   * If at least one drug is identified in the title but all are initially classified as **Secondary** or **Comparator**, **promote the most appropriate drug to Primary** to ensure the Primary Drugs array is populated.
   * This promotion rule applies **only to ensure non-empty Primary output**, not to override clear comparator-only scenarios unless no other Primary exists.
+  * **When a drug is promoted to Primary, it must be captured only in the Primary category and must not be repeated in the Secondary or Comparator categories.**
 
 3. **Primary vs comparator ambiguity resolution rule (ordering rule):**
 
