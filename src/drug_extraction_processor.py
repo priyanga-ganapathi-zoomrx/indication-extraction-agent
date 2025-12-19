@@ -40,6 +40,7 @@ class DrugExtractionProcessor:
         model: str = None,
         temperature: float = None,
         max_tokens: int = None,
+        enable_caching: bool = False,
     ):
         """Initialize the extraction processor.
 
@@ -47,7 +48,9 @@ class DrugExtractionProcessor:
             model: Model name (uses default from settings if not specified)
             temperature: Temperature (uses default from settings if not specified)
             max_tokens: Max tokens (uses default from settings if not specified)
+            enable_caching: Enable prompt caching for supported models (reduces costs)
         """
+        self.enable_caching = enable_caching
         self.langfuse_config = get_langfuse_config()
         
         # Create LLM config
@@ -67,7 +70,8 @@ class DrugExtractionProcessor:
             prompt_name="DRUG_EXTRACTION_SYSTEM_PROMPT",
             fallback_to_file=True,
         )
-        print(f"✓ Extraction processor initialized with model: {self.llm_config.model}")
+        caching_status = "enabled" if self.enable_caching else "disabled"
+        print(f"✓ Extraction processor initialized with model: {self.llm_config.model} (caching: {caching_status})")
 
     def extract(self, abstract_title: str, abstract_id: str = None) -> Dict[str, Any]:
         """Run extraction on a single abstract.
@@ -81,8 +85,20 @@ class DrugExtractionProcessor:
         """
         input_content = f"Extract drugs from the following:\n\nabstract_title: {abstract_title}"
 
+        # Format system message with cache_control if caching is enabled
+        if self.enable_caching:
+            system_message = SystemMessage(content=[
+                {
+                    "type": "text",
+                    "text": self.system_prompt,
+                    "cache_control": {"type": "ephemeral"}
+                }
+            ])
+        else:
+            system_message = SystemMessage(content=self.system_prompt)
+
         messages = [
-            SystemMessage(content=self.system_prompt),
+            system_message,
             HumanMessage(content=input_content),
         ]
 
@@ -234,13 +250,13 @@ def process_single_abstract(abstract: Dict, processor: DrugExtractionProcessor, 
         if key.startswith('input_'):
             output[key] = value
     
-    # Add extraction-specific columns
+    # Add extraction-specific columns (pretty-print JSON for readability)
     output.update({
         'extraction_response': result['response'],
         'extraction_primary_drugs': json.dumps(parsed['primary_drugs']),
         'extraction_secondary_drugs': json.dumps(parsed['secondary_drugs']),
         'extraction_comparator_drugs': json.dumps(parsed['comparator_drugs']),
-        'extraction_reasoning': json.dumps(parsed['reasoning']),
+        'extraction_reasoning': json.dumps(parsed['reasoning'], indent=2, ensure_ascii=False),
         'extraction_success': result['success'],
         'extraction_error': result['error'] or '',
     })
@@ -250,14 +266,15 @@ def process_single_abstract(abstract: Dict, processor: DrugExtractionProcessor, 
 
 def main():
     parser = argparse.ArgumentParser(description='Step 1: Drug Extraction Processor')
-    parser.add_argument('--input_file', required=True, help='Input CSV file with abstracts')
+    parser.add_argument('--input_file', default='data/drug_extraction_input_rerun.csv', help='Input CSV file with abstracts')
     parser.add_argument('--output_file', default=None, help='Output CSV file (default: auto-generated)')
     parser.add_argument('--num_abstracts', type=int, default=None, help='Number of abstracts to process')
     parser.add_argument('--randomize', action='store_true', help='Randomize abstract selection')
-    parser.add_argument('--model', default=None, help='Model to use for extraction')
-    parser.add_argument('--temperature', type=float, default=None, help='Temperature for LLM')
+    parser.add_argument('--model', default='gemini/gemini-2.5-pro', help='Model to use for extraction')
+    parser.add_argument('--temperature', type=float, default=0.0, help='Temperature for LLM')
     parser.add_argument('--max_tokens', type=int, default=None, help='Max tokens for LLM')
     parser.add_argument('--parallel_workers', type=int, default=3, help='Number of parallel workers')
+    parser.add_argument('--enable_caching', action='store_true', help='Enable prompt caching for supported models (reduces costs)')
 
     args = parser.parse_args()
 
@@ -273,6 +290,7 @@ def main():
     print(f"Output file: {args.output_file}")
     print(f"Model: {args.model or settings.llm.LLM_MODEL}")
     print(f"Number of abstracts: {args.num_abstracts or 'all'}")
+    print(f"Prompt caching: {'enabled' if args.enable_caching else 'disabled'}")
     print()
 
     # Load abstracts
@@ -288,6 +306,7 @@ def main():
         model=args.model,
         temperature=args.temperature,
         max_tokens=args.max_tokens,
+        enable_caching=args.enable_caching,
     )
 
     # Process abstracts with intermediate saves every 5 results

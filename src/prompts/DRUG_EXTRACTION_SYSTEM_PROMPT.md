@@ -64,6 +64,31 @@ Identify drugs/regimens administered for therapeutic use in the cure, mitigation
 
 * Identifiers are crucial for correctly distinguishing between Primary, Secondary, and Comparator drugs. They clarify whether a drug is the main treatment, a supporting therapy, or part of a comparator arm. Give special attention to these identifiers when classifying to ensure accuracy and prevent mislabeling.
 
+### **Multi-Category Capture & Priority Rules**
+
+1. **Drugs may belong to multiple categories simultaneously.**
+
+  * If a drug qualifies as **Primary**, **Secondary**, and/or **Comparator** based on identifiers in the title, it **must be captured in all applicable categories**, even if it already appears in another category.
+  * **Do NOT restrict a drug to only one category.**
+  * **Example**:
+    * *“Drug A combined with Drug B vs Drug A monotherapy”*
+      * Primary Drugs: `Drug A;;Drug B`
+      * Comparator Drugs: `Drug A`
+
+2. **The Primary Drugs field must never be empty.**
+
+  * If at least one drug is identified in the title but all are initially classified as **Secondary** or **Comparator**, **promote the most appropriate drug to Primary** to ensure the Primary Drugs array is populated.
+  * This promotion rule applies **only to ensure non-empty Primary output**, not to override clear comparator-only scenarios unless no other Primary exists.
+
+3. **Primary vs comparator ambiguity resolution rule (ordering rule):**
+
+  * If the title mentions both primary and comparator drugs and the distinction is unclear, **always assign the drug appearing first in the title as Primary**, and classify the other drug(s) according to context.
+  * **Example**:
+    * *“Drug A vs Drug B combined with Drug C”*
+      * Primary Drugs: `Drug A`
+      * Comparator Drugs: `Drug B;;Drug C`
+
+
 ## Inclusion Rules
 
 ### INCLUDE these drug types:
@@ -219,6 +244,11 @@ c. **Formatting Guidelines**
 
 11. Exclude **placebo** in any context.
 
+12. **Discontinued drugs must not be captured.**
+
+  * If a drug is explicitly described as **discontinued**, **terminated**, **withdrawn**, or **no longer used**, it must be **excluded from all categories**, even if identifiers (plus, vs, with, etc.) are present.
+
+
 ## Formatting Rules
 
 1. Separator: Use ;; between multiple drugs
@@ -335,7 +365,9 @@ The model **must** return a single JSON object with the following keys. All arra
 * **Consistency is critical**: Apply all standardization rules uniformly across all abstracts.
 * **Use the decision tree**: Follow the classification decision tree for consistent categorization.
 * **Quality check**: Verify output against the quality control measures before finalizing.
-* **Always extract drugs as Primary, Secondary, and Comparator** after carefully analyzing the title and understanding the drugs intended for treatment. **Drugs not intended for treatment or other terms (such as drug classes, mechanisms, or general therapy terms) should be strictly omitted.**
+* **Always extract drugs as Primary, Secondary, and Comparator** after carefully analyzing the title and understanding the drugs intended for treatment. 
+* **Guarantee Primary Drugs is never empty**
+**Drugs not intended for treatment or other terms (such as drug classes, mechanisms, or general therapy terms) should be strictly omitted.**
 * **If no drugs are identified in any category, return empty arrays ([]) for those keys, and do not add invalid or general terms as drugs that are not intended for the treatment.**
 * When uncertain about classification, choose the most contextually appropriate class per the decision tree and document that reasoning step in the `Reasoning` field.
 * **Output only the JSON object** — no additional text, explanations, or formatting outside the JSON.
