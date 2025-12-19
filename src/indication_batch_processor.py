@@ -28,7 +28,7 @@ def load_abstracts_from_csv(csv_path: str, max_abstracts: int = None, randomize:
         randomize: Whether to randomize the selection
 
     Returns:
-        List of dictionaries with abstract data
+        List of dictionaries with abstract data (all original fields preserved)
     """
     abstracts = []
 
@@ -40,13 +40,16 @@ def load_abstracts_from_csv(csv_path: str, max_abstracts: int = None, randomize:
         with open(csv_path, 'r', encoding='utf-8') as file:
             reader = csv.DictReader(file)
             for row in reader:
-                abstracts.append({
-                    'abstract_id': row.get('abstract_id', row.get('\ufeffabstract_id', '')),
-                    'session_title': row.get('Session title', ''),
-                    'abstract_title': row.get('abstract Title', ''),
-                    'ground_truth': row.get('Ground Truth', ''),
-                    'expected_indication': row.get('indication', '')
-                })
+                # Keep all original fields from the CSV
+                abstract_data = dict(row)
+                
+                # Normalize key field names for agent invocation (handle BOM and column name variations)
+                # Support both snake_case and original column names
+                abstract_data['_abstract_id'] = row.get('abstract_id', row.get('\ufeffabstract_id', ''))
+                abstract_data['_session_title'] = row.get('session_title', row.get('Session title', ''))
+                abstract_data['_abstract_title'] = row.get('abstract_title', row.get('abstract Title', ''))
+                
+                abstracts.append(abstract_data)
 
         if randomize and max_abstracts and len(abstracts) > max_abstracts:
             import random
@@ -221,59 +224,52 @@ def process_single_abstract(abstract: Dict, agent: IndicationExtractionAgent,
     """Process a single abstract and return the result.
 
     Args:
-        abstract: Abstract dictionary
+        abstract: Abstract dictionary (contains all original CSV fields plus normalized keys)
         agent: Initialized IndicationExtractionAgent
         model_name: Name of the model being used
         index: Index of the abstract for logging
 
     Returns:
-        Dictionary with processing result
+        Dictionary with processing result (all original fields + model output fields)
     """
-    print(f"Processing abstract {index}: ID {abstract['abstract_id']}")
+    print(f"Processing abstract {index}: ID {abstract['_abstract_id']}")
+
+    # Start with all original fields from the input CSV (exclude internal normalized keys)
+    result_row = {k: v for k, v in abstract.items() if not k.startswith('_')}
 
     try:
-        # Invoke the agent
+        # Invoke the agent using normalized keys
         result = agent.invoke(
-            abstract_title=abstract['abstract_title'],
-            session_title=abstract['session_title'],
-            abstract_id=abstract['abstract_id']
+            abstract_title=abstract['_abstract_title'],
+            session_title=abstract['_session_title'],
+            abstract_id=abstract['_abstract_id']
         )
 
         # Extract indication and additional fields
         extracted_data = extract_indication_from_response(result)
 
-        # Build result row with all JSON fields
-        result_row = {
-            'abstract_id': abstract['abstract_id'],
-            'session_title': abstract['session_title'],
-            'abstract_title': abstract['abstract_title'],
-            'ground_truth': abstract['ground_truth'],
-            'expected_indication': abstract['expected_indication'],
+        # Add model output fields
+        result_row.update({
             f'{model_name}_indication_response': extracted_data['indication'],
             f'{model_name}_success': extracted_data['success'],
             f'{model_name}_selected_source': extracted_data['selected_source'],
             f'{model_name}_confidence_score': extracted_data['confidence_score'],
             f'{model_name}_reasoning': extracted_data['reasoning'],
-            f'{model_name}_rules_retrieved': json.dumps(extracted_data['rules_retrieved']),
-            f'{model_name}_components_identified': json.dumps(extracted_data['components_identified']),
+            f'{model_name}_rules_retrieved': json.dumps(extracted_data['rules_retrieved'], indent=2),
+            f'{model_name}_components_identified': json.dumps(extracted_data['components_identified'], indent=2),
             f'{model_name}_quality_metrics_completeness': extracted_data['quality_metrics_completeness'],
             f'{model_name}_quality_metrics_rule_adherence': extracted_data['quality_metrics_rule_adherence'],
             f'{model_name}_quality_metrics_clinical_accuracy': extracted_data['quality_metrics_clinical_accuracy'],
             f'{model_name}_quality_metrics_formatting_compliance': extracted_data['quality_metrics_formatting_compliance'],
             f'{model_name}_llm_calls': result.get('llm_calls', 0)
-        }
+        })
 
         return result_row
 
     except Exception as e:
-        print(f"Error processing abstract {abstract['abstract_id']}: {e}")
-        # Add error result
-        result_row = {
-            'abstract_id': abstract['abstract_id'],
-            'session_title': abstract['session_title'],
-            'abstract_title': abstract['abstract_title'],
-            'ground_truth': abstract['ground_truth'],
-            'expected_indication': abstract['expected_indication'],
+        print(f"Error processing abstract {abstract['_abstract_id']}: {e}")
+        # Add error result fields
+        result_row.update({
             f'{model_name}_indication_response': "",
             f'{model_name}_success': False,
             f'{model_name}_selected_source': "",
@@ -286,7 +282,7 @@ def process_single_abstract(abstract: Dict, agent: IndicationExtractionAgent,
             f'{model_name}_quality_metrics_clinical_accuracy': None,
             f'{model_name}_quality_metrics_formatting_compliance': None,
             f'{model_name}_llm_calls': 0
-        }
+        })
         return result_row
 
 
@@ -360,10 +356,10 @@ def main():
     parser.add_argument('--output_file', default=None,
                        help='Output CSV file (default: auto-generated)')
     parser.add_argument('--num_abstracts', type=int, default=None,
-                       help='Number of abstracts to process (default: all)')
+                       help='Number of abstracts to process (default: all)') 
     parser.add_argument('--randomize', action='store_true',
                        help='Randomize abstract selection')
-    parser.add_argument('--model_name', default='default_model',
+    parser.add_argument('--model_name', default='gemini-2-5-pro',
                        help='Name of the model for column naming')
     parser.add_argument('--num_workers', type=int, default=3,
                        help='Number of parallel workers (default: 3)')

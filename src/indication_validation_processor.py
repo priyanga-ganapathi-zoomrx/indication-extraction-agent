@@ -13,6 +13,7 @@ Output: CSV file with validation results added
 import argparse
 import json
 import os
+import time
 import pandas as pd
 from datetime import datetime
 from typing import Dict, List
@@ -157,7 +158,7 @@ def validate_single_extraction(
                 'description': 'Extraction failed - no indication generated',
                 'evidence': '',
                 'component': ''
-            }])
+            }], indent=2, ensure_ascii=False)
             result_row['validation_reasoning'] = 'Extraction failed, validation skipped'
             result_row['validation_llm_calls'] = 0
             result_row['needs_qc'] = True
@@ -180,7 +181,7 @@ def validate_single_extraction(
         # Add validation columns
         result_row['validation_status'] = validation_result.get('validation_status', 'REVIEW')
         result_row['validation_confidence'] = validation_result.get('validation_confidence', 0.0)
-        result_row['validation_issues'] = json.dumps(validation_result.get('issues_found', []))
+        result_row['validation_issues'] = json.dumps(validation_result.get('issues_found', []), indent=2, ensure_ascii=False)
         result_row['validation_reasoning'] = validation_result.get('validation_reasoning', '')
         result_row['validation_llm_calls'] = validation_result.get('llm_calls', 0)
 
@@ -206,7 +207,7 @@ def validate_single_extraction(
             'description': f'Validation failed: {str(e)}',
             'evidence': '',
             'component': ''
-        }])
+        }], indent=2, ensure_ascii=False)
         result_row['validation_reasoning'] = f'Validation error: {str(e)}'
         result_row['validation_llm_calls'] = 0
         result_row['needs_qc'] = True
@@ -279,12 +280,14 @@ def validate_extractions_batch(
 
 def main():
     """Main validation processing function."""
+    start_time = time.time()
+    
     parser = argparse.ArgumentParser(description='Validate Indication Extractions')
-    parser.add_argument('--input_file', default='data/indication_validation_input_failure.csv',
+    parser.add_argument('--input_file', default='data/indication_generation_1000.csv',
                        help='Input CSV file with extraction results')
     parser.add_argument('--output_file', default=None,
                        help='Output CSV file (default: auto-generated)')
-    parser.add_argument('--model_name', default='model',
+    parser.add_argument('--model_name', default='gemini-2-5-pro',
                        help="Model name prefix used in input columns (falls back to 'model')")
     parser.add_argument('--llm_model', default="anthropic/claude-sonnet-4-5-20250929",
                        help='LLM model name to use for validation calls')
@@ -372,6 +375,25 @@ def main():
     
     print()
     print(f"Results saved to: {args.output_file}")
+    
+    # Calculate and display execution time
+    end_time = time.time()
+    elapsed_time = end_time - start_time
+    hours, remainder = divmod(elapsed_time, 3600)
+    minutes, seconds = divmod(remainder, 60)
+    
+    print()
+    print("⏱️  Execution Time:")
+    if hours > 0:
+        print(f"   Total: {int(hours)}h {int(minutes)}m {seconds:.2f}s")
+    elif minutes > 0:
+        print(f"   Total: {int(minutes)}m {seconds:.2f}s")
+    else:
+        print(f"   Total: {seconds:.2f}s")
+    
+    if total_validated > 0:
+        avg_time_per_record = elapsed_time / total_validated
+        print(f"   Average per record: {avg_time_per_record:.2f}s")
 
 
 if __name__ == "__main__":
