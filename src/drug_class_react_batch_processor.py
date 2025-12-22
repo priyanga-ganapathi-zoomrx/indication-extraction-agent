@@ -510,6 +510,8 @@ def main():
                         help='Randomize row selection')
     parser.add_argument('--use_drug_name', action='store_true',
                         help='Use drug_name column instead of flattened_components (default: use flattened_components)')
+    parser.add_argument('--enable_caching', action='store_true',
+                        help='Enable Anthropic prompt caching for reduced costs')
 
     args = parser.parse_args()
 
@@ -531,6 +533,7 @@ def main():
     print(f"Max workers: {args.max_workers}")
     print(f"Randomize: {args.randomize}")
     print(f"Use flattened_components: {not args.use_drug_name}")
+    print(f"Enable caching: {args.enable_caching}")
     print()
 
     # Load input CSV
@@ -551,6 +554,7 @@ def main():
         model=args.model,
         temperature=args.temperature,
         max_tokens=args.max_tokens,
+        enable_caching=args.enable_caching,
     )
     print("✓ Agent initialized")
 

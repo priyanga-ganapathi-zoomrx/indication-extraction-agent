@@ -43,6 +43,7 @@ class DrugClassReActAgent:
         model: str = None,
         temperature: float = None,
         max_tokens: int = None,
+        enable_caching: bool = False,
     ):
         """Initialize the Drug Class Extraction Agent.
 
@@ -51,11 +52,13 @@ class DrugClassReActAgent:
             model: LLM model to use (default: from settings)
             temperature: LLM temperature (default: from settings)
             max_tokens: LLM max tokens (default: from settings)
+            enable_caching: Enable Anthropic prompt caching for reduced costs
         """
         self.agent_name = agent_name
         self._model = model
         self._temperature = temperature
         self._max_tokens = max_tokens
+        self.enable_caching = enable_caching
 
         # Initialize Langfuse
         self.langfuse_config = get_langfuse_config()
@@ -67,6 +70,10 @@ class DrugClassReActAgent:
 
         # Load and parse the 3-message prompt structure
         self.system_prompt, self.rules_message, self.input_template = self._load_prompt_sections()
+
+        # Log caching status
+        if self.enable_caching:
+            print(f"✓ Prompt caching enabled for {self.agent_name}")
 
     def _initialize_langfuse(self) -> Langfuse | None:
         """Initialize Langfuse client for tracing and observability.
@@ -270,9 +277,22 @@ class DrugClassReActAgent:
             firm_results=firm_results or [],
         )
 
+        # Build messages with optional caching for system prompt and rules
+        if self.enable_caching:
+            # Use content blocks with cache_control for Anthropic prompt caching
+            system_msg = SystemMessage(content=[
+                {"type": "text", "text": self.system_prompt, "cache_control": {"type": "ephemeral"}}
+            ])
+            rules_msg = HumanMessage(content=[
+                {"type": "text", "text": self.rules_message, "cache_control": {"type": "ephemeral"}}
+            ])
+        else:
+            system_msg = SystemMessage(content=self.system_prompt)
+            rules_msg = HumanMessage(content=self.rules_message)
+
         messages = [
-            SystemMessage(content=self.system_prompt),
-            HumanMessage(content=self.rules_message),
+            system_msg,
+            rules_msg,
             HumanMessage(content=input_message),
         ]
 
@@ -295,6 +315,17 @@ class DrugClassReActAgent:
         # Invoke the LLM
         try:
             response: AIMessage = self.llm.invoke(messages, config)
+
+            # Log cache performance metrics if caching is enabled
+            if self.enable_caching and hasattr(response, "usage_metadata"):
+                usage = response.usage_metadata
+                if usage:
+                    input_token_details = usage.get("input_token_details", {})
+                    cache_creation = input_token_details.get("cache_creation", 0)
+                    cache_read = input_token_details.get("cache_read", 0)
+                    if cache_creation > 0 or cache_read > 0:
+                        print(f"  📦 Cache stats - creation: {cache_creation}, read: {cache_read}")
+
             return {
                 "messages": messages + [response],
                 "llm_calls": 1,
