@@ -45,6 +45,7 @@ class DrugClassValidationAgent:
         llm_model: str | None = None,
         temperature: float = None,
         max_tokens: int = None,
+        enable_caching: bool = False,
     ):
         """Initialize the Drug Class Validation Agent.
 
@@ -53,11 +54,13 @@ class DrugClassValidationAgent:
             llm_model: Optional override for the LLM model name
             temperature: Optional override for LLM temperature
             max_tokens: Optional override for LLM max tokens
+            enable_caching: Enable Anthropic prompt caching for reduced costs
         """
         self.agent_name = agent_name
         self._llm_model = llm_model
         self._temperature = temperature
         self._max_tokens = max_tokens
+        self.enable_caching = enable_caching
 
         # Initialize Langfuse
         self.langfuse_config = get_langfuse_config()
@@ -70,6 +73,10 @@ class DrugClassValidationAgent:
         # Load prompts
         self.validation_prompt = self._get_validation_prompt()
         self.extraction_rules_prompt = self._get_extraction_rules_prompt()
+
+        # Log caching status
+        if self.enable_caching:
+            print(f"✓ Prompt caching enabled for {self.agent_name}")
 
     def _initialize_langfuse(self) -> Langfuse | None:
         """Initialize Langfuse client for tracing and observability.
@@ -206,16 +213,22 @@ class DrugClassValidationAgent:
         else:
             drug_classes_display = json.dumps(drug_classes)
 
-        # Handle empty extraction case
+        # Handle empty extraction case - triggers EXTRACTION MODE
         empty_notice = ""
         if drug_classes == ["NA"] or not drug_classes:
             empty_notice = """
 
-IMPORTANT:
+IMPORTANT - EXTRACTION MODE TRIGGERED:
 - The extractor returned NA (no drug class).
-- Your job is to determine if a drug class SHOULD exist based on the sources.
-- If the sources clearly contain a valid drug class per rules, treat this as a high-severity omission/FAIL.
-- If no drug class exists per rules, you may mark PASS but must explain why."""
+- First, run omission detection on original sources. If missed classes are found, add them to "missed_drug_classes" array.
+- Then, ALWAYS perform GROUNDED SEARCH EXTRACTION to find the drug class.
+- Use your search grounding capability to query authoritative sources (FDA, NIH, NCI, etc.).
+- Apply ALL rules from the reference document to format the extracted drug class.
+- Set "extraction_performed": true and populate "extracted_drug_classes" in your output.
+- Both "missed_drug_classes" (from original sources) and "extracted_drug_classes" (from grounded search) can be populated.
+- If HIGH severity omission found in original sources, set validation_status to FAIL.
+- If you successfully extract a drug class via grounded search with no omissions, set validation_status to PASS.
+- If no drug class found even with grounded search, set validation_status to REVIEW and explain why."""
 
         # Format search results
         search_results_str = self._format_search_results(search_results)
@@ -306,10 +319,22 @@ END OF REFERENCE RULES DOCUMENT"""
             extraction_result=extraction_result,
         )
 
-        # Build messages for LLM
+        # Build messages for LLM with optional caching
+        if self.enable_caching:
+            # Use content blocks with cache_control for Anthropic prompt caching
+            system_msg = SystemMessage(content=[
+                {"type": "text", "text": self.validation_prompt, "cache_control": {"type": "ephemeral"}}
+            ])
+            reference_rules_msg = HumanMessage(content=[
+                {"type": "text", "text": reference_rules_content, "cache_control": {"type": "ephemeral"}}
+            ])
+        else:
+            system_msg = SystemMessage(content=self.validation_prompt)
+            reference_rules_msg = HumanMessage(content=reference_rules_content)
+
         messages = [
-            SystemMessage(content=self.validation_prompt),
-            HumanMessage(content=reference_rules_content),
+            system_msg,
+            reference_rules_msg,
             HumanMessage(content=input_content),
         ]
 
@@ -328,12 +353,26 @@ END OF REFERENCE RULES DOCUMENT"""
         # Invoke the LLM
         try:
             response: AIMessage = self.llm.invoke(messages, config)
+
+            # Log cache performance metrics if caching is enabled
+            if self.enable_caching and hasattr(response, "usage_metadata"):
+                usage = response.usage_metadata
+                if usage:
+                    input_token_details = usage.get("input_token_details", {})
+                    cache_creation = input_token_details.get("cache_creation", 0)
+                    cache_read = input_token_details.get("cache_read", 0)
+                    if cache_creation > 0 or cache_read > 0:
+                        print(f"  📦 Cache stats - creation: {cache_creation}, read: {cache_read}")
+
             return self._parse_validation_response(response, llm_calls=1)
         except Exception as e:
             print(f"✗ Error during validation LLM call: {e}")
             return {
                 "validation_status": "REVIEW",
                 "validation_confidence": 0.0,
+                "extraction_performed": False,
+                "extracted_drug_classes": [],
+                "missed_drug_classes": [],
                 "issues_found": [
                     {
                         "check_type": "system_error",
@@ -375,6 +414,9 @@ END OF REFERENCE RULES DOCUMENT"""
                     return {
                         "validation_status": parsed.get("validation_status", "REVIEW"),
                         "validation_confidence": parsed.get("validation_confidence", 0.5),
+                        "extraction_performed": parsed.get("extraction_performed", False),
+                        "extracted_drug_classes": parsed.get("extracted_drug_classes", []),
+                        "missed_drug_classes": parsed.get("missed_drug_classes", []),
                         "issues_found": parsed.get("issues_found", []),
                         "checks_performed": parsed.get("checks_performed", {}),
                         "validation_reasoning": parsed.get("validation_reasoning", ""),
@@ -397,6 +439,9 @@ END OF REFERENCE RULES DOCUMENT"""
                         return {
                             "validation_status": parsed.get("validation_status", "REVIEW"),
                             "validation_confidence": parsed.get("validation_confidence", 0.5),
+                            "extraction_performed": parsed.get("extraction_performed", False),
+                            "extracted_drug_classes": parsed.get("extracted_drug_classes", []),
+                            "missed_drug_classes": parsed.get("missed_drug_classes", []),
                             "issues_found": parsed.get("issues_found", []),
                             "checks_performed": parsed.get("checks_performed", {}),
                             "validation_reasoning": parsed.get("validation_reasoning", ""),
@@ -415,6 +460,9 @@ END OF REFERENCE RULES DOCUMENT"""
             return {
                 "validation_status": status,
                 "validation_confidence": 0.5,
+                "extraction_performed": False,
+                "extracted_drug_classes": [],
+                "missed_drug_classes": [],
                 "issues_found": [],
                 "checks_performed": {},
                 "validation_reasoning": content[:2000] if content else "Unable to parse validation response",
@@ -438,6 +486,9 @@ END OF REFERENCE RULES DOCUMENT"""
         return {
             "validation_status": "REVIEW",
             "validation_confidence": 0.0,
+            "extraction_performed": False,
+            "extracted_drug_classes": [],
+            "missed_drug_classes": [],
             "issues_found": [
                 {
                     "check_type": "system_error",

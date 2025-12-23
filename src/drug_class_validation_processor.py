@@ -133,9 +133,13 @@ def load_extractions_from_csv(
             # Get basic fields
             abstract_id = row.get('abstract_id', row.get('\ufeffabstract_id', ''))
             abstract_title = row.get('abstract_title', '')
-            drug_name = row.get('drug_name', '')
             full_abstract = row.get('full_abstract', '')
             firm = row.get('firm', '')
+            
+            # Use flattened_components for drug names (JSON array like ["Drug1", "Drug2"])
+            # Falls back to drug_name if flattened_components not available
+            flattened_components = row.get('flattened_components', '')
+            drug_name_raw = row.get('drug_name', '')
 
             # Parse firms list
             if isinstance(firm, str) and firm:
@@ -169,6 +173,16 @@ def load_extractions_from_csv(
             reasoning_grouped = safe_json_loads(reasoning_grouped, {})
             extraction_details_grouped = safe_json_loads(extraction_details_grouped, {})
             drug_classes_list = safe_json_loads(drug_classes, ["NA"])
+            
+            # Parse flattened_components as JSON array for drug names
+            flattened_components_list = safe_json_loads(flattened_components, [])
+            
+            # Determine drug_name: prefer flattened_components, fallback to drug_name column
+            if flattened_components_list:
+                # Join components for display, keep list for processing
+                drug_name = ', '.join(flattened_components_list)
+            else:
+                drug_name = drug_name_raw
 
             # Normalize boolean-like values
             if isinstance(success, str):
@@ -178,6 +192,7 @@ def load_extractions_from_csv(
                 'abstract_id': abstract_id,
                 'abstract_title': abstract_title,
                 'drug_name': drug_name,
+                'flattened_components': flattened_components_list,  # Store as list for processing
                 'full_abstract': full_abstract,
                 'firms': firms,
                 'extraction_result': {
@@ -257,6 +272,9 @@ def validate_single_drug(
     return {
         'status': validation_result.get('validation_status', 'REVIEW'),
         'confidence': validation_result.get('validation_confidence', 0.0),
+        'extraction_performed': validation_result.get('extraction_performed', False),
+        'extracted_drug_classes': validation_result.get('extracted_drug_classes', []),
+        'missed_drug_classes': validation_result.get('missed_drug_classes', []),
         'issues': validation_result.get('issues_found', []),
         'checks': validation_result.get('checks_performed', {}),
         'reasoning': validation_result.get('validation_reasoning', ''),
@@ -294,18 +312,10 @@ def validate_single_extraction(
         # Get extraction result
         extraction_result = extraction['extraction_result']
 
-        # Skip validation if extraction failed
+        # Log if original extraction failed - but continue with validation
+        # The validator can still perform grounded search extraction to find drug classes
         if not extraction_result.get('success', False):
-            print("  Skipping validation - extraction failed")
-            result_row['validation_status'] = 'FAIL'
-            result_row['validation_confidence_grouped'] = '{}'
-            result_row['validation_issues_grouped'] = '{}'
-            result_row['validation_checks_grouped'] = '{}'
-            result_row['validation_reasoning_grouped'] = '{}'
-            result_row['validation_status_grouped'] = '{}'
-            result_row['validation_llm_calls'] = 0
-            result_row['needs_qc'] = True
-            return result_row
+            print("  Note: Original extraction failed - will attempt grounded search extraction")
 
         # Get grouped extraction data
         drug_classes_grouped = extraction_result.get('drug_classes_grouped', {})
@@ -319,8 +329,11 @@ def validate_single_extraction(
         drugs_to_validate = list(drug_classes_grouped.keys())
 
         if not drugs_to_validate:
-            # Fallback: if no grouped data, use the drug_name column
-            if drug_name_col:
+            # Fallback: prefer flattened_components, then drug_name column
+            flattened_components = extraction.get('flattened_components', [])
+            if flattened_components:
+                drugs_to_validate = flattened_components
+            elif drug_name_col:
                 drugs_to_validate = [d.strip() for d in drug_name_col.replace(';', ',').split(',') if d.strip()]
             else:
                 drugs_to_validate = []
@@ -334,6 +347,11 @@ def validate_single_extraction(
             result_row['validation_reasoning_grouped'] = '{}'
             result_row['validation_status_grouped'] = '{}'
             result_row['validation_llm_calls'] = 0
+            result_row['extraction_performed_grouped'] = '{}'
+            result_row['extracted_drug_classes_grouped'] = '{}'
+            result_row['extracted_classes'] = '{}'
+            result_row['missed_drug_classes_grouped'] = '{}'
+            result_row['missed_classes'] = '[]'
             result_row['needs_qc'] = True
             return result_row
 
@@ -345,6 +363,9 @@ def validate_single_extraction(
         validation_issues_grouped = {}
         validation_checks_grouped = {}
         validation_reasoning_grouped = {}
+        extraction_performed_grouped = {}
+        extracted_drug_classes_grouped = {}
+        missed_drug_classes_grouped = {}
         total_llm_calls = 0
 
         for drug in drugs_to_validate:
@@ -367,9 +388,20 @@ def validate_single_extraction(
                 validation_issues_grouped[drug] = drug_validation['issues']
                 validation_checks_grouped[drug] = drug_validation['checks']
                 validation_reasoning_grouped[drug] = drug_validation['reasoning']
+                extraction_performed_grouped[drug] = drug_validation['extraction_performed']
+                extracted_drug_classes_grouped[drug] = drug_validation['extracted_drug_classes']
+                missed_drug_classes_grouped[drug] = drug_validation['missed_drug_classes']
                 total_llm_calls += drug_validation['llm_calls']
 
-                print(f"      Status: {drug_validation['status']}")
+                # Log extraction and missed classes if any
+                missed_count = len(drug_validation['missed_drug_classes'])
+                if drug_validation['extraction_performed']:
+                    extracted_count = len(drug_validation['extracted_drug_classes'])
+                    print(f"      Status: {drug_validation['status']} (extraction performed, found {extracted_count} classes, {missed_count} missed)")
+                elif missed_count > 0:
+                    print(f"      Status: {drug_validation['status']} ({missed_count} missed classes: {drug_validation['missed_drug_classes']})")
+                else:
+                    print(f"      Status: {drug_validation['status']}")
 
             except Exception as drug_error:
                 print(f"      Error validating {drug}: {drug_error}")
@@ -385,6 +417,9 @@ def validate_single_extraction(
                 }]
                 validation_checks_grouped[drug] = {}
                 validation_reasoning_grouped[drug] = f'Validation error: {str(drug_error)}'
+                extraction_performed_grouped[drug] = False
+                extracted_drug_classes_grouped[drug] = []
+                missed_drug_classes_grouped[drug] = []
 
         # Calculate cumulative validation_status
         # FAIL if ANY drug fails, REVIEW if any drug needs review (and none fail), PASS only if all pass
@@ -407,6 +442,38 @@ def validate_single_extraction(
         reasoning_json = json.dumps(validation_reasoning_grouped, indent=2)
         result_row['validation_reasoning_grouped'] = reasoning_json.replace('\\n', '\n')
         result_row['validation_llm_calls'] = total_llm_calls
+        
+        # Add extraction columns (for when validator extracts missing drug classes)
+        # Pretty print for object columns (with indent=2)
+        result_row['extraction_performed_grouped'] = json.dumps(extraction_performed_grouped, indent=2)
+        result_row['extracted_drug_classes_grouped'] = json.dumps(extracted_drug_classes_grouped, indent=2)
+        
+        # Add simplified extracted classes column (just class names as arrays, no pretty print)
+        # Extract only class_name from each extracted drug class for readability
+        extracted_classes_simple = {}
+        for drug, classes in extracted_drug_classes_grouped.items():
+            if classes:
+                extracted_classes_simple[drug] = [c.get('class_name', '') for c in classes if c.get('class_name')]
+            else:
+                extracted_classes_simple[drug] = []
+        result_row['extracted_classes'] = json.dumps(extracted_classes_simple)
+        
+        # Add missed drug classes columns
+        # missed_drug_classes is already a simple array of class names from LLM output
+        result_row['missed_drug_classes_grouped'] = json.dumps(missed_drug_classes_grouped, indent=2)
+        # Flatten all missed classes into a single array (not grouped by drug)
+        all_missed_classes = []
+        for classes in missed_drug_classes_grouped.values():
+            if classes:
+                all_missed_classes.extend(classes)
+        # Remove duplicates while preserving order
+        seen = set()
+        unique_missed_classes = []
+        for cls in all_missed_classes:
+            if cls not in seen:
+                seen.add(cls)
+                unique_missed_classes.append(cls)
+        result_row['missed_classes'] = json.dumps(unique_missed_classes)
 
         # Determine if QC is needed
         needs_qc = (
@@ -441,6 +508,11 @@ def validate_single_extraction(
         result_row['validation_checks_grouped'] = '{}'
         result_row['validation_reasoning_grouped'] = '{}'
         result_row['validation_llm_calls'] = 0
+        result_row['extraction_performed_grouped'] = '{}'
+        result_row['extracted_drug_classes_grouped'] = '{}'
+        result_row['extracted_classes'] = '{}'
+        result_row['missed_drug_classes_grouped'] = '{}'
+        result_row['missed_classes'] = '[]'
         result_row['needs_qc'] = True
 
     return result_row
@@ -538,6 +610,8 @@ def main():
                         help='Number of rows to skip from the beginning')
     parser.add_argument('--num_workers', type=int, default=3,
                         help='Number of parallel workers (default: 3)')
+    parser.add_argument('--enable_caching', action='store_true',
+                        help='Enable prompt caching for Anthropic models (reduces costs)')
 
     args = parser.parse_args()
 
@@ -556,6 +630,7 @@ def main():
     print(f"Max rows: {args.max_rows or 'all'}")
     print(f"Skip rows: {args.skip_rows}")
     print(f"Parallel workers: {args.num_workers}")
+    print(f"Prompt caching: {'enabled' if args.enable_caching else 'disabled'}")
     print()
 
     # Load extraction results
@@ -585,6 +660,7 @@ def main():
         llm_model=args.llm_model,
         temperature=args.temperature,
         max_tokens=args.max_tokens,
+        enable_caching=args.enable_caching,
     )
     print("✓ Validation Agent initialized successfully!")
     print()
