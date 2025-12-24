@@ -5,6 +5,7 @@ langchain-openai>=1.0.2
 langchain-anthropic>=1.0.1
 langchain-google-genai>=3.0.1
 langgraph>=1.0.2
+litellm>=1.71.0  # Required for web_search_options support
 
 # Observability and tracing
 langfuse>=3.2.7

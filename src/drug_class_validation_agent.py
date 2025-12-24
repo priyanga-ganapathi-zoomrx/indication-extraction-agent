@@ -5,23 +5,20 @@ against established rules, flagging potential errors for manual QC review.
 
 Key features:
 - Loads validation prompt and extraction rules as reference
-- Uses single LLM call (no tool calling needed)
+- Uses LiteLLM SDK directly with native web search enabled
+- Enforces structured JSON output via Pydantic response_format
 - Validates hallucination, omission, and rule compliance
 """
 
 import json
 import os
 import re
-from typing import Any, Dict, List
+from typing import Any, Dict, List, Literal, Optional
 
-from langchain_core.messages import AIMessage, HumanMessage, SystemMessage
-from langchain_core.runnables.config import RunnableConfig
-from langfuse import Langfuse
-from langfuse.langchain import CallbackHandler
+import litellm
+from pydantic import BaseModel, Field, model_validator
 
 from src.config import settings
-from src.langfuse_config import get_langfuse_config
-from src.llm_handler import LLMConfig, create_llm
 from src.prompts import get_system_prompt
 
 
@@ -30,6 +27,76 @@ DRUG_CLASS_VALIDATION_PROMPT_NAME = "DRUG_CLASS_VALIDATION_SYSTEM_PROMPT"
 DRUG_CLASS_EXTRACTION_PROMPT_NAME = "DRUG_CLASS_EXTRACTION_FROM_SEARCH_REACT_PATTERN"
 
 
+# =============================================================================
+# Pydantic Response Schema Models (matching system prompt exactly)
+# =============================================================================
+
+class ValidationIssue(BaseModel):
+    """Issue found during validation."""
+    check_type: Literal["hallucination", "omission", "rule_compliance"]
+    severity: Literal["high", "medium", "low"]
+    description: str = Field(description="Clear description of the issue found")
+    evidence: str = Field(description="Specific evidence from sources supporting this finding")
+    drug_class: str = Field(default="", description="The specific drug class involved")
+    transformed_drug_class: Optional[str] = Field(
+        default=None,
+        description="The correctly transformed drug class after applying the rule (required for rule_compliance)"
+    )
+    rule_reference: str = Field(default="", description="Rule X (if applicable)")
+
+    @model_validator(mode='after')
+    def validate_transformed_drug_class(self) -> 'ValidationIssue':
+        """Ensure transformed_drug_class is provided for rule_compliance issues."""
+        if self.check_type == "rule_compliance" and not self.transformed_drug_class:
+            raise ValueError("transformed_drug_class is required for rule_compliance issues")
+        return self
+
+
+class CheckResult(BaseModel):
+    """Result of a single validation check."""
+    passed: bool
+    note: str
+
+
+class ChecksPerformed(BaseModel):
+    """All validation checks performed."""
+    hallucination_detection: Optional[CheckResult] = None
+    omission_detection: Optional[CheckResult] = None
+    rule_compliance: Optional[CheckResult] = None
+
+
+class ExtractedDrugClass(BaseModel):
+    """Drug class extracted via grounded search."""
+    class_name: str = Field(description="The drug class formatted per rules")
+    class_type: Literal["MoA", "Chemical", "Mode", "Therapeutic"]
+    source_url: str = Field(description="Actual URL where the drug class was found")
+    source_title: str = Field(description="Title of the source page")
+    evidence: str = Field(description="Exact text snippet from source")
+    confidence: Literal["high", "medium", "low"]
+
+
+class DrugClassValidationResponse(BaseModel):
+    """Complete validation response schema."""
+    validation_status: Literal["PASS", "REVIEW", "FAIL"]
+    validation_confidence: float = Field(ge=0.0, le=1.0)
+    extraction_performed: bool = Field(
+        default=False,
+        description="true ONLY when input drug_classes was ['NA'] or []. Must be false when validating existing drug classes."
+    )
+    extracted_drug_classes: List[ExtractedDrugClass] = Field(
+        default_factory=list,
+        description="ONLY for grounded search results. Empty [] when extraction_performed is false. Never copy from input."
+    )
+    missed_drug_classes: List[str] = Field(default_factory=list)
+    issues_found: List[ValidationIssue] = Field(default_factory=list)
+    checks_performed: ChecksPerformed
+    validation_reasoning: str
+
+
+# =============================================================================
+# Drug Class Validation Agent
+# =============================================================================
+
 class DrugClassValidationAgent:
     """Drug Class Validation Agent that validates extraction results against rules.
 
@@ -37,6 +104,9 @@ class DrugClassValidationAgent:
     - Hallucination detection: Are extracted drug classes grounded in sources?
     - Omission detection: Are there valid drug classes that weren't extracted?
     - Rule compliance: Were the extraction rules applied correctly?
+
+    Uses LiteLLM SDK directly with native web search enabled for grounded validation.
+    Enforces structured JSON output via Pydantic response_format.
     """
 
     def __init__(
@@ -45,7 +115,6 @@ class DrugClassValidationAgent:
         llm_model: str | None = None,
         temperature: float = None,
         max_tokens: int = None,
-        enable_caching: bool = False,
     ):
         """Initialize the Drug Class Validation Agent.
 
@@ -54,81 +123,42 @@ class DrugClassValidationAgent:
             llm_model: Optional override for the LLM model name
             temperature: Optional override for LLM temperature
             max_tokens: Optional override for LLM max tokens
-            enable_caching: Enable Anthropic prompt caching for reduced costs
         """
         self.agent_name = agent_name
         self._llm_model = llm_model
         self._temperature = temperature
         self._max_tokens = max_tokens
-        self.enable_caching = enable_caching
 
-        # Initialize Langfuse
-        self.langfuse_config = get_langfuse_config()
-        self.langfuse = self._initialize_langfuse() if self.langfuse_config else None
-
-        # Initialize LLM (no tool binding for validation)
-        self.llm_config = self._get_llm_config()
-        self.llm = create_llm(self.llm_config)
+        # Initialize Langfuse OTEL integration for LiteLLM
+        self._initialize_langfuse()
 
         # Load prompts
         self.validation_prompt = self._get_validation_prompt()
         self.extraction_rules_prompt = self._get_extraction_rules_prompt()
 
-        # Log caching status
-        if self.enable_caching:
-            print(f"✓ Prompt caching enabled for {self.agent_name}")
+        print(f"✓ {self.agent_name} initialized with model: {self._llm_model or settings.llm.LLM_MODEL}")
 
-    def _initialize_langfuse(self) -> Langfuse | None:
-        """Initialize Langfuse client for tracing and observability.
-
-        Returns:
-            Langfuse client instance or None if initialization fails
-        """
-        if not self.langfuse_config:
-            print(f"ℹ Langfuse not configured for {self.agent_name}")
-            return None
-
-        try:
-            langfuse = Langfuse(
-                public_key=self.langfuse_config.public_key,
-                secret_key=self.langfuse_config.secret_key,
-                host=self.langfuse_config.host,
-            )
-            if langfuse.auth_check():
-                print(f"✓ Langfuse initialized successfully for {self.agent_name}")
-                return langfuse
-            else:
-                print(f"✗ Langfuse authentication failed for {self.agent_name}")
-                return None
-        except Exception as e:
-            print(f"✗ Error initializing Langfuse for {self.agent_name}: {e}")
-            return None
-
-    def _get_llm_config(self) -> LLMConfig:
-        """Get LLM configuration from settings or overrides.
-
-        Returns:
-            LLMConfig: Configuration for the language model
-        """
-        return LLMConfig(
-            api_key=settings.llm.LLM_API_KEY,
-            model=self._llm_model or settings.llm.LLM_MODEL,
-            base_url=settings.llm.LLM_BASE_URL,
-            temperature=self._temperature if self._temperature is not None else settings.llm.LLM_TEMPERATURE,
-            max_tokens=self._max_tokens or settings.llm.LLM_MAX_TOKENS,
-            name=self.agent_name,
-        )
+    def _initialize_langfuse(self):
+        """Initialize Langfuse configuration for LiteLLM OTEL integration."""
+        if settings.langfuse.LANGFUSE_PUBLIC_KEY and settings.langfuse.LANGFUSE_SECRET_KEY:
+            os.environ["LANGFUSE_PUBLIC_KEY"] = settings.langfuse.LANGFUSE_PUBLIC_KEY
+            os.environ["LANGFUSE_SECRET_KEY"] = settings.langfuse.LANGFUSE_SECRET_KEY
+            os.environ["LANGFUSE_HOST"] = settings.langfuse.LANGFUSE_HOST
+            litellm.callbacks = ["langfuse_otel"]
+            print(f"✓ Langfuse OTEL integration configured for {self.agent_name}")
+        else:
+            print("ℹ Langfuse not configured (missing keys)")
 
     def _get_validation_prompt(self) -> str:
         """Get the validation system prompt.
 
-        Fetches the prompt from Langfuse if configured, otherwise falls back to local file.
+        Fetches the prompt from local file.
 
         Returns:
             str: Validation system prompt content
         """
         prompt_content, prompt_version = get_system_prompt(
-            langfuse_client=self.langfuse,
+            langfuse_client=None,
             prompt_name=DRUG_CLASS_VALIDATION_PROMPT_NAME,
             fallback_to_file=True,
         )
@@ -146,7 +176,7 @@ class DrugClassValidationAgent:
         """
         try:
             prompt_content, prompt_version = get_system_prompt(
-                langfuse_client=self.langfuse,
+                langfuse_client=None,
                 prompt_name=DRUG_CLASS_EXTRACTION_PROMPT_NAME,
                 fallback_to_file=True,
             )
@@ -288,12 +318,13 @@ Please perform all 3 validation checks (Hallucination Detection, Omission Detect
             dict: Validation result containing status, issues, and reasoning
         """
         # Build tags for Langfuse tracing
+        model_name = self._llm_model or settings.llm.LLM_MODEL
         tags = [
             drug_name,
             f"abstract_id:{abstract_id or 'unknown'}",
             f"validation_prompt_version:{getattr(self, 'validation_prompt_version', 'unknown')}",
             f"extraction_rules_version:{getattr(self, 'extraction_rules_version', 'unknown')}",
-            f"model:{self.llm_config.model}",
+            f"model:{model_name}",
             "drug_class_validation",
         ]
 
@@ -319,52 +350,46 @@ END OF REFERENCE RULES DOCUMENT"""
             extraction_result=extraction_result,
         )
 
-        # Build messages for LLM with optional caching
-        if self.enable_caching:
-            # Use content blocks with cache_control for Anthropic prompt caching
-            system_msg = SystemMessage(content=[
-                {"type": "text", "text": self.validation_prompt, "cache_control": {"type": "ephemeral"}}
-            ])
-            reference_rules_msg = HumanMessage(content=[
-                {"type": "text", "text": reference_rules_content, "cache_control": {"type": "ephemeral"}}
-            ])
-        else:
-            system_msg = SystemMessage(content=self.validation_prompt)
-            reference_rules_msg = HumanMessage(content=reference_rules_content)
-
+        # Build messages for LiteLLM (OpenAI-compatible format)
         messages = [
-            system_msg,
-            reference_rules_msg,
-            HumanMessage(content=input_content),
+            {"role": "system", "content": self.validation_prompt},
+            {"role": "user", "content": reference_rules_content},
+            {"role": "user", "content": input_content},
         ]
 
-        # Set environment variables for Langfuse callback handler
-        if self.langfuse_config:
-            os.environ["LANGFUSE_PUBLIC_KEY"] = self.langfuse_config.public_key
-            os.environ["LANGFUSE_SECRET_KEY"] = self.langfuse_config.secret_key
-            os.environ["LANGFUSE_HOST"] = self.langfuse_config.host
+        # Metadata for Langfuse tracing
+        metadata = {
+            "agent_name": self.agent_name,
+            "abstract_id": abstract_id,
+            "drug_name": drug_name,
+            "tags": tags,
+        }
 
-        # Configure with Langfuse tracing and tags
-        config = RunnableConfig(
-            callbacks=[CallbackHandler()] if self.langfuse else [],
-            metadata={"langfuse_tags": tags} if self.langfuse else {},
-        )
-
-        # Invoke the LLM
+        # Invoke LiteLLM with web search and structured output enabled
         try:
-            response: AIMessage = self.llm.invoke(messages, config)
+            # Build completion parameters
+            completion_params = {
+                "model": model_name,
+                "messages": messages,
+                "temperature": self._temperature if self._temperature is not None else settings.llm.LLM_TEMPERATURE,
+                "max_tokens": self._max_tokens or settings.llm.LLM_MAX_TOKENS,
+                "response_format": DrugClassValidationResponse,  # Pydantic model for structured output
+                "web_search_options": {"search_context_size": "medium"},
+                "metadata": metadata,
+            }
 
-            # Log cache performance metrics if caching is enabled
-            if self.enable_caching and hasattr(response, "usage_metadata"):
-                usage = response.usage_metadata
-                if usage:
-                    input_token_details = usage.get("input_token_details", {})
-                    cache_creation = input_token_details.get("cache_creation", 0)
-                    cache_read = input_token_details.get("cache_read", 0)
-                    if cache_creation > 0 or cache_read > 0:
-                        print(f"  📦 Cache stats - creation: {cache_creation}, read: {cache_read}")
+            # Add base_url and api_key if configured
+            if settings.llm.LLM_BASE_URL:
+                completion_params["base_url"] = settings.llm.LLM_BASE_URL
+            if settings.llm.LLM_API_KEY:
+                completion_params["api_key"] = settings.llm.LLM_API_KEY
 
-            return self._parse_validation_response(response, llm_calls=1)
+            response = litellm.completion(**completion_params)
+
+            # Extract content from response
+            content = response.choices[0].message.content
+
+            return self._parse_validation_response(content, llm_calls=1)
         except Exception as e:
             print(f"✗ Error during validation LLM call: {e}")
             return {
@@ -380,6 +405,7 @@ END OF REFERENCE RULES DOCUMENT"""
                         "description": f"Validation failed due to system error: {str(e)}",
                         "evidence": "",
                         "drug_class": "",
+                        "transformed_drug_class": None,
                         "rule_reference": "",
                     }
                 ],
@@ -388,90 +414,97 @@ END OF REFERENCE RULES DOCUMENT"""
                 "llm_calls": 1,
             }
 
-    def _parse_validation_response(self, response: AIMessage, llm_calls: int = 1) -> Dict[str, Any]:
+    def _parse_validation_response(self, content: str, llm_calls: int = 1) -> Dict[str, Any]:
         """Parse the validation response from the LLM.
 
+        Uses Pydantic model_validate_json for structured parsing when possible,
+        with fallback to regex-based JSON extraction.
+
         Args:
-            response: LLM response message
+            content: Raw response content from the LLM
             llm_calls: Number of LLM calls made
 
         Returns:
             dict: Parsed validation result
         """
+        if not content:
+            return self._default_validation_response("Empty response from LLM", llm_calls)
+
+        if content.startswith("I encountered an error"):
+            return self._default_validation_response(f"Validation error: {content}", llm_calls)
+
+        # Try to parse with Pydantic model first (structured output)
         try:
-            content = getattr(response, "content", "")
+            # If response_format worked, content should be valid JSON
+            parsed = DrugClassValidationResponse.model_validate_json(content)
+            result = parsed.model_dump()
+            result["llm_calls"] = llm_calls
+            return result
+        except Exception:
+            # Pydantic parsing failed, try fallback methods
+            pass
 
-            if not content or content.startswith("I encountered an error"):
-                return self._default_validation_response(
-                    f"Validation error: {content}", llm_calls
-                )
-
-            # Try to parse JSON response from code block
-            json_match = re.search(r"```json\s*(.*?)\s*```", content, re.DOTALL)
-            if json_match:
-                try:
-                    parsed = json.loads(json_match.group(1))
-                    return {
-                        "validation_status": parsed.get("validation_status", "REVIEW"),
-                        "validation_confidence": parsed.get("validation_confidence", 0.5),
-                        "extraction_performed": parsed.get("extraction_performed", False),
-                        "extracted_drug_classes": parsed.get("extracted_drug_classes", []),
-                        "missed_drug_classes": parsed.get("missed_drug_classes", []),
-                        "issues_found": parsed.get("issues_found", []),
-                        "checks_performed": parsed.get("checks_performed", {}),
-                        "validation_reasoning": parsed.get("validation_reasoning", ""),
-                        "llm_calls": llm_calls,
-                    }
-                except json.JSONDecodeError as e:
-                    return self._default_validation_response(
-                        f"Failed to parse JSON response: {e}", llm_calls
-                    )
-
-            # Try to find JSON object without code blocks
+        # Fallback: Try to extract JSON from code block
+        json_match = re.search(r"```json\s*(.*?)\s*```", content, re.DOTALL)
+        if json_match:
             try:
-                # Look for JSON object with validation_status
-                json_start = content.find('{')
-                json_end = content.rfind('}') + 1
-                if json_start != -1 and json_end > json_start:
-                    json_str = content[json_start:json_end]
-                    parsed = json.loads(json_str)
-                    if "validation_status" in parsed:
-                        return {
-                            "validation_status": parsed.get("validation_status", "REVIEW"),
-                            "validation_confidence": parsed.get("validation_confidence", 0.5),
-                            "extraction_performed": parsed.get("extraction_performed", False),
-                            "extracted_drug_classes": parsed.get("extracted_drug_classes", []),
-                            "missed_drug_classes": parsed.get("missed_drug_classes", []),
-                            "issues_found": parsed.get("issues_found", []),
-                            "checks_performed": parsed.get("checks_performed", {}),
-                            "validation_reasoning": parsed.get("validation_reasoning", ""),
-                            "llm_calls": llm_calls,
-                        }
-            except (json.JSONDecodeError, AttributeError):
+                parsed_json = json.loads(json_match.group(1))
+                return self._extract_validation_fields(parsed_json, llm_calls)
+            except json.JSONDecodeError:
                 pass
 
-            # Fallback: extract status from text
-            status = "REVIEW"
-            if "PASS" in content.upper() and "FAIL" not in content.upper():
-                status = "PASS"
-            elif "FAIL" in content.upper():
-                status = "FAIL"
+        # Fallback: Try to find raw JSON object
+        try:
+            json_start = content.find('{')
+            json_end = content.rfind('}') + 1
+            if json_start != -1 and json_end > json_start:
+                json_str = content[json_start:json_end]
+                parsed_json = json.loads(json_str)
+                if "validation_status" in parsed_json:
+                    return self._extract_validation_fields(parsed_json, llm_calls)
+        except (json.JSONDecodeError, AttributeError):
+            pass
 
-            return {
-                "validation_status": status,
-                "validation_confidence": 0.5,
-                "extraction_performed": False,
-                "extracted_drug_classes": [],
-                "missed_drug_classes": [],
-                "issues_found": [],
-                "checks_performed": {},
-                "validation_reasoning": content[:2000] if content else "Unable to parse validation response",
-                "llm_calls": llm_calls,
-            }
+        # Final fallback: extract status from text
+        status = "REVIEW"
+        if "PASS" in content.upper() and "FAIL" not in content.upper():
+            status = "PASS"
+        elif "FAIL" in content.upper():
+            status = "FAIL"
 
-        except Exception as e:
-            print(f"Error parsing validation response: {e}")
-            return self._default_validation_response(f"Parse error: {e}", llm_calls)
+        return {
+            "validation_status": status,
+            "validation_confidence": 0.5,
+            "extraction_performed": False,
+            "extracted_drug_classes": [],
+            "missed_drug_classes": [],
+            "issues_found": [],
+            "checks_performed": {},
+            "validation_reasoning": content[:2000] if content else "Unable to parse validation response",
+            "llm_calls": llm_calls,
+        }
+
+    def _extract_validation_fields(self, parsed_json: Dict[str, Any], llm_calls: int) -> Dict[str, Any]:
+        """Extract validation fields from parsed JSON with defaults.
+
+        Args:
+            parsed_json: Parsed JSON dictionary
+            llm_calls: Number of LLM calls made
+
+        Returns:
+            dict: Validated fields with defaults
+        """
+        return {
+            "validation_status": parsed_json.get("validation_status", "REVIEW"),
+            "validation_confidence": parsed_json.get("validation_confidence", 0.5),
+            "extraction_performed": parsed_json.get("extraction_performed", False),
+            "extracted_drug_classes": parsed_json.get("extracted_drug_classes", []),
+            "missed_drug_classes": parsed_json.get("missed_drug_classes", []),
+            "issues_found": parsed_json.get("issues_found", []),
+            "checks_performed": parsed_json.get("checks_performed", {}),
+            "validation_reasoning": parsed_json.get("validation_reasoning", ""),
+            "llm_calls": llm_calls,
+        }
 
     def _default_validation_response(self, reason: str, llm_calls: int = 0) -> Dict[str, Any]:
         """Create a default validation response for error cases.
@@ -496,6 +529,7 @@ END OF REFERENCE RULES DOCUMENT"""
                     "description": reason,
                     "evidence": "",
                     "drug_class": "",
+                    "transformed_drug_class": None,
                     "rule_reference": "",
                 }
             ],
@@ -503,4 +537,3 @@ END OF REFERENCE RULES DOCUMENT"""
             "validation_reasoning": reason,
             "llm_calls": llm_calls,
         }
-

@@ -318,6 +318,7 @@ Return your validation result in the following JSON structure:
       "description": "Clear description of the issue found",
       "evidence": "Specific evidence from sources supporting this finding",
       "drug_class": "The specific drug class involved (if applicable)",
+      "transformed_drug_class": "The correctly transformed drug class after applying the rule (REQUIRED for rule_compliance only)",
       "rule_reference": "Rule X (if applicable)"
     }
   ],
@@ -382,6 +383,24 @@ When extraction mode is triggered, include these additional fields:
 | `source_title` | Title of the source page |
 | `evidence` | Exact text snippet from source mentioning the drug class |
 | `confidence` | high, medium, or low |
+
+### Issues Found Fields
+
+| Field | Description |
+|-------|-------------|
+| `check_type` | Type of issue: "hallucination", "omission", or "rule_compliance" |
+| `severity` | Issue severity: "high", "medium", or "low" |
+| `description` | Clear description of the issue found |
+| `evidence` | Specific evidence from sources supporting this finding |
+| `drug_class` | The specific drug class involved in the issue |
+| `transformed_drug_class` | The correctly transformed drug class after applying the rule. **REQUIRED for `rule_compliance` only.** Shows what the drug_class should be after correct rule application. |
+| `rule_reference` | The rule that was violated or should have been applied |
+
+**Note on `transformed_drug_class`:**
+- This field is **mandatory** when `check_type` is `"rule_compliance"`
+- It shows the expected output after correctly applying the referenced rule
+- Example: If `drug_class` is "HSV-Based Immunotherapy" and Rule 27 was violated, `transformed_drug_class` would be "HSV-Based Therapy"
+- For `hallucination` and `omission` check types, this field should be `null` or omitted
 
 ### validation_reasoning Format
 
@@ -561,19 +580,19 @@ extraction_details: [
 
 **Input to Validate:**
 ```
-drug_name: "KB707"
-abstract_title: "Inhaled KB707, a novel HSV-based immunotherapy"
-full_abstract: "KB707 is a novel gene therapy designed to deliver high doses of cytokines... HSV-1-based vector engineered to deliver human interleukin (IL)-12 and IL-2"
-drug_classes: ["HSV-Based Immunotherapy"]
-selected_sources: ["abstract_title"]
+drug_name: "Eribulin"
+abstract_title: "Phase 3 study of eribulin in metastatic breast cancer"
+full_abstract: "Eribulin mesylate is a synthetic halichondrin B analog and a macrocyclic ketone that inhibits microtubule dynamics. This non-taxane microtubule dynamics inhibitor has demonstrated significant activity in patients with heavily pretreated metastatic breast cancer. Eribulin works by binding to the vinca domain of tubulin and suppressing microtubule polymerization."
+drug_classes: ["Halichondrin B Analog"]
+selected_sources: ["abstract_text"]
 extraction_details: [
   {
-    "extracted_text": "HSV-based immunotherapy",
-    "class_type": "MoA",
-    "normalized_form": "HSV-Based Immunotherapy",
-    "evidence": "Inhaled KB707, a novel HSV-based immunotherapy",
-    "source": "abstract_title",
-    "rules_applied": ["Rule 1: Title priority"]
+    "extracted_text": "halichondrin B analog",
+    "class_type": "Chemical",
+    "normalized_form": "Halichondrin B Analog",
+    "evidence": "Eribulin mesylate is a synthetic halichondrin B analog and a macrocyclic ketone",
+    "source": "abstract_text",
+    "rules_applied": ["Rule 4: Chemical class formatting", "Rule 5: Title case"]
   }
 ]
 ```
@@ -582,34 +601,26 @@ extraction_details: [
 ```json
 {
   "validation_status": "FAIL",
-  "validation_confidence": 0.95,
+  "validation_confidence": 0.92,
   "extraction_performed": false,
   "extracted_drug_classes": [],
-  "missed_drug_classes": ["Gene Therapy"],
+  "missed_drug_classes": ["Macrocyclic Ketone"],
   "issues_found": [
     {
       "check_type": "omission",
       "severity": "high",
-      "description": "The extractor missed the primary Mechanism of Action (MoA) 'Gene Therapy' which is explicitly stated in the abstract text.",
-      "evidence": "Abstract text: 'KB707 is a novel gene therapy designed to deliver high doses of cytokines... engineered to deliver human interleukin (IL)-12 and IL-2'.",
-      "drug_class": "Gene Therapy",
-      "rule_reference": "Rule 21: Gene Therapy extraction"
-    },
-    {
-      "check_type": "rule_compliance",
-      "severity": "high",
-      "description": "The extractor failed to apply Rule 27, which requires converting cell or virus-based vectors to 'Therapy' format.",
-      "evidence": "Abstract title: 'Inhaled KB707, a novel HSV-based immunotherapy'. Should be formatted as therapy per Rule 27.",
-      "drug_class": "HSV-Based Immunotherapy",
-      "rule_reference": "Rule 27: Therapy format conversion"
+      "description": "The extractor captured only one of two chemical classes. 'Macrocyclic Ketone' is explicitly stated in the same sentence as the extracted class and should have been captured as a distinct chemical class.",
+      "evidence": "Abstract text: 'Eribulin mesylate is a synthetic halichondrin B analog and a macrocyclic ketone that inhibits microtubule dynamics'",
+      "drug_class": "Macrocyclic Ketone",
+      "rule_reference": "Rule 4: Extract all explicitly stated chemical classes"
     }
   ],
   "checks_performed": {
-    "hallucination_detection": {"passed": true, "note": "HSV-based immunotherapy exists in title"},
-    "omission_detection": {"passed": false, "note": "Missed 'Gene Therapy' explicitly stated in abstract text"},
-    "rule_compliance": {"passed": false, "note": "Rule 27 and Rule 21 were not applied correctly"}
+    "hallucination_detection": {"passed": true, "note": "Halichondrin B Analog is grounded in abstract text"},
+    "omission_detection": {"passed": false, "note": "Missed 'Macrocyclic Ketone' - second chemical class explicitly stated in same sentence"},
+    "rule_compliance": {"passed": true, "note": "Halichondrin B Analog correctly formatted per Rule 4 and Rule 5"}
   },
-  "validation_reasoning": "1. Drug: KB707. Extracted class: HSV-Based Immunotherapy.\n2. 'HSV-based immunotherapy' found in abstract_title - no hallucination.\n3. Abstract text explicitly states 'KB707 is a novel gene therapy' - Gene Therapy was missed (HIGH severity omission).\n4. Rule 21 requires capturing 'Gene Therapy' when explicitly mentioned. Rule 27 requires therapy format.\n5. FAIL: HIGH severity omission - Gene Therapy should have been extracted per Rule 21."
+  "validation_reasoning": "1. Drug: Eribulin. Extracted class: Halichondrin B Analog.\n2. Abstract title has no drug class - correctly proceeded to scan abstract text.\n3. 'Halichondrin B analog' found in abstract text - no hallucination.\n4. However, abstract text explicitly states TWO chemical classes in the same sentence: 'halichondrin B analog AND a macrocyclic ketone'.\n5. Per Rule 4, all explicitly stated chemical classes should be captured.\n6. FAIL: HIGH severity omission - Macrocyclic Ketone should have been extracted as a second chemical class."
 }
 ```
 

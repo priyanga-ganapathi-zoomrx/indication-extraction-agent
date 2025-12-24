@@ -20,6 +20,7 @@ pydantic-settings = "^2.9.1"
 httpx = {extras = ["http2"], version = "^0.28.1"}
 python-dotenv = "^1.0.0"
 tavily-python = "^0.7.13"
+litellm = ">=1.71.0"
 
 [build-system]
 requires = ["poetry-core"]

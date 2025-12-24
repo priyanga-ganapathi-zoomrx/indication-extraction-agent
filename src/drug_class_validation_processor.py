@@ -343,6 +343,9 @@ def validate_single_extraction(
             result_row['validation_status'] = 'REVIEW'
             result_row['validation_confidence_grouped'] = '{}'
             result_row['validation_issues_grouped'] = '{}'
+            result_row['hallucinated_drug_classes_grouped'] = '{}'
+            result_row['rule_compliance_drug_classes_grouped'] = '{}'
+            result_row['missed_drug_classes_grouped'] = '{}'
             result_row['validation_checks_grouped'] = '{}'
             result_row['validation_reasoning_grouped'] = '{}'
             result_row['validation_status_grouped'] = '{}'
@@ -350,8 +353,6 @@ def validate_single_extraction(
             result_row['extraction_performed_grouped'] = '{}'
             result_row['extracted_drug_classes_grouped'] = '{}'
             result_row['extracted_classes'] = '{}'
-            result_row['missed_drug_classes_grouped'] = '{}'
-            result_row['missed_classes'] = '[]'
             result_row['needs_qc'] = True
             return result_row
 
@@ -413,6 +414,7 @@ def validate_single_extraction(
                     'description': f'Validation failed for {drug}: {str(drug_error)}',
                     'evidence': '',
                     'drug_class': '',
+                    'transformed_drug_class': None,
                     'rule_reference': ''
                 }]
                 validation_checks_grouped[drug] = {}
@@ -436,6 +438,42 @@ def validate_single_extraction(
         result_row['validation_status_grouped'] = json.dumps(validation_status_grouped, indent=2)
         result_row['validation_confidence_grouped'] = json.dumps(validation_confidence_grouped, indent=2)
         result_row['validation_issues_grouped'] = json.dumps(validation_issues_grouped, indent=2)
+        
+        # Extract hallucinated drug classes from validation issues (grouped by drug)
+        # Only include drugs that have hallucination issues (non-empty arrays)
+        hallucinated_drug_classes_grouped = {}
+        for drug, issues in validation_issues_grouped.items():
+            hallucinated = []
+            for issue in issues:
+                if issue.get('check_type') == 'hallucination' and issue.get('drug_class'):
+                    hallucinated.append(issue.get('drug_class'))
+            if hallucinated:  # Only add if non-empty
+                hallucinated_drug_classes_grouped[drug] = hallucinated
+        result_row['hallucinated_drug_classes_grouped'] = json.dumps(hallucinated_drug_classes_grouped, indent=2)
+        
+        # Extract rule compliance issues from validation issues (grouped by drug)
+        # Only include drugs that have rule_compliance issues (non-empty arrays)
+        rule_compliance_drug_classes_grouped = {}
+        for drug, issues in validation_issues_grouped.items():
+            rule_compliance_items = []
+            for issue in issues:
+                if issue.get('check_type') == 'rule_compliance' and issue.get('drug_class'):
+                    rule_compliance_items.append({
+                        'drug_class': issue.get('drug_class', ''),
+                        'transformed_drug_class': issue.get('transformed_drug_class', ''),
+                        'rule_reference': issue.get('rule_reference', '')
+                    })
+            if rule_compliance_items:  # Only add if non-empty
+                rule_compliance_drug_classes_grouped[drug] = rule_compliance_items
+        result_row['rule_compliance_drug_classes_grouped'] = json.dumps(rule_compliance_drug_classes_grouped, indent=2)
+        
+        # Add missed drug classes columns (next to other issue-related columns for readability)
+        # Only include drugs that have missed classes (non-empty arrays)
+        missed_drug_classes_filtered = {
+            drug: classes for drug, classes in missed_drug_classes_grouped.items() if classes
+        }
+        result_row['missed_drug_classes_grouped'] = json.dumps(missed_drug_classes_filtered, indent=2)
+        
         result_row['validation_checks_grouped'] = json.dumps(validation_checks_grouped, indent=2)
         # For reasoning, preserve actual newlines for CSV readability
         # Convert escaped \n back to real newlines after JSON serialization
@@ -457,23 +495,6 @@ def validate_single_extraction(
             else:
                 extracted_classes_simple[drug] = []
         result_row['extracted_classes'] = json.dumps(extracted_classes_simple)
-        
-        # Add missed drug classes columns
-        # missed_drug_classes is already a simple array of class names from LLM output
-        result_row['missed_drug_classes_grouped'] = json.dumps(missed_drug_classes_grouped, indent=2)
-        # Flatten all missed classes into a single array (not grouped by drug)
-        all_missed_classes = []
-        for classes in missed_drug_classes_grouped.values():
-            if classes:
-                all_missed_classes.extend(classes)
-        # Remove duplicates while preserving order
-        seen = set()
-        unique_missed_classes = []
-        for cls in all_missed_classes:
-            if cls not in seen:
-                seen.add(cls)
-                unique_missed_classes.append(cls)
-        result_row['missed_classes'] = json.dumps(unique_missed_classes)
 
         # Determine if QC is needed
         needs_qc = (
@@ -502,17 +523,19 @@ def validate_single_extraction(
                 'description': f'Validation failed: {str(e)}',
                 'evidence': '',
                 'drug_class': '',
+                'transformed_drug_class': None,
                 'rule_reference': ''
             }]
         }, indent=2)
+        result_row['hallucinated_drug_classes_grouped'] = '{}'
+        result_row['rule_compliance_drug_classes_grouped'] = '{}'
+        result_row['missed_drug_classes_grouped'] = '{}'
         result_row['validation_checks_grouped'] = '{}'
         result_row['validation_reasoning_grouped'] = '{}'
         result_row['validation_llm_calls'] = 0
         result_row['extraction_performed_grouped'] = '{}'
         result_row['extracted_drug_classes_grouped'] = '{}'
         result_row['extracted_classes'] = '{}'
-        result_row['missed_drug_classes_grouped'] = '{}'
-        result_row['missed_classes'] = '[]'
         result_row['needs_qc'] = True
 
     return result_row
@@ -598,7 +621,7 @@ def main():
                         help='Input JSON cache file with search results')
     parser.add_argument('--output_file', default=None,
                         help='Output CSV file (default: auto-generated)')
-    parser.add_argument('--llm_model', default="claude-haiku-4-5",
+    parser.add_argument('--llm_model', default="gemini/gemini-3-flash-preview",
                         help='LLM model name to use for validation calls')
     parser.add_argument('--temperature', type=float, default=0,
                         help='LLM temperature (default: from settings)')
@@ -610,8 +633,6 @@ def main():
                         help='Number of rows to skip from the beginning')
     parser.add_argument('--num_workers', type=int, default=3,
                         help='Number of parallel workers (default: 3)')
-    parser.add_argument('--enable_caching', action='store_true',
-                        help='Enable prompt caching for Anthropic models (reduces costs)')
 
     args = parser.parse_args()
 
@@ -630,7 +651,6 @@ def main():
     print(f"Max rows: {args.max_rows or 'all'}")
     print(f"Skip rows: {args.skip_rows}")
     print(f"Parallel workers: {args.num_workers}")
-    print(f"Prompt caching: {'enabled' if args.enable_caching else 'disabled'}")
     print()
 
     # Load extraction results
@@ -660,7 +680,6 @@ def main():
         llm_model=args.llm_model,
         temperature=args.temperature,
         max_tokens=args.max_tokens,
-        enable_caching=args.enable_caching,
     )
     print("✓ Validation Agent initialized successfully!")
     print()
