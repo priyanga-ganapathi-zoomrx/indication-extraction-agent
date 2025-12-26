@@ -23,11 +23,16 @@ import json
 import os
 import time
 from datetime import datetime
-from typing import Dict, List, Tuple
+from typing import Dict, List, Literal, Tuple, Union
 
 import pandas as pd
 
 from src.drug_class_validation_agent import DrugClassValidationAgent
+from src.drug_class_validation_agent_langchain import DrugClassValidationAgentLangChain
+
+# Type alias for validator implementations
+ValidatorType = Union[DrugClassValidationAgent, DrugClassValidationAgentLangChain]
+BackendType = Literal["litellm", "langchain"]
 
 
 def load_cache(cache_file: str) -> Dict:
@@ -222,7 +227,7 @@ def validate_single_drug(
     drug_name: str,
     extraction: Dict,
     cache_data: Dict,
-    validator: DrugClassValidationAgent,
+    validator: ValidatorType,
     drug_classes_grouped: Dict,
     selected_sources_grouped: Dict,
     confidence_scores_grouped: Dict,
@@ -287,7 +292,7 @@ def validate_single_drug(
 def validate_single_extraction(
     extraction: Dict,
     cache_data: Dict,
-    validator: DrugClassValidationAgent,
+    validator: ValidatorType,
     index: int,
 ) -> Dict:
     """Validate a single extraction result (may contain multiple drugs).
@@ -556,7 +561,7 @@ def validate_single_extraction(
 def validate_extractions_batch(
     extractions: List[Dict],
     cache_data: Dict,
-    validator: DrugClassValidationAgent,
+    validator: ValidatorType,
     output_file: str = None,
     num_workers: int = 3,
 ) -> pd.DataFrame:
@@ -645,8 +650,13 @@ def main():
                         help='Maximum number of rows to validate (default: all)')
     parser.add_argument('--skip_rows', type=int, default=0,
                         help='Number of rows to skip from the beginning')
-    parser.add_argument('--num_workers', type=int, default=3,
+    parser.add_argument('--num_workers', type=int, default=1,
                         help='Number of parallel workers (default: 3)')
+    parser.add_argument('--backend', type=str, default='litellm',
+                        choices=['litellm', 'langchain'],
+                        help='LLM backend to use: litellm (LiteLLM completion API) or langchain (LangChain Chat API)')
+    parser.add_argument('--enable_caching', action='store_true',
+                        help='Enable Anthropic prompt caching (LangChain backend only)')
 
     args = parser.parse_args()
 
@@ -662,6 +672,9 @@ def main():
     print(f"Cache file: {args.cache_file}")
     print(f"Output file: {args.output_file}")
     print(f"LLM model: {args.llm_model}")
+    print(f"LLM backend: {args.backend}")
+    if args.backend == 'langchain' and args.enable_caching:
+        print("Prompt caching: enabled")
     print(f"Max rows: {args.max_rows or 'all'}")
     print(f"Skip rows: {args.skip_rows}")
     print(f"Parallel workers: {args.num_workers}")
@@ -687,15 +700,26 @@ def main():
     cache_data = load_cache(args.cache_file)
     print()
 
-    # Initialize validation agent
-    print("Initializing Drug Class Validation Agent...")
-    validator = DrugClassValidationAgent(
-        agent_name="DrugClassValidationProcessor",
-        llm_model=args.llm_model,
-        temperature=args.temperature,
-        max_tokens=args.max_tokens,
-    )
-    print("✓ Validation Agent initialized successfully!")
+    # Initialize validation agent based on selected backend
+    print(f"Initializing Drug Class Validation Agent ({args.backend} backend)...")
+    
+    if args.backend == 'langchain':
+        validator: ValidatorType = DrugClassValidationAgentLangChain(
+            agent_name="DrugClassValidationProcessor",
+            llm_model=args.llm_model,
+            temperature=args.temperature,
+            max_tokens=args.max_tokens,
+            enable_caching=args.enable_caching,
+        )
+    else:  # litellm (default)
+        validator = DrugClassValidationAgent(
+            agent_name="DrugClassValidationProcessor",
+            llm_model=args.llm_model,
+            temperature=args.temperature,
+            max_tokens=args.max_tokens,
+        )
+    
+    print(f"✓ Validation Agent initialized successfully ({args.backend})!")
     print()
 
     # Validate extractions
