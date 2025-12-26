@@ -11,12 +11,21 @@ Key features:
 """
 
 import json
+import logging
 import os
 import re
 from typing import Any, Dict, List, Literal, Optional
 
 import litellm
+from litellm.exceptions import APIError, RateLimitError, ServiceUnavailableError, Timeout
 from pydantic import BaseModel, Field, model_validator
+from tenacity import (
+    before_sleep_log,
+    retry,
+    retry_if_exception_type,
+    stop_after_attempt,
+    wait_exponential,
+)
 
 from src.config import settings
 from src.prompts import get_system_prompt
@@ -187,6 +196,27 @@ class DrugClassValidationAgent:
             print(f"✗ Error loading extraction rules prompt: {e}")
             self.extraction_rules_version = "error"
             return "Error loading extraction rules. Please verify rule application manually."
+
+    @retry(
+        stop=stop_after_attempt(3),
+        wait=wait_exponential(multiplier=1, min=4, max=60),
+        retry=retry_if_exception_type((Timeout, APIError, ServiceUnavailableError, RateLimitError)),
+        before_sleep=before_sleep_log(logging.getLogger(__name__), logging.WARNING),
+        reraise=True,
+    )
+    def _call_llm_with_retry(self, completion_params: dict):
+        """Call LiteLLM with exponential backoff retry.
+
+        Args:
+            completion_params: Parameters to pass to litellm.completion()
+
+        Returns:
+            LiteLLM completion response
+
+        Raises:
+            Exception: Re-raises the exception after all retries are exhausted
+        """
+        return litellm.completion(**completion_params)
 
     def _format_search_results(self, search_results: List[Dict]) -> str:
         """Format search results for the validation input.
@@ -376,6 +406,7 @@ END OF REFERENCE RULES DOCUMENT"""
                 "response_format": DrugClassValidationResponse,  # Pydantic model for structured output
                 "web_search_options": {"search_context_size": "medium"},
                 "metadata": metadata,
+                "timeout": 90,  # Client-side timeout (seconds) to prevent nginx 504 gateway timeouts
             }
 
             # Add base_url and api_key if configured
@@ -384,13 +415,24 @@ END OF REFERENCE RULES DOCUMENT"""
             if settings.llm.LLM_API_KEY:
                 completion_params["api_key"] = settings.llm.LLM_API_KEY
 
-            response = litellm.completion(**completion_params)
+            response = self._call_llm_with_retry(completion_params)
 
             # Extract content from response
             content = response.choices[0].message.content
 
             return self._parse_validation_response(content, llm_calls=1)
         except Exception as e:
+            # Determine error type for tracking
+            error_type = None
+            if isinstance(e, Timeout):
+                error_type = "timeout"
+            elif isinstance(e, RateLimitError):
+                error_type = "rate_limit"
+            elif isinstance(e, (APIError, ServiceUnavailableError)):
+                error_type = "api_error"
+            else:
+                error_type = "unknown_error"
+            
             print(f"✗ Error during validation LLM call: {e}")
             return {
                 "validation_status": "REVIEW",
@@ -412,6 +454,7 @@ END OF REFERENCE RULES DOCUMENT"""
                 "checks_performed": {},
                 "validation_reasoning": f"Validation could not be completed due to error: {str(e)}",
                 "llm_calls": 1,
+                "error_type": error_type,
             }
 
     def _parse_validation_response(self, content: str, llm_calls: int = 1) -> Dict[str, Any]:
@@ -439,6 +482,7 @@ END OF REFERENCE RULES DOCUMENT"""
             parsed = DrugClassValidationResponse.model_validate_json(content)
             result = parsed.model_dump()
             result["llm_calls"] = llm_calls
+            result["error_type"] = None
             return result
         except Exception:
             # Pydantic parsing failed, try fallback methods
@@ -482,6 +526,7 @@ END OF REFERENCE RULES DOCUMENT"""
             "checks_performed": {},
             "validation_reasoning": content[:2000] if content else "Unable to parse validation response",
             "llm_calls": llm_calls,
+            "error_type": None,
         }
 
     def _extract_validation_fields(self, parsed_json: Dict[str, Any], llm_calls: int) -> Dict[str, Any]:
@@ -504,6 +549,7 @@ END OF REFERENCE RULES DOCUMENT"""
             "checks_performed": parsed_json.get("checks_performed", {}),
             "validation_reasoning": parsed_json.get("validation_reasoning", ""),
             "llm_calls": llm_calls,
+            "error_type": None,
         }
 
     def _default_validation_response(self, reason: str, llm_calls: int = 0) -> Dict[str, Any]:
@@ -536,4 +582,5 @@ END OF REFERENCE RULES DOCUMENT"""
             "checks_performed": {},
             "validation_reasoning": reason,
             "llm_calls": llm_calls,
+            "error_type": None,
         }

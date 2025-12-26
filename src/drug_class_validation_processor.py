@@ -21,6 +21,7 @@ import argparse
 import concurrent.futures
 import json
 import os
+import time
 from datetime import datetime
 from typing import Dict, List, Tuple
 
@@ -279,6 +280,7 @@ def validate_single_drug(
         'checks': validation_result.get('checks_performed', {}),
         'reasoning': validation_result.get('validation_reasoning', ''),
         'llm_calls': validation_result.get('llm_calls', 0),
+        'error_type': validation_result.get('error_type'),
     }
 
 
@@ -353,6 +355,7 @@ def validate_single_extraction(
             result_row['extraction_performed_grouped'] = '{}'
             result_row['extracted_drug_classes_grouped'] = '{}'
             result_row['extracted_classes'] = '{}'
+            result_row['error_type_grouped'] = '{}'
             result_row['needs_qc'] = True
             return result_row
 
@@ -367,6 +370,7 @@ def validate_single_extraction(
         extraction_performed_grouped = {}
         extracted_drug_classes_grouped = {}
         missed_drug_classes_grouped = {}
+        error_type_grouped = {}
         total_llm_calls = 0
 
         for drug in drugs_to_validate:
@@ -393,6 +397,10 @@ def validate_single_extraction(
                 extracted_drug_classes_grouped[drug] = drug_validation['extracted_drug_classes']
                 missed_drug_classes_grouped[drug] = drug_validation['missed_drug_classes']
                 total_llm_calls += drug_validation['llm_calls']
+                
+                # Track error type if any
+                if drug_validation.get('error_type'):
+                    error_type_grouped[drug] = drug_validation['error_type']
 
                 # Log extraction and missed classes if any
                 missed_count = len(drug_validation['missed_drug_classes'])
@@ -495,6 +503,9 @@ def validate_single_extraction(
             else:
                 extracted_classes_simple[drug] = []
         result_row['extracted_classes'] = json.dumps(extracted_classes_simple)
+        
+        # Add error_type_grouped column (only includes drugs that had errors)
+        result_row['error_type_grouped'] = json.dumps(error_type_grouped, indent=2) if error_type_grouped else '{}'
 
         # Determine if QC is needed
         needs_qc = (
@@ -536,6 +547,7 @@ def validate_single_extraction(
         result_row['extraction_performed_grouped'] = '{}'
         result_row['extracted_drug_classes_grouped'] = '{}'
         result_row['extracted_classes'] = '{}'
+        result_row['error_type_grouped'] = json.dumps({'_error': 'unknown_error'}, indent=2)
         result_row['needs_qc'] = True
 
     return result_row
@@ -614,6 +626,8 @@ def validate_extractions_batch(
 
 def main():
     """Main validation processing function."""
+    start_time = time.time()
+    
     parser = argparse.ArgumentParser(description='Validate Drug Class Extractions')
     parser.add_argument('--input_file', default='data/drug_class_validation_input.csv',
                         help='Input CSV file with extraction results')
@@ -716,6 +730,15 @@ def main():
 
     print()
     print(f"Results saved to: {args.output_file}")
+    
+    # Calculate and display execution time
+    end_time = time.time()
+    execution_time = end_time - start_time
+    hours, remainder = divmod(execution_time, 3600)
+    minutes, seconds = divmod(remainder, 60)
+    
+    print()
+    print(f"⏱️  Total execution time: {int(hours):02d}:{int(minutes):02d}:{seconds:05.2f}")
 
 
 if __name__ == "__main__":
