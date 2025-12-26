@@ -404,7 +404,7 @@ END OF REFERENCE RULES DOCUMENT"""
                 "temperature": self._temperature if self._temperature is not None else settings.llm.LLM_TEMPERATURE,
                 "max_tokens": self._max_tokens or settings.llm.LLM_MAX_TOKENS,
                 "response_format": DrugClassValidationResponse,  # Pydantic model for structured output
-                "web_search_options": {"search_context_size": "medium"},
+                "web_search_options": {"search_context_size": "medium"},  # Disabled - causing timeouts with Gemini
                 "metadata": metadata,
                 "timeout": 90,  # Client-side timeout (seconds) to prevent nginx 504 gateway timeouts
             }
@@ -420,7 +420,7 @@ END OF REFERENCE RULES DOCUMENT"""
             # Extract content from response
             content = response.choices[0].message.content
 
-            return self._parse_validation_response(content, llm_calls=1)
+            return self._parse_validation_response(content, llm_calls=1, raw_response=content)
         except Exception as e:
             # Determine error type for tracking
             error_type = None
@@ -455,9 +455,10 @@ END OF REFERENCE RULES DOCUMENT"""
                 "validation_reasoning": f"Validation could not be completed due to error: {str(e)}",
                 "llm_calls": 1,
                 "error_type": error_type,
+                "raw_llm_response": None,
             }
 
-    def _parse_validation_response(self, content: str, llm_calls: int = 1) -> Dict[str, Any]:
+    def _parse_validation_response(self, content: str, llm_calls: int = 1, raw_response: str = None) -> Dict[str, Any]:
         """Parse the validation response from the LLM.
 
         Uses Pydantic model_validate_json for structured parsing when possible,
@@ -466,15 +467,18 @@ END OF REFERENCE RULES DOCUMENT"""
         Args:
             content: Raw response content from the LLM
             llm_calls: Number of LLM calls made
+            raw_response: The complete raw LLM response for fallback storage
 
         Returns:
             dict: Parsed validation result
         """
+        # Store raw response for fallback
+        raw_llm_response = raw_response or content
         if not content:
-            return self._default_validation_response("Empty response from LLM", llm_calls)
+            return self._default_validation_response("Empty response from LLM", llm_calls, raw_llm_response)
 
         if content.startswith("I encountered an error"):
-            return self._default_validation_response(f"Validation error: {content}", llm_calls)
+            return self._default_validation_response(f"Validation error: {content}", llm_calls, raw_llm_response)
 
         # Try to parse with Pydantic model first (structured output)
         try:
@@ -483,6 +487,7 @@ END OF REFERENCE RULES DOCUMENT"""
             result = parsed.model_dump()
             result["llm_calls"] = llm_calls
             result["error_type"] = None
+            result["raw_llm_response"] = raw_llm_response
             return result
         except Exception:
             # Pydantic parsing failed, try fallback methods
@@ -493,7 +498,7 @@ END OF REFERENCE RULES DOCUMENT"""
         if json_match:
             try:
                 parsed_json = json.loads(json_match.group(1))
-                return self._extract_validation_fields(parsed_json, llm_calls)
+                return self._extract_validation_fields(parsed_json, llm_calls, raw_llm_response)
             except json.JSONDecodeError:
                 pass
 
@@ -505,7 +510,7 @@ END OF REFERENCE RULES DOCUMENT"""
                 json_str = content[json_start:json_end]
                 parsed_json = json.loads(json_str)
                 if "validation_status" in parsed_json:
-                    return self._extract_validation_fields(parsed_json, llm_calls)
+                    return self._extract_validation_fields(parsed_json, llm_calls, raw_llm_response)
         except (json.JSONDecodeError, AttributeError):
             pass
 
@@ -527,14 +532,16 @@ END OF REFERENCE RULES DOCUMENT"""
             "validation_reasoning": content[:2000] if content else "Unable to parse validation response",
             "llm_calls": llm_calls,
             "error_type": None,
+            "raw_llm_response": raw_llm_response,
         }
 
-    def _extract_validation_fields(self, parsed_json: Dict[str, Any], llm_calls: int) -> Dict[str, Any]:
+    def _extract_validation_fields(self, parsed_json: Dict[str, Any], llm_calls: int, raw_llm_response: str = None) -> Dict[str, Any]:
         """Extract validation fields from parsed JSON with defaults.
 
         Args:
             parsed_json: Parsed JSON dictionary
             llm_calls: Number of LLM calls made
+            raw_llm_response: The complete raw LLM response for fallback storage
 
         Returns:
             dict: Validated fields with defaults
@@ -550,14 +557,16 @@ END OF REFERENCE RULES DOCUMENT"""
             "validation_reasoning": parsed_json.get("validation_reasoning", ""),
             "llm_calls": llm_calls,
             "error_type": None,
+            "raw_llm_response": raw_llm_response,
         }
 
-    def _default_validation_response(self, reason: str, llm_calls: int = 0) -> Dict[str, Any]:
+    def _default_validation_response(self, reason: str, llm_calls: int = 0, raw_llm_response: str = None) -> Dict[str, Any]:
         """Create a default validation response for error cases.
 
         Args:
             reason: Reason for the default response
             llm_calls: Number of LLM calls made
+            raw_llm_response: The complete raw LLM response for fallback storage
 
         Returns:
             dict: Default validation result
@@ -583,4 +592,5 @@ END OF REFERENCE RULES DOCUMENT"""
             "validation_reasoning": reason,
             "llm_calls": llm_calls,
             "error_type": None,
+            "raw_llm_response": raw_llm_response,
         }

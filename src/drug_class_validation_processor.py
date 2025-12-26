@@ -286,6 +286,7 @@ def validate_single_drug(
         'reasoning': validation_result.get('validation_reasoning', ''),
         'llm_calls': validation_result.get('llm_calls', 0),
         'error_type': validation_result.get('error_type'),
+        'raw_llm_response': validation_result.get('raw_llm_response'),
     }
 
 
@@ -361,6 +362,7 @@ def validate_single_extraction(
             result_row['extracted_drug_classes_grouped'] = '{}'
             result_row['extracted_classes'] = '{}'
             result_row['error_type_grouped'] = '{}'
+            result_row['raw_llm_response_grouped'] = '{}'
             result_row['needs_qc'] = True
             return result_row
 
@@ -376,6 +378,7 @@ def validate_single_extraction(
         extracted_drug_classes_grouped = {}
         missed_drug_classes_grouped = {}
         error_type_grouped = {}
+        raw_llm_response_grouped = {}
         total_llm_calls = 0
 
         for drug in drugs_to_validate:
@@ -406,6 +409,10 @@ def validate_single_extraction(
                 # Track error type if any
                 if drug_validation.get('error_type'):
                     error_type_grouped[drug] = drug_validation['error_type']
+                
+                # Store raw LLM response for fallback/debugging
+                if drug_validation.get('raw_llm_response'):
+                    raw_llm_response_grouped[drug] = drug_validation['raw_llm_response']
 
                 # Log extraction and missed classes if any
                 missed_count = len(drug_validation['missed_drug_classes'])
@@ -435,6 +442,7 @@ def validate_single_extraction(
                 extraction_performed_grouped[drug] = False
                 extracted_drug_classes_grouped[drug] = []
                 missed_drug_classes_grouped[drug] = []
+                # No raw_llm_response available for exception case
 
         # Calculate cumulative validation_status
         # FAIL if ANY drug fails, REVIEW if any drug needs review (and none fail), PASS only if all pass
@@ -511,6 +519,9 @@ def validate_single_extraction(
         
         # Add error_type_grouped column (only includes drugs that had errors)
         result_row['error_type_grouped'] = json.dumps(error_type_grouped, indent=2) if error_type_grouped else '{}'
+        
+        # Add raw LLM response column for fallback/debugging (only includes drugs with responses)
+        result_row['raw_llm_response_grouped'] = json.dumps(raw_llm_response_grouped, indent=2) if raw_llm_response_grouped else '{}'
 
         # Determine if QC is needed
         needs_qc = (
@@ -553,6 +564,7 @@ def validate_single_extraction(
         result_row['extracted_drug_classes_grouped'] = '{}'
         result_row['extracted_classes'] = '{}'
         result_row['error_type_grouped'] = json.dumps({'_error': 'unknown_error'}, indent=2)
+        result_row['raw_llm_response_grouped'] = '{}'
         result_row['needs_qc'] = True
 
     return result_row
@@ -640,7 +652,7 @@ def main():
                         help='Input JSON cache file with search results')
     parser.add_argument('--output_file', default=None,
                         help='Output CSV file (default: auto-generated)')
-    parser.add_argument('--llm_model', default="gemini/gemini-3-flash-preview",
+    parser.add_argument('--llm_model', default="google/gemini-3-flash-preview",
                         help='LLM model name to use for validation calls')
     parser.add_argument('--temperature', type=float, default=0,
                         help='LLM temperature (default: from settings)')
@@ -650,7 +662,7 @@ def main():
                         help='Maximum number of rows to validate (default: all)')
     parser.add_argument('--skip_rows', type=int, default=0,
                         help='Number of rows to skip from the beginning')
-    parser.add_argument('--num_workers', type=int, default=1,
+    parser.add_argument('--num_workers', type=int, default=3,
                         help='Number of parallel workers (default: 3)')
     parser.add_argument('--backend', type=str, default='litellm',
                         choices=['litellm', 'langchain'],

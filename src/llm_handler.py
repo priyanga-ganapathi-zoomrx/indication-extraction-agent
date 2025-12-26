@@ -98,12 +98,15 @@ def create_llm(llm_config: LLMConfig) -> ChatOpenAI | ChatAnthropic | ChatGoogle
                 max_tokens=llm_config.max_tokens,
             )
         elif llm_config.provider == "google":
-            # Google Gemini
+            # Google Gemini via LiteLLM proxy passthrough
+            # See: https://docs.litellm.ai/docs/pass_through/intro
             return ChatGoogleGenerativeAI(
-                model=llm_config.model_name,
-                google_api_key=llm_config.api_key,
+                model=llm_config.model_name,  # Use model_name without provider prefix (e.g., "gemini-2.0-flash-lite")
+                google_api_key=llm_config.api_key,  # LiteLLM proxy key
                 temperature=llm_config.temperature,
                 max_tokens=llm_config.max_tokens,
+                client_options={"api_endpoint": llm_config.base_url},  # LiteLLM proxy endpoint
+                transport="rest",  # Required for passthrough
             )
         else:
             # OpenAI or OpenAI-compatible providers
