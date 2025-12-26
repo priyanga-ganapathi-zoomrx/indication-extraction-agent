@@ -364,7 +364,9 @@ END OF REFERENCE RULES DOCUMENT"""
                     if cache_creation > 0 or cache_read > 0:
                         print(f"  📦 Cache stats - creation: {cache_creation}, read: {cache_read}")
 
-            return self._parse_validation_response(response, llm_calls=1)
+            # Capture raw response for debugging
+            raw_content = getattr(response, "content", "")
+            return self._parse_validation_response(response, llm_calls=1, raw_response=raw_content)
         except Exception as e:
             print(f"✗ Error during validation LLM call: {e}")
             return {
@@ -386,24 +388,28 @@ END OF REFERENCE RULES DOCUMENT"""
                 "checks_performed": {},
                 "validation_reasoning": f"Validation could not be completed due to error: {str(e)}",
                 "llm_calls": 1,
+                "validation_success": False,
+                "raw_llm_response": None,
             }
 
-    def _parse_validation_response(self, response: AIMessage, llm_calls: int = 1) -> Dict[str, Any]:
+    def _parse_validation_response(self, response: AIMessage, llm_calls: int = 1, raw_response: str = None) -> Dict[str, Any]:
         """Parse the validation response from the LLM.
 
         Args:
             response: LLM response message
             llm_calls: Number of LLM calls made
+            raw_response: The complete raw LLM response for debugging
 
         Returns:
             dict: Parsed validation result
         """
         try:
             content = getattr(response, "content", "")
+            raw_llm_response = raw_response or content
 
             if not content or content.startswith("I encountered an error"):
                 return self._default_validation_response(
-                    f"Validation error: {content}", llm_calls
+                    f"Validation error: {content}", llm_calls, raw_llm_response
                 )
 
             # Try to parse JSON response from code block
@@ -421,10 +427,12 @@ END OF REFERENCE RULES DOCUMENT"""
                         "checks_performed": parsed.get("checks_performed", {}),
                         "validation_reasoning": parsed.get("validation_reasoning", ""),
                         "llm_calls": llm_calls,
+                        "validation_success": True,
+                        "raw_llm_response": raw_llm_response,
                     }
                 except json.JSONDecodeError as e:
                     return self._default_validation_response(
-                        f"Failed to parse JSON response: {e}", llm_calls
+                        f"Failed to parse JSON response: {e}", llm_calls, raw_llm_response
                     )
 
             # Try to find JSON object without code blocks
@@ -446,6 +454,8 @@ END OF REFERENCE RULES DOCUMENT"""
                             "checks_performed": parsed.get("checks_performed", {}),
                             "validation_reasoning": parsed.get("validation_reasoning", ""),
                             "llm_calls": llm_calls,
+                            "validation_success": True,
+                            "raw_llm_response": raw_llm_response,
                         }
             except (json.JSONDecodeError, AttributeError):
                 pass
@@ -467,18 +477,21 @@ END OF REFERENCE RULES DOCUMENT"""
                 "checks_performed": {},
                 "validation_reasoning": content[:2000] if content else "Unable to parse validation response",
                 "llm_calls": llm_calls,
+                "validation_success": True,
+                "raw_llm_response": raw_llm_response,
             }
 
         except Exception as e:
             print(f"Error parsing validation response: {e}")
-            return self._default_validation_response(f"Parse error: {e}", llm_calls)
+            return self._default_validation_response(f"Parse error: {e}", llm_calls, raw_llm_response)
 
-    def _default_validation_response(self, reason: str, llm_calls: int = 0) -> Dict[str, Any]:
+    def _default_validation_response(self, reason: str, llm_calls: int = 0, raw_llm_response: str = None) -> Dict[str, Any]:
         """Create a default validation response for error cases.
 
         Args:
             reason: Reason for the default response
             llm_calls: Number of LLM calls made
+            raw_llm_response: The raw LLM response for debugging (if available)
 
         Returns:
             dict: Default validation result
@@ -502,5 +515,7 @@ END OF REFERENCE RULES DOCUMENT"""
             "checks_performed": {},
             "validation_reasoning": reason,
             "llm_calls": llm_calls,
+            "validation_success": False,
+            "raw_llm_response": raw_llm_response,
         }
 
