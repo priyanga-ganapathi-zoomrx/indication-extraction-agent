@@ -213,23 +213,6 @@ class DrugClassValidationAgent:
         else:
             drug_classes_display = json.dumps(drug_classes)
 
-        # Handle empty extraction case - triggers EXTRACTION MODE
-        empty_notice = ""
-        if drug_classes == ["NA"] or not drug_classes:
-            empty_notice = """
-
-IMPORTANT - EXTRACTION MODE TRIGGERED:
-- The extractor returned NA (no drug class).
-- First, run omission detection on original sources. If missed classes are found, add them to "missed_drug_classes" array.
-- Then, ALWAYS perform GROUNDED SEARCH EXTRACTION to find the drug class.
-- Use your search grounding capability to query authoritative sources (FDA, NIH, NCI, etc.).
-- Apply ALL rules from the reference document to format the extracted drug class.
-- Set "extraction_performed": true and populate "extracted_drug_classes" in your output.
-- Both "missed_drug_classes" (from original sources) and "extracted_drug_classes" (from grounded search) can be populated.
-- If HIGH severity omission found in original sources, set validation_status to FAIL.
-- If you successfully extract a drug class via grounded search with no omissions, set validation_status to PASS.
-- If no drug class found even with grounded search, set validation_status to REVIEW and explain why."""
-
         # Format search results
         search_results_str = self._format_search_results(search_results)
 
@@ -261,7 +244,7 @@ IMPORTANT - EXTRACTION MODE TRIGGERED:
 - **extraction_details**: 
 {extraction_details_str}
 
-Please perform all 3 validation checks (Hallucination Detection, Omission Detection, Rule Compliance) and return your validation result in the specified JSON format.{empty_notice}"""
+Please perform all 3 validation checks (Hallucination Detection, Omission Detection, Rule Compliance) and return your validation result in the specified JSON format."""
 
         return input_content
 
@@ -372,8 +355,6 @@ END OF REFERENCE RULES DOCUMENT"""
             return {
                 "validation_status": "REVIEW",
                 "validation_confidence": 0.0,
-                "extraction_performed": False,
-                "extracted_drug_classes": [],
                 "missed_drug_classes": [],
                 "issues_found": [
                     {
@@ -420,8 +401,6 @@ END OF REFERENCE RULES DOCUMENT"""
                     return {
                         "validation_status": parsed.get("validation_status", "REVIEW"),
                         "validation_confidence": parsed.get("validation_confidence", 0.5),
-                        "extraction_performed": parsed.get("extraction_performed", False),
-                        "extracted_drug_classes": parsed.get("extracted_drug_classes", []),
                         "missed_drug_classes": parsed.get("missed_drug_classes", []),
                         "issues_found": parsed.get("issues_found", []),
                         "checks_performed": parsed.get("checks_performed", {}),
@@ -447,8 +426,6 @@ END OF REFERENCE RULES DOCUMENT"""
                         return {
                             "validation_status": parsed.get("validation_status", "REVIEW"),
                             "validation_confidence": parsed.get("validation_confidence", 0.5),
-                            "extraction_performed": parsed.get("extraction_performed", False),
-                            "extracted_drug_classes": parsed.get("extracted_drug_classes", []),
                             "missed_drug_classes": parsed.get("missed_drug_classes", []),
                             "issues_found": parsed.get("issues_found", []),
                             "checks_performed": parsed.get("checks_performed", {}),
@@ -470,8 +447,6 @@ END OF REFERENCE RULES DOCUMENT"""
             return {
                 "validation_status": status,
                 "validation_confidence": 0.5,
-                "extraction_performed": False,
-                "extracted_drug_classes": [],
                 "missed_drug_classes": [],
                 "issues_found": [],
                 "checks_performed": {},
@@ -499,8 +474,6 @@ END OF REFERENCE RULES DOCUMENT"""
         return {
             "validation_status": "REVIEW",
             "validation_confidence": 0.0,
-            "extraction_performed": False,
-            "extracted_drug_classes": [],
             "missed_drug_classes": [],
             "issues_found": [
                 {

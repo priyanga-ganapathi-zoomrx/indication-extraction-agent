@@ -273,8 +273,6 @@ def validate_single_drug(
     return {
         'status': validation_result.get('validation_status', 'REVIEW'),
         'confidence': validation_result.get('validation_confidence', 0.0),
-        'extraction_performed': validation_result.get('extraction_performed', False),
-        'extracted_drug_classes': validation_result.get('extracted_drug_classes', []),
         'missed_drug_classes': validation_result.get('missed_drug_classes', []),
         'issues': validation_result.get('issues_found', []),
         'checks': validation_result.get('checks_performed', {}),
@@ -316,9 +314,8 @@ def validate_single_extraction(
         extraction_result = extraction['extraction_result']
 
         # Log if original extraction failed - but continue with validation
-        # The validator can still perform grounded search extraction to find drug classes
         if not extraction_result.get('success', False):
-            print("  Note: Original extraction failed - will attempt grounded search extraction")
+            print("  Note: Original extraction failed - proceeding with validation")
 
         # Get grouped extraction data
         drug_classes_grouped = extraction_result.get('drug_classes_grouped', {})
@@ -354,9 +351,6 @@ def validate_single_extraction(
             result_row['validation_status_grouped'] = '{}'
             result_row['validation_llm_calls'] = 0
             result_row['validation_success_grouped'] = '{}'
-            result_row['extraction_performed_grouped'] = '{}'
-            result_row['extracted_drug_classes_grouped'] = '{}'
-            result_row['extracted_classes'] = '{}'
             result_row['raw_llm_response_grouped'] = '{}'
             result_row['needs_qc'] = True
             return result_row
@@ -369,8 +363,6 @@ def validate_single_extraction(
         validation_issues_grouped = {}
         validation_checks_grouped = {}
         validation_reasoning_grouped = {}
-        extraction_performed_grouped = {}
-        extracted_drug_classes_grouped = {}
         missed_drug_classes_grouped = {}
         validation_success_grouped = {}
         raw_llm_response_grouped = {}
@@ -396,8 +388,6 @@ def validate_single_extraction(
                 validation_issues_grouped[drug] = drug_validation['issues']
                 validation_checks_grouped[drug] = drug_validation['checks']
                 validation_reasoning_grouped[drug] = drug_validation['reasoning']
-                extraction_performed_grouped[drug] = drug_validation['extraction_performed']
-                extracted_drug_classes_grouped[drug] = drug_validation['extracted_drug_classes']
                 missed_drug_classes_grouped[drug] = drug_validation['missed_drug_classes']
                 validation_success_grouped[drug] = drug_validation['validation_success']
                 total_llm_calls += drug_validation['llm_calls']
@@ -406,12 +396,9 @@ def validate_single_extraction(
                 if drug_validation.get('raw_llm_response'):
                     raw_llm_response_grouped[drug] = drug_validation['raw_llm_response']
 
-                # Log extraction and missed classes if any
+                # Log validation status and missed classes if any
                 missed_count = len(drug_validation['missed_drug_classes'])
-                if drug_validation['extraction_performed']:
-                    extracted_count = len(drug_validation['extracted_drug_classes'])
-                    print(f"      Status: {drug_validation['status']} (extraction performed, found {extracted_count} classes, {missed_count} missed)")
-                elif missed_count > 0:
+                if missed_count > 0:
                     print(f"      Status: {drug_validation['status']} ({missed_count} missed classes: {drug_validation['missed_drug_classes']})")
                 else:
                     print(f"      Status: {drug_validation['status']}")
@@ -431,8 +418,6 @@ def validate_single_extraction(
                 }]
                 validation_checks_grouped[drug] = {}
                 validation_reasoning_grouped[drug] = f'Validation error: {str(drug_error)}'
-                extraction_performed_grouped[drug] = False
-                extracted_drug_classes_grouped[drug] = []
                 missed_drug_classes_grouped[drug] = []
                 validation_success_grouped[drug] = False
                 # No raw_llm_response available for exception case
@@ -497,21 +482,6 @@ def validate_single_extraction(
         # Add validation success column (boolean per drug indicating if LLM call succeeded)
         result_row['validation_success_grouped'] = json.dumps(validation_success_grouped, indent=2)
         
-        # Add extraction columns (for when validator extracts missing drug classes)
-        # Pretty print for object columns (with indent=2)
-        result_row['extraction_performed_grouped'] = json.dumps(extraction_performed_grouped, indent=2)
-        result_row['extracted_drug_classes_grouped'] = json.dumps(extracted_drug_classes_grouped, indent=2)
-        
-        # Add simplified extracted classes column (just class names as arrays, no pretty print)
-        # Extract only class_name from each extracted drug class for readability
-        extracted_classes_simple = {}
-        for drug, classes in extracted_drug_classes_grouped.items():
-            if classes:
-                extracted_classes_simple[drug] = [c.get('class_name', '') for c in classes if c.get('class_name')]
-            else:
-                extracted_classes_simple[drug] = []
-        result_row['extracted_classes'] = json.dumps(extracted_classes_simple)
-        
         # Add raw LLM response column for debugging (only includes drugs with responses)
         result_row['raw_llm_response_grouped'] = json.dumps(raw_llm_response_grouped, indent=2) if raw_llm_response_grouped else '{}'
 
@@ -553,9 +523,6 @@ def validate_single_extraction(
         result_row['validation_reasoning_grouped'] = '{}'
         result_row['validation_llm_calls'] = 0
         result_row['validation_success_grouped'] = '{}'
-        result_row['extraction_performed_grouped'] = '{}'
-        result_row['extracted_drug_classes_grouped'] = '{}'
-        result_row['extracted_classes'] = '{}'
         result_row['raw_llm_response_grouped'] = '{}'
         result_row['needs_qc'] = True
 
