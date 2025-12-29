@@ -611,7 +611,7 @@ def main():
                         help='Input JSON cache file with search results')
     parser.add_argument('--output_file', default=None,
                         help='Output CSV file (default: auto-generated)')
-    parser.add_argument('--llm_model', default="claude-haiku-4-5",
+    parser.add_argument('--llm_model', default="gemini/gemini-3-flash-preview",
                         help='LLM model name to use for validation calls')
     parser.add_argument('--temperature', type=float, default=0,
                         help='LLM temperature (default: from settings)')
