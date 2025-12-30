@@ -75,11 +75,16 @@ class LLMConfig(BaseModel):
         return model_value.split("/")[1] if "/" in model_value else model_value
 
 
-def create_llm(llm_config: LLMConfig) -> ChatOpenAI | ChatAnthropic | ChatGoogleGenerativeAI:
+def create_llm(
+    llm_config: LLMConfig,
+    model_kwargs: dict = None,
+) -> ChatOpenAI | ChatAnthropic | ChatGoogleGenerativeAI:
     """Create an LLM instance based on the configuration.
 
     Args:
         llm_config: Configuration for the LLM
+        model_kwargs: Optional dictionary of additional model arguments
+                      (e.g., {"tools": [{"type": "web_search_preview"}]} for OpenAI grounded search)
 
     Returns:
         ChatOpenAI, ChatAnthropic, or ChatGoogleGenerativeAI instance
@@ -114,6 +119,7 @@ def create_llm(llm_config: LLMConfig) -> ChatOpenAI | ChatAnthropic | ChatGoogle
                 timeout=llm_config.timeout,
                 temperature=llm_config.temperature,
                 max_tokens=llm_config.max_tokens,
+                model_kwargs=model_kwargs or {},
             )
     except Exception as e:
         print(f"✗ Error creating LLM: {e}")
