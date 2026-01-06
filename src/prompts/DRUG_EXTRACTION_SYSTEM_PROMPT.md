@@ -98,11 +98,16 @@ Identify drugs/regimens administered for therapeutic use in the cure, mitigation
 
    * Maintain title casing of drug names
    * Use full drug names when available (expand abbreviations)
-   * Include both brand and generic names when mentioned: `Keytruda;;Pembrolizumab`
+   * Include both brand and generic names when both refer to the same drug. Brand names are commercial/trade names (e.g., Keytruda, Opdivo, Herceptin).
+     * Example: Keytruda (pembrolizumab) → capture both: [Keytruda, Pembrolizumab]
+     * Example: Herceptin and trastuzumab → capture both: [Herceptin, Trastuzumab]
    * Capture generic names when mentioned alone
    * Capture brand names when mentioned alone
-   * When both synonyms or generic names are present, always prefer the full generic name.
-   * Example: *“Idarubicin (Ida)” → capture only Idarubicin
+   * When a generic name appears with any other representation of the same drug (code name, abbreviation, synonym, alias, internal identifier), capture ONLY the generic name. Only brand names warrant capturing both.
+     * Example: arcotatug tavatecan (IBI343) → capture only: Arcotatug Tavatecan
+     * Example: Idarubicin (Ida) → capture only: Idarubicin
+     * Example: pembrolizumab (MK-3475) → capture only: Pembrolizumab
+     * Example: bevacizumab, also known as Avastin → capture both (Avastin is brand name): [Bevacizumab, Avastin]
 
 2. **Drug Regimens**
 
@@ -197,15 +202,11 @@ c. **Formatting Guidelines**
    * However, if these terms appear together with a specific drug name, capture only the drug name.
    * Example: “Drug A chemotherapy” → capture only “Drug A”*
 
-3. When both **expanded drug names** and their **abbreviated form** are present, **prefer the expanded form**. Capture abbreviated forms **only if the expanded form is not present**.
-
-   * Example: *“Rituximab, Cyclophosphamide, Vincristine, Doxorubicin and Prednisolone (R-CHOP)” → capture only Rituximab, Cyclophosphamide, Vincristine, Doxorubicin, and Prednisolone; exclude R-CHOP
-
-4. Exclude drugs that were **previously used to treat patients** when mentioned in the context of a new drug.
+3. Exclude drugs that were **previously used to treat patients** when mentioned in the context of a new drug.
 
    * Example: “Drug A for patients previously treated with Drug B” → capture Drug A; exclude Drug B
 
-5. If two drugs are mentioned where one is a type or specific subtype of a broader drug class, and the specific drug is the one intended for the disease, **capture only the specific drug and exclude the broader drug**.
+4. If two drugs are mentioned where one is a type or specific subtype of a broader drug class, and the specific drug is the one intended for the disease, **capture only the specific drug and exclude the broader drug**.
 
    * Example: “Drug A, a type of Drug B, for the treatment of CLL” → capture Drug A; exclude Drug B
 

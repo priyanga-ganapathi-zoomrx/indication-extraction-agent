@@ -115,6 +115,7 @@ class DrugExtractionAgent:
         # System prompts for extraction, validation, and verification
         self.extraction_system_prompt = self._get_extraction_system_prompt()
         self.validation_system_prompt = self._get_validation_system_prompt()
+        self.extraction_rules_prompt = self._get_extraction_rules_prompt()  # Reference rules for validation
         if self._enable_verification:
             self.verification_system_prompt = self._get_verification_system_prompt()
 
@@ -253,6 +254,19 @@ class DrugExtractionAgent:
         self.validation_prompt_version = prompt_version
         return prompt_content
 
+    def _get_extraction_rules_prompt(self) -> str:
+        """Get the extraction rules as reference document for validation.
+
+        Returns:
+            str: Extraction rules content to be used as reference in validation
+        """
+        prompt_content, _ = get_system_prompt(
+            langfuse_client=self.langfuse,
+            prompt_name="DRUG_EXTRACTION_SYSTEM_PROMPT",
+            fallback_to_file=True,
+        )
+        return prompt_content
+
     def _get_verification_system_prompt(self) -> str:
         """Get the system prompt for drug verification.
 
@@ -346,13 +360,13 @@ class DrugExtractionAgent:
             }
 
     def _validation_llm_call_node(self, state: MessagesState) -> dict:
-        """Validation LLM node that validates extracted drugs.
+        """Validation LLM node that validates extracted drugs using 3-message pattern.
 
         This node handles:
-        - Formatting input with abstract title and extracted JSON
-        - Adding the validation system prompt
-        - Invoking the LLM to validate drugs
-        - Returning the validated drug list
+        - Message 1: System Instruction (DRUG_VALIDATION_SYSTEM_PROMPT)
+        - Message 2: Reference Rules (DRUG_EXTRACTION_SYSTEM_PROMPT)
+        - Message 3: Extraction Result to Validate
+        - Returning the validation result
 
         Args:
             state: Current state containing extracted_drugs_json and abstract_title
@@ -364,18 +378,19 @@ class DrugExtractionAgent:
         abstract_title = state.get("abstract_title", "")
         extracted_json = state.get("extracted_drugs_json", "{}")
 
-        # Format the validation input
+        # Format the validation input (Message 3)
         validation_input = f"""Validate the extracted drugs for the following:
 
-**Title:** {abstract_title}
+**Abstract Title:** {abstract_title}
 
-**Extracted JSON:**
+**Extraction Result:**
 {extracted_json}"""
 
-        # Create messages for validation LLM call
+        # Create messages for validation LLM call (3-message pattern)
         messages_for_llm = [
-            SystemMessage(content=self.validation_system_prompt),
-            HumanMessage(content=validation_input),
+            SystemMessage(content=self.validation_system_prompt),  # Message 1: System Instruction
+            HumanMessage(content=f"# REFERENCE RULES DOCUMENT\n\nThe following are the extraction rules that the extractor was instructed to follow:\n\n{self.extraction_rules_prompt}"),  # Message 2: Reference Rules
+            HumanMessage(content=validation_input),  # Message 3: Extraction Result
         ]
 
         try:
@@ -383,7 +398,7 @@ class DrugExtractionAgent:
 
             # Ensure the response has content to prevent parsing errors
             if not response.content:
-                response.content = '{"Primary Drugs": [], "Secondary Drugs": [], "Comparator Drugs": [], "Flagged Drugs": [], "Potential Valid Drugs": [], "Non-Therapeutic Drugs": [], "Reasoning": []}'
+                response.content = '{"validation_status": "FAIL", "validation_confidence": 0.0, "missed_drugs": [], "grounded_search_performed": false, "search_results": [], "issues_found": [], "checks_performed": {}, "validation_reasoning": "Empty response"}'
 
             return {
                 "messages": [response],
@@ -393,7 +408,7 @@ class DrugExtractionAgent:
         except Exception as e:
             print(f"✗ Error during validation LLM call: {e}")
             # Return an error message
-            error_content = '{"Primary Drugs": [], "Secondary Drugs": [], "Comparator Drugs": [], "Flagged Drugs": [], "Potential Valid Drugs": [], "Non-Therapeutic Drugs": [], "Reasoning": []}'
+            error_content = '{"validation_status": "FAIL", "validation_confidence": 0.0, "missed_drugs": [], "grounded_search_performed": false, "search_results": [], "issues_found": [], "checks_performed": {}, "validation_reasoning": "Error during validation"}'
             error_message = AIMessage(content=error_content)
             return {
                 "messages": [error_message],
@@ -505,23 +520,42 @@ Based on the search results, determine if "{drug_term}" is a valid drug or drug 
         """Verification node that verifies each drug term via Tavily search.
 
         This node handles:
-        - Extracting all drug terms from validated output
+        - Extracting all drug terms from extraction output (uses extracted_drugs_json, not validated)
         - Querying Tavily for each drug term (in parallel with max limit)
         - Passing results to LLM for verification decision
         - Removing unverified drugs from final lists
 
+        Note: Verification works on the original extracted drugs, not the validation output.
+        The validation output now contains validation_status, issues_found, etc. instead of drug lists.
+
         Args:
-            state: Current state containing validated_drugs_json
+            state: Current state containing extracted_drugs_json and validated_drugs_json
             config: RunnableConfig with callbacks for Langfuse tracing
 
         Returns:
             dict: Updated state with verification results and filtered drug lists
         """
+        # Use extracted_drugs_json (from extraction step) for the drug lists
+        extracted_json = state.get("extracted_drugs_json", "{}")
         validated_json = state.get("validated_drugs_json", "{}")
         
-        # Parse validated drugs
+        # Parse extracted drugs (these contain the actual drug lists)
         try:
-            # Extract JSON from response
+            import re
+            json_match = re.search(r'\{.*\}', extracted_json, re.DOTALL)
+            if json_match:
+                extracted_data = json.loads(json_match.group())
+            else:
+                extracted_data = json.loads(extracted_json)
+        except json.JSONDecodeError:
+            extracted_data = {
+                "Primary Drugs": [],
+                "Secondary Drugs": [],
+                "Comparator Drugs": [],
+            }
+
+        # Parse validation data (contains validation status and issues)
+        try:
             import re
             json_match = re.search(r'\{.*\}', validated_json, re.DOTALL)
             if json_match:
@@ -529,24 +563,18 @@ Based on the search results, determine if "{drug_term}" is a valid drug or drug 
             else:
                 validated_data = json.loads(validated_json)
         except json.JSONDecodeError:
-            validated_data = {
-                "Primary Drugs": [],
-                "Secondary Drugs": [],
-                "Comparator Drugs": [],
-                "Flagged Drugs": [],
-                "Potential Valid Drugs": [],
-                "Non-Therapeutic Drugs": [],
-                "Reasoning": [],
-            }
+            validated_data = {}
 
-        # Collect all drug terms to verify
-        primary_drugs = validated_data.get("Primary Drugs", [])
-        secondary_drugs = validated_data.get("Secondary Drugs", [])
-        comparator_drugs = validated_data.get("Comparator Drugs", [])
-        existing_flagged = validated_data.get("Flagged Drugs", [])
-        existing_potential_valid = validated_data.get("Potential Valid Drugs", [])
-        existing_non_therapeutic = validated_data.get("Non-Therapeutic Drugs", [])
-        existing_reasoning = validated_data.get("Reasoning", [])
+        # Collect all drug terms to verify from extraction
+        primary_drugs = extracted_data.get("Primary Drugs", [])
+        secondary_drugs = extracted_data.get("Secondary Drugs", [])
+        comparator_drugs = extracted_data.get("Comparator Drugs", [])
+        
+        # Get validation metadata
+        validation_status = validated_data.get("validation_status", "REVIEW")
+        validation_issues = validated_data.get("issues_found", [])
+        validation_missed_drugs = validated_data.get("missed_drugs", [])
+        validation_reasoning = validated_data.get("validation_reasoning", "")
 
         all_drugs = list(set(primary_drugs + secondary_drugs + comparator_drugs))
 
@@ -556,10 +584,10 @@ Based on the search results, determine if "{drug_term}" is a valid drug or drug 
                 "Primary Drugs": primary_drugs,
                 "Secondary Drugs": secondary_drugs,
                 "Comparator Drugs": comparator_drugs,
-                "Flagged Drugs": existing_flagged,
-                "Potential Valid Drugs": existing_potential_valid,
-                "Non-Therapeutic Drugs": existing_non_therapeutic,
-                "Reasoning": existing_reasoning,
+                "Validation Status": validation_status,
+                "Validation Issues": validation_issues,
+                "Validation Missed Drugs": validation_missed_drugs,
+                "Validation Reasoning": validation_reasoning,
             }
             return {
                 "messages": [AIMessage(content=json.dumps(final_output, indent=2))],
@@ -621,12 +649,12 @@ Based on the search results, determine if "{drug_term}" is a valid drug or drug 
             "Primary Drugs": verified_primary,
             "Secondary Drugs": verified_secondary,
             "Comparator Drugs": verified_comparator,
-            "Flagged Drugs": existing_flagged,
-            "Potential Valid Drugs": existing_potential_valid,
-            "Non-Therapeutic Drugs": existing_non_therapeutic,
             "Verification Removed Drugs": verification_removed,
-            "Reasoning": existing_reasoning,
             "Verification Results": verification_results,
+            "Validation Status": validation_status,
+            "Validation Issues": validation_issues,
+            "Validation Missed Drugs": validation_missed_drugs,
+            "Validation Reasoning": validation_reasoning,
         }
 
         return {

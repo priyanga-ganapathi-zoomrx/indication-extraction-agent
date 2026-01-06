@@ -9,7 +9,6 @@ Usage:
     python src/drug_validation_processor.py --input_file step1_extraction_results.csv --output_file validation_results.csv
 """
 
-import csv
 import json
 import os
 import sys
@@ -40,6 +39,7 @@ class DrugValidationProcessor:
         model: str = None,
         temperature: float = None,
         max_tokens: int = None,
+        enable_caching: bool = False,
     ):
         """Initialize the validation processor.
 
@@ -47,7 +47,9 @@ class DrugValidationProcessor:
             model: Model name (uses default from settings if not specified)
             temperature: Temperature (uses default from settings if not specified)
             max_tokens: Max tokens (uses default from settings if not specified)
+            enable_caching: Enable Anthropic prompt caching for reduced costs
         """
+        self.enable_caching = enable_caching
         self.langfuse_config = get_langfuse_config()
         
         # Create LLM config
@@ -61,16 +63,49 @@ class DrugValidationProcessor:
         )
         self.llm = create_llm(self.llm_config)
 
-        # Load system prompt
-        self.system_prompt, self.prompt_version = get_system_prompt(
+        # Load combined prompt file (contains both validation instructions and extraction rules)
+        full_prompt, self.prompt_version = get_system_prompt(
             langfuse_client=None,
             prompt_name="DRUG_VALIDATION_SYSTEM_PROMPT",
             fallback_to_file=True,
         )
+        
+        # Parse message sections from the combined prompt
+        self.system_prompt, self.extraction_rules = self._parse_message_sections(full_prompt)
         print(f"✓ Validation processor initialized with model: {self.llm_config.model}")
+        if self.enable_caching:
+            print("✓ Prompt caching enabled for DrugValidationProcessor")
+
+    def _parse_message_sections(self, full_prompt: str) -> tuple:
+        """Parse MESSAGE_1 (validation instructions) and MESSAGE_2 (extraction rules) from combined prompt.
+        
+        Args:
+            full_prompt: The combined prompt content with message markers
+            
+        Returns:
+            tuple: (validation_instructions, extraction_rules)
+        """
+        import re
+        
+        # Extract MESSAGE_1: Validation Instructions
+        msg1_pattern = r'<!-- MESSAGE_1_START: VALIDATION_INSTRUCTIONS -->(.*?)<!-- MESSAGE_1_END: VALIDATION_INSTRUCTIONS -->'
+        msg1_match = re.search(msg1_pattern, full_prompt, re.DOTALL)
+        validation_instructions = msg1_match.group(1).strip() if msg1_match else full_prompt
+        
+        # Extract MESSAGE_2: Extraction Rules
+        msg2_pattern = r'<!-- MESSAGE_2_START: EXTRACTION_RULES -->(.*?)<!-- MESSAGE_2_END: EXTRACTION_RULES -->'
+        msg2_match = re.search(msg2_pattern, full_prompt, re.DOTALL)
+        extraction_rules = msg2_match.group(1).strip() if msg2_match else ""
+        
+        if not msg1_match:
+            print("⚠ Warning: MESSAGE_1 markers not found, using full prompt as validation instructions")
+        if not msg2_match:
+            print("⚠ Warning: MESSAGE_2 markers not found, extraction rules may be empty")
+            
+        return validation_instructions, extraction_rules
 
     def validate(self, abstract_title: str, extraction_response: str, abstract_id: str = None) -> Dict[str, Any]:
-        """Run validation on extraction results.
+        """Run validation on extraction results using 3-message pattern.
 
         Args:
             abstract_title: The original abstract title
@@ -80,15 +115,38 @@ class DrugValidationProcessor:
         Returns:
             dict: Validation result with response and metadata
         """
+        # 3-message pattern (both extracted from DRUG_VALIDATION_SYSTEM_PROMPT.md):
+        # Message 1: System Instruction (MESSAGE_1 section)
+        # Message 2: Reference Rules - flat-numbered extraction rules (MESSAGE_2 section)
+        # Message 3: Extraction Result to Validate
+        
         validation_input = f"""Validate the extracted drugs for the following:
 
-**Title:** {abstract_title}
+**Abstract Title:** {abstract_title}
 
-**Extracted JSON:**
+**Extraction Result:**
 {extraction_response}"""
 
+        # Build system message with optional caching
+        if self.enable_caching:
+            system_msg = SystemMessage(content=[
+                {"type": "text", "text": self.system_prompt, "cache_control": {"type": "ephemeral"}}
+            ])
+        else:
+            system_msg = SystemMessage(content=self.system_prompt)
+
+        # Build reference rules message with optional caching
+        reference_rules_content = f"# REFERENCE RULES DOCUMENT\n\nThe following are the extraction rules that the extractor was instructed to follow:\n\n{self.extraction_rules}"
+        if self.enable_caching:
+            reference_rules_msg = HumanMessage(content=[
+                {"type": "text", "text": reference_rules_content, "cache_control": {"type": "ephemeral"}}
+            ])
+        else:
+            reference_rules_msg = HumanMessage(content=reference_rules_content)
+
         messages = [
-            SystemMessage(content=self.system_prompt),
+            system_msg,
+            reference_rules_msg,
             HumanMessage(content=validation_input),
         ]
 
@@ -107,6 +165,17 @@ class DrugValidationProcessor:
 
         try:
             response: AIMessage = self.llm.invoke(messages, config=config)
+            
+            # Log cache performance metrics if caching is enabled
+            if self.enable_caching and hasattr(response, "usage_metadata"):
+                usage = response.usage_metadata
+                if usage:
+                    input_token_details = usage.get("input_token_details", {})
+                    cache_creation = input_token_details.get("cache_creation", 0)
+                    cache_read = input_token_details.get("cache_read", 0)
+                    if cache_creation > 0 or cache_read > 0:
+                        print(f"  📦 Cache stats - creation: {cache_creation}, read: {cache_read}")
+            
             return {
                 "success": True,
                 "response": response.content,
@@ -116,7 +185,7 @@ class DrugValidationProcessor:
             print(f"✗ Error validating drugs: {e}")
             return {
                 "success": False,
-                "response": '{"Primary Drugs": [], "Secondary Drugs": [], "Comparator Drugs": [], "Flagged Drugs": [], "Potential Valid Drugs": [], "Non-Therapeutic Drugs": [], "Reasoning": []}',
+                "response": '{"validation_status": "FAIL", "validation_confidence": 0.0, "missed_drugs": [], "grounded_search_performed": false, "search_results": [], "issues_found": [], "checks_performed": {}, "validation_reasoning": "Error during validation"}',
                 "error": str(e),
             }
 
@@ -125,11 +194,14 @@ def parse_validation_response(response: str) -> Dict[str, Any]:
     """Parse the validation response JSON with new format.
     
     New format includes:
-    - Primary/Secondary/Comparator Drugs (unchanged from input)
-    - Flagged Drugs (items flagged for review)
-    - Potential Valid Drugs (missed therapeutic drugs)
-    - Non-Therapeutic Drugs (drugs judged non-therapeutic)
-    - Reasoning
+    - validation_status: PASS | REVIEW | FAIL
+    - validation_confidence: 0.0 to 1.0
+    - missed_drugs: Array of drugs that should have been extracted
+    - grounded_search_performed: Boolean
+    - search_results: Array of search results
+    - issues_found: Array of issues with check_type, severity, etc.
+    - checks_performed: Status of each validation check
+    - validation_reasoning: Step-by-step reasoning
     """
     import re
     
@@ -148,6 +220,12 @@ def parse_validation_response(response: str) -> Dict[str, Any]:
 
         parsed = json.loads(json_str)
         
+        def get_value(data, keys, default=None):
+            for key in keys:
+                if key in data:
+                    return data[key]
+            return default
+        
         def get_list(data, keys):
             for key in keys:
                 if key in data and isinstance(data[key], list):
@@ -155,23 +233,25 @@ def parse_validation_response(response: str) -> Dict[str, Any]:
             return []
 
         return {
-            'primary_drugs': get_list(parsed, ['Primary Drugs', 'primary_drugs']),
-            'secondary_drugs': get_list(parsed, ['Secondary Drugs', 'secondary_drugs']),
-            'comparator_drugs': get_list(parsed, ['Comparator Drugs', 'comparator_drugs']),
-            'flagged_drugs': get_list(parsed, ['Flagged Drugs', 'flagged_drugs']),
-            'potential_valid_drugs': get_list(parsed, ['Potential Valid Drugs', 'potential_valid_drugs']),
-            'non_therapeutic_drugs': get_list(parsed, ['Non-Therapeutic Drugs', 'non_therapeutic_drugs']),
-            'reasoning': get_list(parsed, ['Reasoning', 'reasoning']),
+            'validation_status': get_value(parsed, ['validation_status'], 'REVIEW'),
+            'validation_confidence': get_value(parsed, ['validation_confidence'], 0.0),
+            'missed_drugs': get_list(parsed, ['missed_drugs']),
+            'grounded_search_performed': get_value(parsed, ['grounded_search_performed'], False),
+            'search_results': get_list(parsed, ['search_results']),
+            'issues_found': get_list(parsed, ['issues_found']),
+            'checks_performed': get_value(parsed, ['checks_performed'], {}),
+            'validation_reasoning': get_value(parsed, ['validation_reasoning'], ''),
         }
     except Exception as e:
         return {
-            'primary_drugs': [],
-            'secondary_drugs': [],
-            'comparator_drugs': [],
-            'flagged_drugs': [],
-            'potential_valid_drugs': [],
-            'non_therapeutic_drugs': [],
-            'reasoning': [],
+            'validation_status': 'FAIL',
+            'validation_confidence': 0.0,
+            'missed_drugs': [],
+            'grounded_search_performed': False,
+            'search_results': [],
+            'issues_found': [],
+            'checks_performed': {},
+            'validation_reasoning': f'Error parsing response: {str(e)}',
         }
 
 
@@ -261,16 +341,17 @@ def process_single_row(row: Dict, processor: DrugValidationProcessor, index: int
         if key not in ['abstract_id', 'abstract_title']:
             output[key] = value
     
-    # Add Step 2 validation columns
+    # Add Step 2 validation columns (new format) with pretty-printed JSON
     output.update({
         'validation_response': result['response'],
-        'validation_primary_drugs': json.dumps(parsed['primary_drugs']),
-        'validation_secondary_drugs': json.dumps(parsed['secondary_drugs']),
-        'validation_comparator_drugs': json.dumps(parsed['comparator_drugs']),
-        'validation_flagged_drugs': json.dumps(parsed['flagged_drugs']),
-        'validation_potential_valid_drugs': json.dumps(parsed['potential_valid_drugs']),
-        'validation_non_therapeutic_drugs': json.dumps(parsed['non_therapeutic_drugs']),
-        'validation_reasoning': json.dumps(parsed['reasoning']),
+        'validation_status': parsed['validation_status'],
+        'validation_confidence': parsed['validation_confidence'],
+        'validation_missed_drugs': json.dumps(parsed['missed_drugs'], indent=2, ensure_ascii=False),
+        'validation_grounded_search_performed': parsed['grounded_search_performed'],
+        'validation_search_results': json.dumps(parsed['search_results'], indent=2, ensure_ascii=False),
+        'validation_issues_found': json.dumps(parsed['issues_found'], indent=2, ensure_ascii=False),
+        'validation_checks_performed': json.dumps(parsed['checks_performed'], indent=2, ensure_ascii=False),
+        'validation_reasoning': parsed['validation_reasoning'],
         'validation_success': result['success'],
         'validation_error': result['error'] or '',
     })
@@ -280,13 +361,14 @@ def process_single_row(row: Dict, processor: DrugValidationProcessor, index: int
 
 def main():
     parser = argparse.ArgumentParser(description='Step 2: Drug Validation Processor')
-    parser.add_argument('--input_file', default='step1.csv', help='Input CSV file from Step 1 (extraction results)')
-    parser.add_argument('--output_file', default='step2.csv', help='Output CSV file (default: auto-generated)')
+    parser.add_argument('--input_file', default='step1_filtered.csv', help='Input CSV file from Step 1 (extraction results)')
+    parser.add_argument('--output_file', default='step2_filtered.csv', help='Output CSV file (default: auto-generated)')
     parser.add_argument('--num_rows', type=int, default=None, help='Number of rows to process')
-    parser.add_argument('--model', default='gemini/gemini-3-pro-preview', help='Model to use for validation')
+    parser.add_argument('--model', default='gemini/gemini-3-flash-preview', help='Model to use for validation')
     parser.add_argument('--temperature', type=float, default=0, help='Temperature for LLM')
     parser.add_argument('--max_tokens', type=int, default=50000, help='Max tokens for LLM')
     parser.add_argument('--parallel_workers', type=int, default=3, help='Number of parallel workers')
+    parser.add_argument('--enable_caching', action='store_true', help='Enable Anthropic prompt caching for reduced costs')
 
     args = parser.parse_args()
 
@@ -317,6 +399,7 @@ def main():
         model=args.model,
         temperature=args.temperature,
         max_tokens=args.max_tokens,
+        enable_caching=args.enable_caching,
     )
 
     # Process rows with intermediate saves every 5 results
