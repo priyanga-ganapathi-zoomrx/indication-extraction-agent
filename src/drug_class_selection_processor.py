@@ -230,13 +230,10 @@ def select_drug_class_for_single_drug(
     Returns:
         Dictionary with selection results
     """
-    # Transform extraction details to selection input format
-    extracted_classes = transform_extraction_to_selection_input(extraction_details)
-
-    # Run selection
+    # Run selection - agent now handles the transformation internally
     selection_result = selector.invoke(
         drug_name=drug_name,
-        extracted_classes=extracted_classes,
+        extraction_details=extraction_details,
         abstract_id=abstract_id,
     )
 

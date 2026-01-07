@@ -26,8 +26,9 @@ from src.llm_handler import LLMConfig, create_llm
 from src.prompts import get_system_prompt
 
 
-# Prompt name for drug class selection
+# Prompt names for drug class selection
 DRUG_CLASS_SELECTION_PROMPT_NAME = "DRUG_CLASS_SELECTION_SYSTEM_PROMPT"
+DRUG_CLASS_EXTRACTION_PROMPT_NAME = "DRUG_CLASS_EXTRACTION_FROM_SEARCH_REACT_PATTERN"
 
 
 class DrugClassSelectionAgent:
@@ -134,20 +135,65 @@ class DrugClassSelectionAgent:
         self.selection_prompt_version = prompt_version
         return prompt_content
 
+    def _get_extraction_rules_prompt(self) -> str:
+        """Get the extraction rules prompt to use as reference.
+
+        Loads the DRUG_CLASS_EXTRACTION_FROM_SEARCH_REACT_PATTERN prompt to provide
+        the selector with the rules the extractor was instructed to follow.
+
+        Returns:
+            str: Extraction rules prompt content (just the rules section)
+        """
+        try:
+            prompt_content, prompt_version = get_system_prompt(
+                langfuse_client=self.langfuse,
+                prompt_name=DRUG_CLASS_EXTRACTION_PROMPT_NAME,
+                fallback_to_file=True,
+            )
+            self.extraction_rules_version = prompt_version
+            
+            # Extract just the RULES_MESSAGE section
+            rules_start = prompt_content.find("<!-- MESSAGE_2_START: RULES_MESSAGE -->")
+            rules_end = prompt_content.find("<!-- MESSAGE_2_END: RULES_MESSAGE -->")
+            
+            if rules_start != -1 and rules_end != -1:
+                rules_section = prompt_content[rules_start:rules_end + len("<!-- MESSAGE_2_END: RULES_MESSAGE -->")]
+                return rules_section
+            else:
+                # Fallback: return full prompt if markers not found
+                return prompt_content
+        except Exception as e:
+            print(f"✗ Error loading extraction rules prompt: {e}")
+            self.extraction_rules_version = "error"
+            return "Error loading extraction rules. Please proceed with selection rules only."
+
     def _format_selection_input(
         self,
         drug_name: str,
-        extracted_classes: List[Dict[str, str]],
+        extraction_details: List[Dict],
     ) -> str:
         """Format the selection input JSON for the LLM.
 
         Args:
             drug_name: The drug name
-            extracted_classes: List of dicts with 'drug_class' and 'class_type'
+            extraction_details: List of extraction detail dicts with full information
 
         Returns:
             str: JSON-formatted input string
         """
+        # Transform extraction_details to use 'drug_class' instead of 'normalized_form'
+        extracted_classes = []
+        for detail in extraction_details:
+            extracted_class = {
+                "extracted_text": detail.get("extracted_text", ""),
+                "class_type": detail.get("class_type", "Therapeutic"),
+                "drug_class": detail.get("normalized_form", detail.get("extracted_text", "")),
+                "evidence": detail.get("evidence", ""),
+                "source": detail.get("source", ""),
+                "rules_applied": detail.get("rules_applied", []),
+            }
+            extracted_classes.append(extracted_class)
+        
         input_data = {
             "drug_name": drug_name,
             "extracted_classes": extracted_classes,
@@ -157,21 +203,21 @@ class DrugClassSelectionAgent:
     def invoke(
         self,
         drug_name: str,
-        extracted_classes: List[Dict[str, str]],
+        extraction_details: List[Dict],
         abstract_id: str = None,
     ) -> Dict[str, Any]:
         """Invoke the selection agent to choose the best drug class(es).
 
         Args:
             drug_name: The drug name
-            extracted_classes: List of dicts with 'drug_class' and 'class_type'
+            extraction_details: List of extraction detail dicts with full information
             abstract_id: The abstract ID for tracking in Langfuse (optional)
 
         Returns:
             dict: Selection result containing selected classes and reasoning
         """
         # Handle edge case: no classes to select from
-        if not extracted_classes:
+        if not extraction_details:
             return {
                 "drug_name": drug_name,
                 "selected_drug_classes": ["NA"],
@@ -180,27 +226,37 @@ class DrugClassSelectionAgent:
                 "selection_success": True,
             }
 
-        # Handle edge case: only one class - no LLM call needed
-        if len(extracted_classes) == 1:
+        # Handle edge case: only one unique class - no LLM call needed
+        unique_classes = list(set(
+            detail.get('normalized_form', detail.get('extracted_text', ''))
+            for detail in extraction_details
+            if detail.get('normalized_form') or detail.get('extracted_text')
+        ))
+        
+        if len(unique_classes) == 1:
             return {
                 "drug_name": drug_name,
-                "selected_drug_classes": [extracted_classes[0]["drug_class"]],
+                "selected_drug_classes": [unique_classes[0]],
                 "reasoning": "Only one class was extracted. No selection logic needed.",
                 "llm_calls": 0,
                 "selection_success": True,
             }
+
+        # Load extraction rules
+        extraction_rules = self._get_extraction_rules_prompt()
 
         # Build tags for Langfuse tracing
         tags = [
             drug_name,
             f"abstract_id:{abstract_id or 'unknown'}",
             f"selection_prompt_version:{getattr(self, 'selection_prompt_version', 'unknown')}",
+            f"extraction_rules_version:{getattr(self, 'extraction_rules_version', 'unknown')}",
             f"model:{self.llm_config.model}",
             "drug_class_selection",
         ]
 
         # Format the selection input
-        input_json = self._format_selection_input(drug_name, extracted_classes)
+        input_json = self._format_selection_input(drug_name, extraction_details)
 
         # Build the prompt with input substituted
         prompt_with_input = self.selection_prompt.replace("{input_json}", input_json)
@@ -211,12 +267,17 @@ class DrugClassSelectionAgent:
             system_msg = SystemMessage(content=[
                 {"type": "text", "text": prompt_with_input, "cache_control": {"type": "ephemeral"}}
             ])
+            extraction_rules_msg = HumanMessage(content=[
+                {"type": "text", "text": extraction_rules, "cache_control": {"type": "ephemeral"}}
+            ])
         else:
             system_msg = SystemMessage(content=prompt_with_input)
+            extraction_rules_msg = HumanMessage(content=extraction_rules)
 
         messages = [
             system_msg,
-            HumanMessage(content="Please select the most appropriate drug class(es) based on the rules provided."),
+            extraction_rules_msg,
+            HumanMessage(content="Understand the 36 extraction rules, analyze the evidence for each extracted class, and select the most appropriate drug class(es) based on the selection rules."),
         ]
 
         # Set environment variables for Langfuse callback handler
