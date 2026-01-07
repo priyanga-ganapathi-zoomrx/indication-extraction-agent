@@ -23,6 +23,7 @@ import os
 import re
 import sys
 import threading
+import time
 from datetime import datetime
 from typing import Any, Dict, List, Tuple
 
@@ -504,7 +505,7 @@ def main():
                         help='LLM max tokens (default: 50000)')
     parser.add_argument('--max_entries', type=int, default=None,
                         help='Maximum CSV rows to process (default: all)')
-    parser.add_argument('--max_workers', type=int, default=1,
+    parser.add_argument('--max_workers', type=int, default=5,
                         help='Parallel workers (default: 1)')
     parser.add_argument('--randomize', action='store_true',
                         help='Randomize row selection')
@@ -562,6 +563,9 @@ def main():
     print(f"\nProcessing {len(entries)} rows...")
     print("-" * 60)
 
+    # Record start time
+    start_time = time.time()
+
     results_df = process_rows_batch(
         entries=entries,
         cache_data=cache_data,
@@ -570,17 +574,27 @@ def main():
         max_workers=args.max_workers,
     )
 
+    # Record end time and calculate execution time
+    end_time = time.time()
+    execution_time = end_time - start_time
+
     # Summary
     print(f"\n{'=' * 60}")
     total_processed = len(results_df)
     successful = results_df['success'].sum() if 'success' in results_df.columns else 0
     success_rate = (successful / total_processed * 100) if total_processed > 0 else 0
 
+    # Format execution time
+    hours, remainder = divmod(execution_time, 3600)
+    minutes, seconds = divmod(remainder, 60)
+
     print("📊 Summary:")
     print(f"  Total rows processed: {total_processed}")
     print(f"  Successful: {int(successful)}")
     print(f"  Success rate: {success_rate:.1f}%")
     print(f"  Results saved to: {args.output_file}")
+    print()
+    print(f"⏱️  Total execution time: {int(hours):02d}:{int(minutes):02d}:{seconds:05.2f}")
 
 
 if __name__ == "__main__":

@@ -176,8 +176,8 @@ class DrugClassValidationAgent:
             url = result.get("url", "Unknown URL")
 
             # Truncate long content
-            if len(content) > 3000:
-                content = content[:3000] + "... [truncated]"
+            if len(content) > 5000:
+                content = content[:5000] + "... [truncated]"
 
             formatted_parts.append(f"### Search Result {i}")
             formatted_parts.append(f"**URL**: {url}")

@@ -605,7 +605,7 @@ def main():
     start_time = time.time()
     
     parser = argparse.ArgumentParser(description='Validate Drug Class Extractions')
-    parser.add_argument('--input_file', default='data/drug_class_validation_input.csv',
+    parser.add_argument('--input_file', default='data/drug_class_validation_input_gemini-3-pro_150.csv',
                         help='Input CSV file with extraction results')
     parser.add_argument('--cache_file', default='data/drug_search_cache.json',
                         help='Input JSON cache file with search results')
