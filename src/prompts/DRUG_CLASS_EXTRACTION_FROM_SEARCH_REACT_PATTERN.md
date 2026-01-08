@@ -236,8 +236,11 @@ Rule 36: If the extracted content does not provide a drug class or required fiel
 Rule 37: Do NOT add 'Adjuvant' as a Mechanism of Action. It describes treatment timing, not mechanism.
 - Example: Drug is used as adjuvant therapy. → NA
 
-Rule 38: Do NOT capture abbreviated drug classes (ADC, ICI, TKI, BITE, etc.) unless they are spelled out. ADC must be spelled out as 'Antibody Drug Conjugate'. ICI must be spelled out as 'Immune Checkpoint Inhibitor'. TKI must be spelled out as 'Tyrosine Kinase Inhibitor'. BITE must be spelled out or accompanied by specific targets. Abbreviations alone are not acceptable.
-- Example: Drug is an ADC. | Drug is an ICI. | Drug is a TKI. | Drug is a BITE. → NA
+Rule 38: When abbreviated drug classes (ADC, ICI, TKI, BITE, etc.) are present in the source, capture them in their expanded form. ADC should be captured as 'Antibody Drug Conjugate'. ICI should be captured as 'Immune Checkpoint Inhibitor'. TKI should be captured as 'Tyrosine Kinase Inhibitor'. BITE should be captured as 'Bispecific T-cell Engager'.
+- Example: Drug is an ADC. → Antibody Drug Conjugate
+- Example: Drug is an ICI. → Immune Checkpoint Inhibitor
+- Example: Drug is a TKI. → Tyrosine Kinase Inhibitor
+- Example: Drug is a BITE. → Bispecific T-cell Engager
 
 <!-- MESSAGE_2_END: RULES_MESSAGE -->
 
