@@ -1,19 +1,21 @@
-"""Drug Class Consolidation Agent.
+"""Drug Class Consolidation Only Agent.
 
-This module implements an agent that:
-1. Selects optimal drug classes for each drug from candidates
-2. Consolidates and deduplicates explicit vs drug-specific classes
+This module implements an agent that consolidates and deduplicates
+explicit drug classes against drug-specific selections.
+
+NOTE: This agent expects PRE-SELECTED drug classes as input.
+Selection should be performed upstream before calling this agent.
 
 Uses a 3-message prompt structure optimized for reasoning models:
-- SYSTEM_PROMPT: Role, workflow, selection rules, consolidation rules, output format
-- RULES_MESSAGE: 36 extraction rules (shared)
+- SYSTEM_PROMPT: Role, workflow, consolidation rules, output format
+- RULES_MESSAGE: 36 extraction rules (for parent-child identification)
 - INPUT_TEMPLATE: Consolidation input data
 """
 
 import json
 import os
 import re
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List
 
 from langchain_core.messages import AIMessage, HumanMessage, SystemMessage
 from langchain_core.runnables.config import RunnableConfig
@@ -27,27 +29,31 @@ from src.prompts import get_system_prompt
 
 
 # Prompt names
-CONSOLIDATION_PROMPT_NAME = "DRUG_CLASS_SELECTION_WITH_CONSOLIDATION"
+CONSOLIDATION_PROMPT_NAME = "DRUG_CLASS_CONSOLIDATION_PROMPT"
 EXTRACTION_RULES_PROMPT_NAME = "DRUG_CLASS_EXTRACTION_FROM_SEARCH_REACT_PATTERN"
 
 
-class DrugClassConsolidationAgent:
-    """Drug Class Consolidation Agent.
+class DrugClassConsolidationOnlyAgent:
+    """Drug Class Consolidation Only Agent.
 
-    This agent performs selection and consolidation of drug classes:
-    1. Selects optimal drug class(es) for each drug from candidates
-    2. Deduplicates explicit drug classes vs drug-specific selections
+    This agent performs consolidation of drug classes:
+    - Deduplicates explicit drug classes vs drug-specific selections
+    - Handles parent-child relationships between explicit and drug-specific classes
+    - Removes redundant classes from the explicit list
+    
+    NOTE: This agent expects pre-selected drug classes. The selection step
+    should be performed upstream using DrugClassSelectionAgent.
     """
 
     def __init__(
         self,
-        agent_name: str = "DrugClassConsolidationAgent",
+        agent_name: str = "DrugClassConsolidationOnlyAgent",
         llm_model: str | None = None,
         temperature: float = None,
         max_tokens: int = None,
         enable_caching: bool = False,
     ):
-        """Initialize the Drug Class Consolidation Agent.
+        """Initialize the Drug Class Consolidation Only Agent.
 
         Args:
             agent_name: Name of the agent for identification and logging
@@ -122,7 +128,7 @@ class DrugClassConsolidationAgent:
         """Load and parse the 3-message prompt sections from prompt files.
 
         Loads from two separate files:
-        - SYSTEM_PROMPT and INPUT_TEMPLATE from DRUG_CLASS_SELECTION_WITH_CONSOLIDATION.md
+        - SYSTEM_PROMPT and INPUT_TEMPLATE from DRUG_CLASS_CONSOLIDATION_PROMPT.md
         - RULES_MESSAGE from DRUG_CLASS_EXTRACTION_FROM_SEARCH_REACT_PATTERN.md (shared rules)
 
         Returns:
@@ -175,14 +181,14 @@ class DrugClassConsolidationAgent:
         self,
         abstract_title: str,
         explicit_drug_classes: Dict[str, Any],
-        drug_extractions: List[Dict[str, Any]],
+        drug_selections: List[Dict[str, Any]],
     ) -> str:
         """Format the input message with consolidation data.
 
         Args:
             abstract_title: The abstract title
             explicit_drug_classes: Explicit drug classes from title extraction
-            drug_extractions: Drug-specific class extractions
+            drug_selections: Pre-selected drug classes for each drug (with evidence)
 
         Returns:
             str: Formatted input message with data substituted
@@ -190,13 +196,13 @@ class DrugClassConsolidationAgent:
         # Format explicit drug classes as JSON
         explicit_json = json.dumps(explicit_drug_classes, indent=2)
 
-        # Format drug extractions as JSON
-        extractions_json = json.dumps(drug_extractions, indent=2)
+        # Format drug selections as JSON
+        selections_json = json.dumps(drug_selections, indent=2)
 
         # Substitute placeholders in template
         formatted = self.input_template.replace("{abstract_title}", abstract_title)
         formatted = formatted.replace("{explicit_drug_classes_json}", explicit_json)
-        formatted = formatted.replace("{drug_extractions_json}", extractions_json)
+        formatted = formatted.replace("{drug_selections_json}", selections_json)
 
         return formatted
 
@@ -204,15 +210,16 @@ class DrugClassConsolidationAgent:
         self,
         abstract_title: str,
         explicit_drug_classes: Dict[str, Any],
-        drug_extractions: List[Dict[str, Any]],
+        drug_selections: List[Dict[str, Any]],
         abstract_id: str = None,
     ) -> Dict[str, Any]:
-        """Invoke the consolidation agent to select and deduplicate drug classes.
+        """Invoke the consolidation agent to deduplicate drug classes.
 
         Args:
             abstract_title: The abstract title
             explicit_drug_classes: Dict with "drug_classes" and optional "extraction_details"
-            drug_extractions: List of dicts with "drug_name" and "extracted_classes"
+            drug_selections: List of dicts with "drug_name", "selected_drug_classes", 
+                           "selection_reasoning", and optional "extraction_details"
             abstract_id: Optional abstract ID for tracking in Langfuse
 
         Returns:
@@ -230,13 +237,13 @@ class DrugClassConsolidationAgent:
             f"abstract_id:{abstract_id or 'unknown'}",
             f"prompt_version:{getattr(self, 'prompt_version', 'unknown')}",
             f"model:{self.llm_config.model}",
-            "drug_class_consolidation",
-            f"drugs_count:{len(drug_extractions)}",
+            "drug_class_consolidation_only",
+            f"drugs_count:{len(drug_selections)}",
         ]
 
         # Format the input message
         input_message = self._format_input_message(
-            abstract_title, explicit_drug_classes, drug_extractions
+            abstract_title, explicit_drug_classes, drug_selections
         )
 
         # Build messages for LLM with optional caching
@@ -332,7 +339,7 @@ class DrugClassConsolidationAgent:
                 if json_start != -1 and json_end > json_start:
                     json_str = content[json_start:json_end]
                     parsed = json.loads(json_str)
-                    if "drug_class_mappings" in parsed or "refined_explicit_drug_classes" in parsed:
+                    if "refined_explicit_drug_classes" in parsed:
                         raw_json_pretty = json.dumps(parsed, indent=2)
                         return self._format_result(parsed, llm_calls, raw_json_pretty)
             except (json.JSONDecodeError, AttributeError):
@@ -359,20 +366,20 @@ class DrugClassConsolidationAgent:
         Returns:
             dict: Formatted consolidation result with raw_json_response
         """
-        # Extract drug class mappings
-        drug_class_mappings = parsed.get("drug_class_mappings", [])
-
-        # Extract refined explicit drug classes
+        # Extract refined explicit drug classes (the main output)
         refined_explicit = parsed.get("refined_explicit_drug_classes", {})
 
-        # Extract consolidation summary
-        consolidation_summary = parsed.get("consolidation_summary", {})
+        # Extract reasoning
+        reasoning = parsed.get("reasoning", "")
+
+        # Count duplicates removed
+        removed_classes = refined_explicit.get("removed_classes", [])
+        duplicates_removed = len(removed_classes)
 
         return {
-            "abstract_title": parsed.get("abstract_title", ""),
-            "drug_class_mappings": drug_class_mappings,
             "refined_explicit_drug_classes": refined_explicit,
-            "consolidation_summary": consolidation_summary,
+            "reasoning": reasoning,
+            "duplicates_removed": duplicates_removed,
             "raw_json_response": raw_json_pretty,
             "llm_calls": llm_calls,
             "consolidation_success": True,
@@ -394,34 +401,21 @@ class DrugClassConsolidationAgent:
         """
         # Create a default JSON structure for error cases
         default_json = {
-            "abstract_title": abstract_title,
-            "drug_class_mappings": [],
             "refined_explicit_drug_classes": {
                 "drug_classes": ["NA"],
                 "removed_classes": []
             },
-            "consolidation_summary": {
-                "total_drugs_processed": 0,
-                "total_unique_classes": 0,
-                "duplicates_removed": 0,
-                "reasoning": reason
-            }
+            "reasoning": reason
         }
         raw_json_pretty = json.dumps(default_json, indent=2) if not raw_content else raw_content
 
         return {
-            "abstract_title": abstract_title,
-            "drug_class_mappings": [],
             "refined_explicit_drug_classes": {
                 "drug_classes": ["NA"],
                 "removed_classes": []
             },
-            "consolidation_summary": {
-                "total_drugs_processed": 0,
-                "total_unique_classes": 0,
-                "duplicates_removed": 0,
-                "reasoning": reason
-            },
+            "reasoning": reason,
+            "duplicates_removed": 0,
             "raw_json_response": raw_json_pretty,
             "llm_calls": llm_calls,
             "consolidation_success": False,

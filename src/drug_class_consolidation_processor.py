@@ -1,16 +1,22 @@
 #!/usr/bin/env python3
 """
-Drug Class Consolidation Processor
+Drug Class Consolidation Only Processor
 
-This script batch processes abstracts to consolidate and deduplicate drug classes:
-1. Loads drug-specific extractions from one CSV (drug → class mappings)
-2. Loads explicit drug classes from another CSV (standalone title classes)
-3. Merges by abstract_id and runs consolidation via LLM
-4. Outputs refined drug mappings and explicit classes
+This script processes abstracts to consolidate and deduplicate drug classes.
+It expects PRE-SELECTED drug classes as input and filters extraction_details
+to only include the selected classes (preserving evidence and rules_applied).
+
+Input:
+- CSV with pre-selected drug classes (selected_drug_classes_grouped)
+- CSV with explicit drug classes from title extraction
+
+Output:
+- Consolidated drug-class mappings
+- Refined explicit drug classes (after deduplication)
 
 Features:
-- Joins two input files by abstract_id
-- Transforms data into consolidation agent input format
+- Filters extraction_details_grouped by selected_drug_classes_grouped
+- Preserves evidence, source, rules_applied for consolidation decisions
 - Supports parallel processing with ThreadPoolExecutor
 - Saves intermediate results incrementally
 """
@@ -29,7 +35,7 @@ import pandas as pd
 # Add project root to sys.path to allow running as script
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-from src.drug_class_consolidation_agent import DrugClassConsolidationAgent
+from src.drug_class_consolidation_agent import DrugClassConsolidationOnlyAgent
 
 
 def parse_json_safely(json_str: str, default: Any = None) -> Any:
@@ -50,27 +56,66 @@ def parse_json_safely(json_str: str, default: Any = None) -> Any:
         return default
 
 
-def load_drug_extractions(csv_path: str) -> Dict[str, Dict]:
-    """Load drug-specific extractions from CSV, grouped by abstract_id.
-
-    Expected columns:
-    - abstract_id, abstract_title, drug_name
-    - drug_classes_grouped: JSON {"drug_name": ["Class1", "Class2"]}
-    - extraction_details_grouped: JSON with evidence per drug
+def filter_extraction_details_by_selected(
+    extraction_details: List[Dict],
+    selected_classes: List[str]
+) -> List[Dict]:
+    """Filter extraction details to only include selected drug classes.
 
     Args:
-        csv_path: Path to drug extractions CSV
+        extraction_details: List of extraction detail dicts with normalized_form/drug_class
+        selected_classes: List of selected drug class names
 
     Returns:
-        Dict mapping abstract_id -> {abstract_title, drug_extractions}
+        Filtered list of extraction details matching selected classes
+    """
+    if not extraction_details or not selected_classes:
+        return []
+
+    # Normalize selected classes for comparison (case-insensitive, ignore hyphens)
+    def normalize_class_name(name: str) -> str:
+        if not name:
+            return ""
+        return name.lower().replace("-", "").replace(" ", "")
+
+    selected_normalized = {normalize_class_name(c) for c in selected_classes if c and c != "NA"}
+
+    filtered = []
+    for detail in extraction_details:
+        if not isinstance(detail, dict):
+            continue
+
+        # Check normalized_form or drug_class
+        class_name = detail.get("normalized_form") or detail.get("drug_class", "")
+        if normalize_class_name(class_name) in selected_normalized:
+            filtered.append(detail)
+
+    return filtered
+
+
+def load_drug_selections(csv_path: str) -> Dict[str, Dict]:
+    """Load drug selections from CSV with filtered extraction details.
+
+    Reads:
+    - selected_drug_classes_grouped: Already selected classes per drug
+    - extraction_details_grouped: Full extraction details (to be filtered)
+    - selection_reasoning_grouped: Reasoning for selection
+
+    Filters extraction_details to only include classes in selected_drug_classes.
+
+    Args:
+        csv_path: Path to drug selections CSV
+
+    Returns:
+        Dict mapping abstract_id -> {abstract_title, drug_selections}
     """
     if not os.path.exists(csv_path):
-        print(f"Error: Drug extractions file not found at {csv_path}")
+        print(f"Error: Drug selections file not found at {csv_path}")
         return {}
 
     try:
         df = pd.read_csv(csv_path, encoding='utf-8-sig')
-        print(f"✓ Loaded {len(df)} rows from drug extractions file")
+        print(f"✓ Loaded {len(df)} rows from drug selections file")
 
         abstracts = {}
 
@@ -81,87 +126,58 @@ def load_drug_extractions(csv_path: str) -> Dict[str, Dict]:
 
             abstract_title = str(row.get('abstract_title', ''))
 
-            # Parse drug_classes_grouped: {"drug_name": ["Class1", "Class2"]}
-            drug_classes_grouped = parse_json_safely(
-                row.get('drug_classes_grouped', '{}'), {}
+            # Parse selected_drug_classes_grouped: {"drug_name": ["Class1", "Class2"]}
+            selected_classes_grouped = parse_json_safely(
+                row.get('selected_drug_classes_grouped', '{}'), {}
             )
 
-            # Parse extraction_details_grouped for evidence
+            # Parse extraction_details_grouped: {"drug_name": [{...}, {...}]}
             extraction_details_grouped = parse_json_safely(
                 row.get('extraction_details_grouped', '{}'), {}
             )
 
-            # Parse reasoning_grouped
-            reasoning_grouped = parse_json_safely(
-                row.get('reasoning_grouped', '{}'), {}
+            # Parse selection_reasoning_grouped: {"drug_name": "reasoning"}
+            selection_reasoning_grouped = parse_json_safely(
+                row.get('selection_reasoning_grouped', '{}'), {}
             )
 
-            # Parse confidence_scores_grouped
-            confidence_scores_grouped = parse_json_safely(
-                row.get('confidence_scores_grouped', '{}'), {}
-            )
+            # Transform to drug_selections format with filtered extraction details
+            drug_selections = []
+            for drug_name, selected_classes in selected_classes_grouped.items():
+                # Get full extraction details for this drug
+                full_details = extraction_details_grouped.get(drug_name, [])
 
-            # Parse selected_sources_grouped
-            selected_sources_grouped = parse_json_safely(
-                row.get('selected_sources_grouped', '{}'), {}
-            )
+                # Filter to only include selected classes
+                filtered_details = filter_extraction_details_by_selected(
+                    full_details, selected_classes
+                )
 
-            # Transform to drug_extractions format
-            drug_extractions = []
-            for drug_name, classes in drug_classes_grouped.items():
-                extraction_details = extraction_details_grouped.get(drug_name, [])
-                drug_reasoning = reasoning_grouped.get(drug_name, "")
+                # Get selection reasoning
+                selection_reasoning = selection_reasoning_grouped.get(drug_name, "")
 
-                # Build extracted_classes array from extraction_details
-                extracted_classes = []
-                if isinstance(extraction_details, list):
-                    for detail in extraction_details:
-                        if isinstance(detail, dict):
-                            extracted_classes.append({
-                                "extracted_text": detail.get("extracted_text", ""),
-                                "class_type": detail.get("class_type", "MoA"),
-                                "drug_class": detail.get("normalized_form", detail.get("drug_class", "")),
-                                "evidence": detail.get("evidence", ""),
-                                "source": detail.get("source", ""),
-                                "rules_applied": detail.get("rules_applied", [])
-                            })
-
-                # If no extraction details, create basic entries from classes
-                if not extracted_classes and isinstance(classes, list):
-                    for cls in classes:
-                        if cls and cls != "NA":
-                            extracted_classes.append({
-                                "extracted_text": cls,
-                                "class_type": "MoA",
-                                "drug_class": cls,
-                                "evidence": "",
-                                "source": "",
-                                "rules_applied": []
-                            })
-
-                drug_extractions.append({
+                drug_selections.append({
                     "drug_name": drug_name,
-                    "reasoning": drug_reasoning,
-                    "extracted_classes": extracted_classes,
-                    "original_classes": classes if isinstance(classes, list) else [classes],
+                    "selected_drug_classes": selected_classes if isinstance(selected_classes, list) else [selected_classes],
+                    "selection_reasoning": selection_reasoning,
+                    "extraction_details": filtered_details,  # Filtered details with evidence
                 })
 
             # Store by abstract_id
             if abstract_id not in abstracts:
                 abstracts[abstract_id] = {
                     "abstract_title": abstract_title,
-                    "drug_extractions": drug_extractions,
+                    "drug_selections": drug_selections,
                     "original_row": row.to_dict(),
                 }
             else:
-                # Merge drug extractions if same abstract has multiple rows
-                abstracts[abstract_id]["drug_extractions"].extend(drug_extractions)
+                # Merge drug selections if same abstract has multiple rows
+                abstracts[abstract_id]["drug_selections"].extend(drug_selections)
 
-        print(f"✓ Parsed {len(abstracts)} unique abstracts with drug extractions")
+        print(f"✓ Parsed {len(abstracts)} unique abstracts with drug selections")
         return abstracts
 
     except Exception as e:
-        print(f"Error loading drug extractions: {e}")
+        print(f"Error loading drug selections: {e}")
         import traceback
         traceback.print_exc()
         return {}
@@ -232,13 +248,13 @@ def load_explicit_drug_classes(csv_path: str) -> Dict[str, Dict]:
 
 
 def merge_by_abstract_id(
-    drug_extractions: Dict[str, Dict],
+    drug_selections: Dict[str, Dict],
     explicit_classes: Dict[str, Dict]
 ) -> List[Dict]:
-    """Merge drug extractions and explicit classes by abstract_id.
+    """Merge drug selections and explicit classes by abstract_id.
 
     Args:
-        drug_extractions: Dict from load_drug_extractions
+        drug_selections: Dict from load_drug_selections
         explicit_classes: Dict from load_explicit_drug_classes
 
     Returns:
@@ -247,14 +263,14 @@ def merge_by_abstract_id(
     merged = []
 
     # Get all unique abstract_ids
-    all_ids = set(drug_extractions.keys()) | set(explicit_classes.keys())
+    all_ids = set(drug_selections.keys()) | set(explicit_classes.keys())
 
     for abstract_id in all_ids:
-        drug_data = drug_extractions.get(abstract_id, {})
+        selection_data = drug_selections.get(abstract_id, {})
         explicit_data = explicit_classes.get(abstract_id, {})
 
-        # Determine abstract_title (prefer from drug_extractions)
-        abstract_title = drug_data.get("abstract_title") or explicit_data.get("abstract_title", "")
+        # Determine abstract_title (prefer from drug_selections)
+        abstract_title = selection_data.get("abstract_title") or explicit_data.get("abstract_title", "")
 
         # Build explicit_drug_classes input
         explicit_drug_classes = {
@@ -263,20 +279,20 @@ def merge_by_abstract_id(
             "extraction_details": explicit_data.get("extraction_details", [])
         }
 
-        # Build drug_extractions input
-        drug_extractions_list = drug_data.get("drug_extractions", [])
+        # Build drug_selections input (already has filtered extraction details)
+        drug_selections_list = selection_data.get("drug_selections", [])
 
         # Handle missing data
-        if not drug_extractions_list:
-            # No drug extractions - might be procedure-only abstract
-            drug_extractions_list = []
+        if not drug_selections_list:
+            # No drug selections - might be procedure-only abstract
+            drug_selections_list = []
 
         merged.append({
             "abstract_id": abstract_id,
             "abstract_title": abstract_title,
             "explicit_drug_classes": explicit_drug_classes,
-            "drug_extractions": drug_extractions_list,
-            "original_row": drug_data.get("original_row", {}),
+            "drug_selections": drug_selections_list,
+            "original_row": selection_data.get("original_row", {}),
         })
 
     # Sort by abstract_id for consistent ordering
@@ -288,14 +304,14 @@ def merge_by_abstract_id(
 
 def consolidate_single_abstract(
     abstract: Dict,
-    agent: DrugClassConsolidationAgent,
+    agent: DrugClassConsolidationOnlyAgent,
     index: int,
 ) -> Dict:
     """Consolidate drug classes for a single abstract.
 
     Args:
-        abstract: Merged abstract data
-        agent: Initialized DrugClassConsolidationAgent
+        abstract: Merged abstract data with pre-selected classes
+        agent: Initialized DrugClassConsolidationOnlyAgent
         index: Index for logging
 
     Returns:
@@ -310,45 +326,38 @@ def consolidate_single_abstract(
     result_row["abstract_id"] = abstract_id
     result_row["abstract_title"] = abstract_title
 
+    # Store original explicit drug classes (input) for comparison
+    input_explicit_classes = abstract["explicit_drug_classes"].get("drug_classes", ["NA"])
+    result_row["input_explicit_drug_classes"] = json.dumps(input_explicit_classes)
+
     try:
         # Run consolidation
         consolidation_result = agent.invoke(
             abstract_title=abstract_title,
             explicit_drug_classes=abstract["explicit_drug_classes"],
-            drug_extractions=abstract["drug_extractions"],
+            drug_selections=abstract["drug_selections"],
             abstract_id=abstract_id,
         )
 
-        # Add consolidation result columns (pretty printed for readability)
-        result_row["refined_drug_mappings"] = json.dumps(
-            consolidation_result.get("drug_class_mappings", []), indent=2
-        )
-        result_row["refined_explicit_classes"] = json.dumps(
-            consolidation_result.get("refined_explicit_drug_classes", {}), indent=2
-        )
-        result_row["consolidation_summary"] = json.dumps(
-            consolidation_result.get("consolidation_summary", {}), indent=2
-        )
+        # Add consolidation result columns (simplified output)
+        refined_explicit = consolidation_result.get("refined_explicit_drug_classes", {})
+        result_row["refined_explicit_classes"] = json.dumps(refined_explicit, indent=2)
+        result_row["consolidation_reasoning"] = consolidation_result.get("reasoning", "")
         result_row["consolidation_raw_response"] = consolidation_result.get("raw_json_response", "")
         result_row["consolidation_success"] = consolidation_result.get("consolidation_success", False)
         result_row["consolidation_llm_calls"] = consolidation_result.get("llm_calls", 0)
-
-        # Extract summary stats
-        summary = consolidation_result.get("consolidation_summary", {})
-        result_row["duplicates_removed"] = summary.get("duplicates_removed", 0)
+        result_row["duplicates_removed"] = consolidation_result.get("duplicates_removed", 0)
 
         # Build combined drug classes column
-        # Collect all drug classes from drug mappings
+        # Collect all drug classes from input drug_selections (already selected upstream)
         all_drug_classes = []
-        mappings = consolidation_result.get("drug_class_mappings", [])
-        for mapping in mappings:
-            selected_classes = mapping.get("selected_drug_classes", [])
+        for drug_sel in abstract["drug_selections"]:
+            selected_classes = drug_sel.get("selected_drug_classes", [])
             for cls in selected_classes:
                 if cls and cls != "NA" and cls not in all_drug_classes:
                     all_drug_classes.append(cls)
 
-        # Add explicit drug classes
-        refined_explicit = consolidation_result.get("refined_explicit_drug_classes", {})
+        # Add refined explicit drug classes (after consolidation)
         explicit_classes = refined_explicit.get("drug_classes", [])
         for cls in explicit_classes:
             if cls and cls != "NA" and cls not in all_drug_classes:
@@ -360,9 +369,16 @@ def consolidate_single_abstract(
         else:
             result_row["combined_drug_classes"] = json.dumps(["NA"])
 
+        # Add explicit drug classes only column
+        explicit_only = [c for c in explicit_classes if c and c != "NA"]
+        if explicit_only:
+            result_row["explicit_drug_classes_only"] = json.dumps(explicit_only)
+        else:
+            result_row["explicit_drug_classes_only"] = json.dumps(["NA"])
+
         # Log result summary
         status = "✓" if consolidation_result.get("consolidation_success", False) else "✗"
-        drugs_count = len(mappings)
+        drugs_count = len(abstract["drug_selections"])
         explicit_count = len([c for c in explicit_classes if c != "NA"])
         removed_count = len(refined_explicit.get("removed_classes", []))
         print(f"  {status} Drugs: {drugs_count}, Explicit: {explicit_count}, Removed: {removed_count}, Combined: {len(all_drug_classes)}")
@@ -372,28 +388,23 @@ def consolidate_single_abstract(
         import traceback
         traceback.print_exc()
 
-        # Create default error response (pretty printed)
-        error_summary = {
-            "total_drugs_processed": 0,
-            "total_unique_classes": 0,
-            "duplicates_removed": 0,
-            "reasoning": f"Consolidation failed: {str(e)}"
-        }
-        result_row["refined_drug_mappings"] = json.dumps([], indent=2)
+        # Create default error response (simplified)
+        # Note: input_explicit_drug_classes already set above
         result_row["refined_explicit_classes"] = json.dumps({"drug_classes": ["NA"], "removed_classes": []}, indent=2)
-        result_row["consolidation_summary"] = json.dumps(error_summary, indent=2)
+        result_row["consolidation_reasoning"] = f"Consolidation failed: {str(e)}"
         result_row["consolidation_raw_response"] = ""
         result_row["consolidation_success"] = False
         result_row["consolidation_llm_calls"] = 0
         result_row["duplicates_removed"] = 0
         result_row["combined_drug_classes"] = json.dumps(["NA"])
+        result_row["explicit_drug_classes_only"] = json.dumps(["NA"])
 
     return result_row
 
 
 def consolidate_batch(
     abstracts: List[Dict],
-    agent: DrugClassConsolidationAgent,
+    agent: DrugClassConsolidationOnlyAgent,
     output_file: str = None,
     num_workers: int = 3,
     save_interval: int = 5,
@@ -402,7 +413,7 @@ def consolidate_batch(
 
     Args:
         abstracts: List of merged abstract dictionaries
-        agent: Initialized DrugClassConsolidationAgent
+        agent: Initialized DrugClassConsolidationOnlyAgent
         output_file: Optional output file path to save intermediate results
         num_workers: Number of parallel workers (default: 3)
         save_interval: Save intermediate results every N records (default: 5)
@@ -465,10 +476,10 @@ def main():
     """Main consolidation processing function."""
     start_time = time.time()
 
-    parser = argparse.ArgumentParser(description='Consolidate Drug Class Extractions')
-    parser.add_argument('--drug_extractions_file',
-                        default='data/drug_class_validation_input_gemini-3-pro_150.csv',
-                        help='Input CSV file with drug-specific extractions')
+    parser = argparse.ArgumentParser(description='Consolidate Drug Class Selections (Consolidation Only)')
+    parser.add_argument('--drug_selections_file',
+                        default='data/drug_class_validation_input_gemini-3-pro_150_selected.csv',
+                        help='Input CSV file with pre-selected drug classes')
     parser.add_argument('--explicit_classes_file',
                         default='data/drug_class_input_regimen_150_explicit_drug_class.csv',
                         help='Input CSV file with explicit drug classes from title')
@@ -499,7 +510,7 @@ def main():
         model_suffix = ""
         if args.llm_model:
             model_suffix = f"_{args.llm_model.split('/')[-1]}"
-        args.output_file = f"data/drug_class_consolidated{model_suffix}_{timestamp}.csv"
+        args.output_file = f"data/drug_class_consolidated_only{model_suffix}_{timestamp}.csv"
 
     # Ensure output directory exists
     output_dir = os.path.dirname(args.output_file)
@@ -507,9 +518,9 @@ def main():
         os.makedirs(output_dir)
         print(f"Created output directory: {output_dir}")
 
-    print("🔬 Drug Class Consolidation Processor")
+    print("🔬 Drug Class Consolidation Only Processor")
     print("=" * 80)
-    print(f"Drug extractions file: {args.drug_extractions_file}")
+    print(f"Drug selections file: {args.drug_selections_file}")
     print(f"Explicit classes file: {args.explicit_classes_file}")
     print(f"Output file: {args.output_file}")
     print(f"LLM model: {args.llm_model or 'from settings'}")
@@ -521,11 +532,11 @@ def main():
     print(f"Prompt caching: {'enabled' if args.enable_caching else 'disabled'}")
     print()
 
-    # Load drug extractions
-    print("Loading drug extractions...")
-    drug_extractions = load_drug_extractions(args.drug_extractions_file)
-    if not drug_extractions:
-        print("No drug extractions loaded. Exiting.")
+    # Load drug selections (with filtered extraction details)
+    print("Loading drug selections...")
+    drug_selections = load_drug_selections(args.drug_selections_file)
+    if not drug_selections:
+        print("No drug selections loaded. Exiting.")
         return
 
     # Load explicit drug classes
@@ -537,7 +548,7 @@ def main():
 
     # Merge by abstract_id
     print("\nMerging datasets...")
-    merged_abstracts = merge_by_abstract_id(drug_extractions, explicit_classes)
+    merged_abstracts = merge_by_abstract_id(drug_selections, explicit_classes)
 
     if not merged_abstracts:
         print("No abstracts to process after merge. Exiting.")
@@ -553,15 +564,15 @@ def main():
     print()
 
     # Initialize consolidation agent
-    print("Initializing Drug Class Consolidation Agent...")
-    agent = DrugClassConsolidationAgent(
-        agent_name="DrugClassConsolidationProcessor",
+    print("Initializing Drug Class Consolidation Only Agent...")
+    agent = DrugClassConsolidationOnlyAgent(
+        agent_name="DrugClassConsolidationOnlyProcessor",
         llm_model=args.llm_model,
         temperature=args.temperature,
         max_tokens=args.max_tokens,
         enable_caching=args.enable_caching,
     )
-    print("✓ Consolidation Agent initialized successfully!")
+    print("✓ Consolidation Only Agent initialized successfully!")
     print()
 
     # Consolidate drug classes
