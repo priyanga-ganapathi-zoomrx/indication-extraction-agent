@@ -17,20 +17,28 @@ class LangfuseSettings(BaseSettings):
 
 
 class LLMSettings(BaseSettings):
-    """LLM configuration settings."""
+    """Shared LLM settings.
+    
+    API credentials are always shared. Model settings are provided as defaults
+    for backward compatibility, but should be overridden per entity
+    (e.g., INDICATION_LLM_MODEL in indication/config.py).
+    """
 
     model_config = SettingsConfigDict(env_file=".env", extra="ignore")
 
+    # Shared credentials
     LLM_API_KEY: str = Field(default="", description="API key for LLM service")
     LLM_BASE_URL: str = Field(
         default="https://api.openai.com/v1", description="Base URL for LLM API"
     )
+    
+    # Default model settings (for backward compatibility with unmigrated agents)
     LLM_MODEL: str = Field(
-        default="anthropic/claude-sonnet-4-20250514",
-        description="Model name (e.g., anthropic/claude-sonnet-4-20250514, openai/gpt-4)",
+        default="google/gemini-2.5-pro",
+        description="Default model (override per entity: INDICATION_LLM_MODEL, DRUG_LLM_MODEL, etc.)"
     )
-    LLM_TEMPERATURE: float = Field(default=0.0, description="Temperature for LLM")
-    LLM_MAX_TOKENS: int = Field(default=4096, description="Maximum tokens for LLM")
+    LLM_TEMPERATURE: float = Field(default=0.0, description="Default temperature")
+    LLM_MAX_TOKENS: int = Field(default=4096, description="Default max tokens")
 
 
 class TavilySettings(BaseSettings):

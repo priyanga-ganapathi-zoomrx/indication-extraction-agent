@@ -44,7 +44,6 @@ abstract_title: <The research abstract title>
 ```
 generated_indication: <The extracted indication>
 selected_source: <"abstract_title" | "session_title" | "none">
-confidence_score: <0.0 to 1.0>
 reasoning: <Extractor's step-by-step explanation>
 rules_retrieved: [
   {
@@ -283,7 +282,6 @@ Return your validation result in the following JSON structure:
 ```json
 {
   "validation_status": "PASS | REVIEW | FAIL",
-  "validation_confidence": 0.95,
   "issues_found": [
     {
       "check_type": "hallucination | omission | source_selection | rule_application | exclusion_compliance | formatting",
@@ -379,7 +377,6 @@ components_identified: [
 ```json
 {
   "validation_status": "PASS",
-  "validation_confidence": 0.98,
   "issues_found": [],
   "checks_performed": {
     "source_selection": {"passed": true, "note": "Abstract title contains disease, correctly selected"},
@@ -412,7 +409,6 @@ components_identified: [
 ```json
 {
   "validation_status": "FAIL",
-  "validation_confidence": 0.95,
   "issues_found": [
     {
       "check_type": "hallucination",
@@ -451,7 +447,6 @@ components_identified: [
 ```json
 {
   "validation_status": "REVIEW",
-  "validation_confidence": 0.85,
   "issues_found": [
     {
       "check_type": "omission",

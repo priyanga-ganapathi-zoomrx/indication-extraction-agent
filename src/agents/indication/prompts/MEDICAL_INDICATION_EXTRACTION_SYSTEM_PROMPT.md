@@ -397,7 +397,6 @@ Return your response in the following JSON structure:
 {
   "selected_source": "abstract_title | session_title | none",
   "generated_indication": "<final indication text or empty string>",
-  "confidence_score": 0.95,
   "reasoning": "Step-by-step explanation of your extraction process",
   "rules_retrieved": [
     {
@@ -419,13 +418,7 @@ Return your response in the following JSON structure:
       "normalized_form": "Advanced Solid Tumor",
       "rule_applied": "Stage rule + Singular form rule"
     }
-  ],
-  "quality_metrics": {
-    "completeness": 1.0,
-    "rule_adherence": 1.0,
-    "clinical_accuracy": 0.95,
-    "formatting_compliance": 1.0
-  }
+  ]
 }
 ```
 
@@ -459,8 +452,7 @@ Return your response in the following JSON structure:
 ```json
 {
   "selected_source": "abstract_title",
-  "generated_indication": "KRAS G12C-Mutated Advanced Solid Tumor",
-  "confidence_score": 0.98
+  "generated_indication": "KRAS G12C-Mutated Advanced Solid Tumor"
 }
 ```
 
@@ -474,8 +466,7 @@ Return your response in the following JSON structure:
 ```json
 {
   "selected_source": "abstract_title",
-  "generated_indication": "Severe Refractory Asthma;;Cardiovascular Risk",
-  "confidence_score": 0.95
+  "generated_indication": "Severe Refractory Asthma;;Cardiovascular Risk"
 }
 ```
 
@@ -495,8 +486,7 @@ Return your response in the following JSON structure:
 ```json
 {
   "selected_source": "abstract_title",
-  "generated_indication": "Pediatric Relapsed/Refractory B-Cell Precursor Acute Lymphoblastic Leukemia",
-  "confidence_score": 0.97
+  "generated_indication": "Pediatric Relapsed/Refractory B-Cell Precursor Acute Lymphoblastic Leukemia"
 }
 ```
 
@@ -515,8 +505,7 @@ Return your response in the following JSON structure:
 ```json
 {
   "selected_source": "abstract_title",
-  "generated_indication": "Breast Cancer",
-  "confidence_score": 0.98
+  "generated_indication": "Breast Cancer"
 }
 ```
 

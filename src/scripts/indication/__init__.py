@@ -1,23 +1,27 @@
 """Indication processing scripts and batch processors."""
 
 from src.scripts.indication.batch_processor import (
-    load_abstracts_from_csv,
-    extract_indication_from_response,
-    process_single_abstract,
-    process_abstracts_batch,
+    load_abstracts,
+    process_single as extraction_process_single,
+    save_results as extraction_save_results,
+    ProcessResult as ExtractionResult,
 )
 from src.scripts.indication.validation_processor import (
-    load_extractions_from_csv,
-    validate_single_extraction,
-    validate_extractions_batch,
+    load_extractions,
+    process_single as validation_process_single,
+    save_results as validation_save_results,
+    ProcessResult as ValidationResult,
 )
 
 __all__ = [
-    "load_abstracts_from_csv",
-    "extract_indication_from_response",
-    "process_single_abstract",
-    "process_abstracts_batch",
-    "load_extractions_from_csv",
-    "validate_single_extraction",
-    "validate_extractions_batch",
+    # Batch processor (extraction)
+    "load_abstracts",
+    "extraction_process_single",
+    "extraction_save_results",
+    "ExtractionResult",
+    # Validation processor
+    "load_extractions",
+    "validation_process_single",
+    "validation_save_results",
+    "ValidationResult",
 ]
