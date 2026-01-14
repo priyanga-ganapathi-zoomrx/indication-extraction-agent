@@ -1,29 +1,61 @@
-# src/agents/drug/__init__.py
-"""Drug extraction agent package.
+"""Drug extraction module.
 
-This package contains the drug extraction agent and related components:
-- DrugExtractionAgent: Main agent for extracting drugs from abstracts
-- prompts: Prompt loading utilities for drug extraction/validation/verification
+Simple functions for drug extraction and validation.
+No LangGraph - designed for future Temporal integration.
 """
 
-from src.agents.drug.extraction_agent import DrugExtractionAgent
+# Functions
+from src.agents.drug.extraction_agent import extract_drugs, DrugExtractionError
+from src.agents.drug.validation_agent import validate_drugs, DrugValidationError
+
+# Schemas
+from src.agents.drug.schemas import (
+    # Input
+    DrugInput,
+    ValidationInput,
+    # Extraction output
+    ExtractionResult,
+    # Validation output
+    ValidationResult,
+    SearchResult,
+    IssueFound,
+    CheckResult,
+    ChecksPerformed,
+)
+
+# Config
+from src.agents.drug.config import config
+
+# Prompts
 from src.agents.drug.prompts import (
-    get_system_prompt,
     get_extraction_prompt,
-    get_validation_prompt,
-    get_verification_prompt,
+    get_validation_prompt_parts,
     EXTRACTION_PROMPT_NAME,
     VALIDATION_PROMPT_NAME,
-    VERIFICATION_PROMPT_NAME,
 )
 
 __all__ = [
-    "DrugExtractionAgent",
-    "get_system_prompt",
+    # Functions
+    "extract_drugs",
+    "validate_drugs",
+    # Errors
+    "DrugExtractionError",
+    "DrugValidationError",
+    # Input schemas
+    "DrugInput",
+    "ValidationInput",
+    # Output schemas
+    "ExtractionResult",
+    "ValidationResult",
+    "SearchResult",
+    "IssueFound",
+    "CheckResult",
+    "ChecksPerformed",
+    # Config
+    "config",
+    # Prompts
     "get_extraction_prompt",
-    "get_validation_prompt",
-    "get_verification_prompt",
+    "get_validation_prompt_parts",
     "EXTRACTION_PROMPT_NAME",
     "VALIDATION_PROMPT_NAME",
-    "VERIFICATION_PROMPT_NAME",
 ]

@@ -1,452 +1,255 @@
 #!/usr/bin/env python3
 """
-Step 2: Drug Validation Processor
+Drug Validation Processor
 
-This script runs ONLY the validation step (Step 2) using extraction results from Step 1.
-The output can be used as input for the verification processor (Step 3).
-
-Usage:
-    python src/scripts/drug/validation_processor.py --input_file step1_extraction_results.csv --output_file validation_results.csv
+Batch processor for drug validation using validate_drugs() function.
+Takes extraction output as input.
+Uses DrugConfig for model settings.
 """
 
-import json
-import os
-import sys
 import argparse
+import csv
+import json
 import concurrent.futures
+from dataclasses import dataclass
 from datetime import datetime
-from typing import List, Dict, Any
+from pathlib import Path
+from typing import Optional
 
-import pandas as pd
-from langchain_core.messages import AIMessage, HumanMessage, SystemMessage
-from langchain_core.runnables.config import RunnableConfig
-from langfuse.langchain import CallbackHandler
-
-# Add project root to sys.path to allow running as script
-sys.path.append(os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))))
-
-from src.agents.core import settings, get_langfuse_config, LLMConfig, create_llm
-from src.agents.drug.prompts import get_system_prompt
+from src.agents.drug import validate_drugs, ValidationInput, ValidationResult, DrugValidationError, config
 
 
-class DrugValidationProcessor:
-    """Processor for Step 2: Drug Validation only."""
-
-    def __init__(
-        self,
-        model: str = None,
-        temperature: float = None,
-        max_tokens: int = None,
-        enable_caching: bool = False,
-    ):
-        """Initialize the validation processor.
-
-        Args:
-            model: Model name (uses default from settings if not specified)
-            temperature: Temperature (uses default from settings if not specified)
-            max_tokens: Max tokens (uses default from settings if not specified)
-            enable_caching: Enable Anthropic prompt caching for reduced costs
-        """
-        self.enable_caching = enable_caching
-        self.langfuse_config = get_langfuse_config()
-        
-        # Create LLM config
-        self.llm_config = LLMConfig(
-            api_key=settings.llm.LLM_API_KEY,
-            model=model or settings.llm.LLM_MODEL,
-            base_url=settings.llm.LLM_BASE_URL,
-            temperature=temperature if temperature is not None else settings.llm.LLM_TEMPERATURE,
-            max_tokens=max_tokens or settings.llm.LLM_MAX_TOKENS,
-            name="DrugValidationProcessor",
-        )
-        self.llm = create_llm(self.llm_config)
-
-        # Load combined prompt file (contains both validation instructions and extraction rules)
-        full_prompt, self.prompt_version = get_system_prompt(
-            langfuse_client=None,
-            prompt_name="DRUG_VALIDATION_SYSTEM_PROMPT",
-            fallback_to_file=True,
-        )
-        
-        # Parse message sections from the combined prompt
-        self.system_prompt, self.extraction_rules = self._parse_message_sections(full_prompt)
-        print(f"✓ Validation processor initialized with model: {self.llm_config.model}")
-        if self.enable_caching:
-            print("✓ Prompt caching enabled for DrugValidationProcessor")
-
-    def _parse_message_sections(self, full_prompt: str) -> tuple:
-        """Parse MESSAGE_1 (validation instructions) and MESSAGE_2 (extraction rules) from combined prompt.
-        
-        Args:
-            full_prompt: The combined prompt content with message markers
-            
-        Returns:
-            tuple: (validation_instructions, extraction_rules)
-        """
-        import re
-        
-        # Extract MESSAGE_1: Validation Instructions
-        msg1_pattern = r'<!-- MESSAGE_1_START: VALIDATION_INSTRUCTIONS -->(.*?)<!-- MESSAGE_1_END: VALIDATION_INSTRUCTIONS -->'
-        msg1_match = re.search(msg1_pattern, full_prompt, re.DOTALL)
-        validation_instructions = msg1_match.group(1).strip() if msg1_match else full_prompt
-        
-        # Extract MESSAGE_2: Extraction Rules
-        msg2_pattern = r'<!-- MESSAGE_2_START: EXTRACTION_RULES -->(.*?)<!-- MESSAGE_2_END: EXTRACTION_RULES -->'
-        msg2_match = re.search(msg2_pattern, full_prompt, re.DOTALL)
-        extraction_rules = msg2_match.group(1).strip() if msg2_match else ""
-        
-        if not msg1_match:
-            print("⚠ Warning: MESSAGE_1 markers not found, using full prompt as validation instructions")
-        if not msg2_match:
-            print("⚠ Warning: MESSAGE_2 markers not found, extraction rules may be empty")
-            
-        return validation_instructions, extraction_rules
-
-    def validate(self, abstract_title: str, extraction_response: str, abstract_id: str = None) -> Dict[str, Any]:
-        """Run validation on extraction results using 3-message pattern.
-
-        Args:
-            abstract_title: The original abstract title
-            extraction_response: The JSON response from Step 1 (extraction)
-            abstract_id: Optional abstract ID for tracking
-
-        Returns:
-            dict: Validation result with response and metadata
-        """
-        # 3-message pattern (both extracted from DRUG_VALIDATION_SYSTEM_PROMPT.md):
-        # Message 1: System Instruction (MESSAGE_1 section)
-        # Message 2: Reference Rules - flat-numbered extraction rules (MESSAGE_2 section)
-        # Message 3: Extraction Result to Validate
-        
-        validation_input = f"""Validate the extracted drugs for the following:
-
-**Abstract Title:** {abstract_title}
-
-**Extraction Result:**
-{extraction_response}"""
-
-        # Build system message with optional caching
-        if self.enable_caching:
-            system_msg = SystemMessage(content=[
-                {"type": "text", "text": self.system_prompt, "cache_control": {"type": "ephemeral"}}
-            ])
-        else:
-            system_msg = SystemMessage(content=self.system_prompt)
-
-        # Build reference rules message with optional caching
-        reference_rules_content = f"# REFERENCE RULES DOCUMENT\n\nThe following are the extraction rules that the extractor was instructed to follow:\n\n{self.extraction_rules}"
-        if self.enable_caching:
-            reference_rules_msg = HumanMessage(content=[
-                {"type": "text", "text": reference_rules_content, "cache_control": {"type": "ephemeral"}}
-            ])
-        else:
-            reference_rules_msg = HumanMessage(content=reference_rules_content)
-
-        messages = [
-            system_msg,
-            reference_rules_msg,
-            HumanMessage(content=validation_input),
-        ]
-
-        # Setup Langfuse if available
-        callbacks = []
-        if self.langfuse_config:
-            os.environ["LANGFUSE_PUBLIC_KEY"] = self.langfuse_config.public_key
-            os.environ["LANGFUSE_SECRET_KEY"] = self.langfuse_config.secret_key
-            os.environ["LANGFUSE_HOST"] = self.langfuse_config.host
-            callbacks = [CallbackHandler()]
-
-        config = RunnableConfig(
-            callbacks=callbacks,
-            metadata={"langfuse_tags": [f"abstract_id:{abstract_id or 'unknown'}", "step:validation"]}
-        )
-
-        try:
-            response: AIMessage = self.llm.invoke(messages, config=config)
-            
-            # Log cache performance metrics if caching is enabled
-            if self.enable_caching and hasattr(response, "usage_metadata"):
-                usage = response.usage_metadata
-                if usage:
-                    input_token_details = usage.get("input_token_details", {})
-                    cache_creation = input_token_details.get("cache_creation", 0)
-                    cache_read = input_token_details.get("cache_read", 0)
-                    if cache_creation > 0 or cache_read > 0:
-                        print(f"  📦 Cache stats - creation: {cache_creation}, read: {cache_read}")
-            
-            return {
-                "success": True,
-                "response": response.content,
-                "error": None,
-            }
-        except Exception as e:
-            print(f"✗ Error validating drugs: {e}")
-            return {
-                "success": False,
-                "response": '{"validation_status": "FAIL", "validation_confidence": 0.0, "missed_drugs": [], "grounded_search_performed": false, "search_results": [], "issues_found": [], "checks_performed": {}, "validation_reasoning": "Error during validation"}',
-                "error": str(e),
-            }
-
-
-def parse_validation_response(response: str) -> Dict[str, Any]:
-    """Parse the validation response JSON with new format.
+@dataclass
+class ProcessResult:
+    """Result of validating a single extraction."""
+    abstract_id: str
+    response_json: str = ""
+    error: Optional[str] = None
     
-    New format includes:
-    - validation_status: PASS | REVIEW | FAIL
-    - validation_confidence: 0.0 to 1.0
-    - missed_drugs: Array of drugs that should have been extracted
-    - grounded_search_performed: Boolean
-    - search_results: Array of search results
-    - issues_found: Array of issues with check_type, severity, etc.
-    - checks_performed: Status of each validation check
-    - validation_reasoning: Step-by-step reasoning
+    @property
+    def success(self) -> bool:
+        return bool(self.response_json and not self.error)
+
+
+def load_extractions(
+    csv_path: str,
+    response_column: str,
+    limit: int = None
+) -> tuple[list[ValidationInput], list[dict], list[str]]:
+    """Load extraction results from CSV.
+    
+    Args:
+        csv_path: Path to extraction output CSV
+        response_column: Name of column containing extraction response JSON
+        limit: Optional limit on rows
+        
+    Returns:
+        tuple: (validation_inputs, original_rows, fieldnames)
     """
-    import re
+    inputs = []
+    original_rows = []
+    fieldnames = []
     
-    try:
-        # Try to find JSON block
-        json_match = re.search(r'```json\s*(.*?)\s*```', response, re.DOTALL)
-        if json_match:
-            json_str = json_match.group(1)
-        else:
-            start_idx = response.find('{')
-            end_idx = response.rfind('}')
-            if start_idx != -1 and end_idx != -1:
-                json_str = response[start_idx:end_idx+1]
-            else:
-                json_str = response
-
-        parsed = json.loads(json_str)
+    with open(csv_path, encoding="utf-8-sig") as f:
+        reader = csv.DictReader(f)
+        fieldnames = list(reader.fieldnames or [])
         
-        def get_value(data, keys, default=None):
-            for key in keys:
-                if key in data:
-                    return data[key]
-            return default
+        # Find column names (case-insensitive)
+        header_map = {h.lower().strip(): h for h in fieldnames}
+        id_col = header_map.get('abstract_id') or header_map.get('id')
+        title_col = header_map.get('abstract_title') or header_map.get('title')
         
-        def get_list(data, keys):
-            for key in keys:
-                if key in data and isinstance(data[key], list):
-                    return data[key]
-            return []
-
-        return {
-            'validation_status': get_value(parsed, ['validation_status'], 'REVIEW'),
-            'validation_confidence': get_value(parsed, ['validation_confidence'], 0.0),
-            'missed_drugs': get_list(parsed, ['missed_drugs']),
-            'grounded_search_performed': get_value(parsed, ['grounded_search_performed'], False),
-            'search_results': get_list(parsed, ['search_results']),
-            'issues_found': get_list(parsed, ['issues_found']),
-            'checks_performed': get_value(parsed, ['checks_performed'], {}),
-            'validation_reasoning': get_value(parsed, ['validation_reasoning'], ''),
-        }
-    except Exception as e:
-        return {
-            'validation_status': 'FAIL',
-            'validation_confidence': 0.0,
-            'missed_drugs': [],
-            'grounded_search_performed': False,
-            'search_results': [],
-            'issues_found': [],
-            'checks_performed': {},
-            'validation_reasoning': f'Error parsing response: {str(e)}',
-        }
-
-
-def load_extraction_results(csv_path: str, max_rows: int = None) -> List[Dict]:
-    """Load extraction results from Step 1 CSV, preserving ALL columns."""
-    results = []
-
-    if not os.path.exists(csv_path):
-        print(f"Error: CSV file not found at {csv_path}")
-        return results
-
-    try:
-        df = pd.read_csv(csv_path)
-        
-        # Find the extraction response column
+        # Find extraction response column
         extraction_col = None
-        for col in df.columns:
-            if 'extraction_response' in col.lower():
+        for col in fieldnames:
+            if response_column.lower() in col.lower():
                 extraction_col = col
                 break
         
         if not extraction_col:
-            print("Error: Could not find extraction_response column in CSV")
-            return results
-
-        # Find abstract_title column (may be input_Abstract Title or similar)
-        title_col = None
-        for col in df.columns:
-            col_lower = col.lower().replace(' ', '_')
-            if 'abstract_title' in col_lower or col_lower == 'input_abstract_title':
-                title_col = col
-                break
+            raise ValueError(f"Could not find extraction response column matching '{response_column}' in CSV")
         
-        # Find abstract_id column
-        id_col = None
-        for col in df.columns:
-            col_lower = col.lower().replace(' ', '_')
-            if col_lower in ['abstract_id', 'input_id', 'input_abstract_id']:
-                id_col = col
-                break
-
-        for _, row in df.iterrows():
-            # Preserve ALL columns from the input
-            row_data = {}
-            for col in df.columns:
-                val = row.get(col)
-                # Handle NaN values
-                if pd.isna(val):
-                    row_data[col] = ''
-                else:
-                    row_data[col] = str(val)
+        for row in reader:
+            abstract_id = row.get(id_col, "") if id_col else ""
+            abstract_title = row.get(title_col, "") if title_col else ""
+            extraction_response = row.get(extraction_col, "{}")
             
-            # Add mapped columns for processing (for backward compatibility)
-            row_data['abstract_id'] = str(row.get(id_col, '')) if id_col else ''
-            row_data['abstract_title'] = str(row.get(title_col, '')) if title_col else ''
-            row_data['extraction_response'] = str(row.get(extraction_col, '{}'))
+            # Parse extraction response JSON
+            try:
+                extraction_result = json.loads(extraction_response) if extraction_response else {}
+            except json.JSONDecodeError:
+                extraction_result = {"error": "Failed to parse extraction response"}
             
-            results.append(row_data)
-            
-            if max_rows and len(results) >= max_rows:
-                break
+            inputs.append(ValidationInput(
+                abstract_id=str(abstract_id),
+                abstract_title=str(abstract_title),
+                extraction_result=extraction_result,
+            ))
+            original_rows.append(row)
+    
+    if limit:
+        return inputs[:limit], original_rows[:limit], fieldnames
+    return inputs, original_rows, fieldnames
 
-        return results
 
+def process_single(input_data: ValidationInput) -> ProcessResult:
+    """Validate single extraction and return result."""
+    # Skip if extraction had error
+    if input_data.extraction_result.get("error"):
+        return ProcessResult(
+            abstract_id=input_data.abstract_id,
+            response_json=json.dumps({
+                "validation_status": "SKIP",
+                "validation_reasoning": f"Extraction had error: {input_data.extraction_result.get('error')}"
+            }, indent=2),
+        )
+    
+    try:
+        result: ValidationResult = validate_drugs(input_data)
+        
+        # Serialize to JSON
+        response_json = json.dumps(result.model_dump(), indent=2, ensure_ascii=False)
+        
+        return ProcessResult(
+            abstract_id=input_data.abstract_id,
+            response_json=response_json,
+        )
+        
+    except DrugValidationError as e:
+        return ProcessResult(
+            abstract_id=input_data.abstract_id,
+            error=str(e),
+        )
     except Exception as e:
-        print(f"Error reading CSV file: {e}")
-        return []
+        return ProcessResult(
+            abstract_id=input_data.abstract_id,
+            error=f"Unexpected error: {e}",
+        )
 
 
-def process_single_row(row: Dict, processor: DrugValidationProcessor, index: int) -> Dict:
-    """Process a single row, preserving all original columns."""
-    print(f"Processing row {index}: ID {row.get('abstract_id', 'unknown')}")
-
-    result = processor.validate(
-        abstract_title=row.get('abstract_title', ''),
-        extraction_response=row.get('extraction_response', '{}'),
-        abstract_id=row.get('abstract_id', '')
-    )
-
-    # Parse the validation response (new format)
-    parsed = parse_validation_response(result['response'])
-
-    # Start with all columns from the input row (preserves input_ columns and Step 1 columns)
-    output = {}
-    for key, value in row.items():
-        # Skip the mapped columns we added for processing
-        if key not in ['abstract_id', 'abstract_title']:
-            output[key] = value
+def save_results(
+    results: list[tuple[int, ProcessResult]],
+    original_rows: list[dict],
+    input_fieldnames: list[str],
+    output_path: str,
+    model_name: str
+):
+    """Save results to CSV with all input columns plus validation response column."""
+    # Sort by original order
+    results.sort(key=lambda x: x[0])
     
-    # Add Step 2 validation columns (new format) with pretty-printed JSON
-    output.update({
-        'validation_response': result['response'],
-        'validation_status': parsed['validation_status'],
-        'validation_confidence': parsed['validation_confidence'],
-        'validation_missed_drugs': json.dumps(parsed['missed_drugs'], indent=2, ensure_ascii=False),
-        'validation_grounded_search_performed': parsed['grounded_search_performed'],
-        'validation_search_results': json.dumps(parsed['search_results'], indent=2, ensure_ascii=False),
-        'validation_issues_found': json.dumps(parsed['issues_found'], indent=2, ensure_ascii=False),
-        'validation_checks_performed': json.dumps(parsed['checks_performed'], indent=2, ensure_ascii=False),
-        'validation_reasoning': parsed['validation_reasoning'],
-        'validation_success': result['success'],
-        'validation_error': result['error'] or '',
-    })
+    response_column = f"{model_name}_validation_response"
+    fieldnames = input_fieldnames + [response_column]
     
-    return output
+    with open(output_path, "w", newline="", encoding="utf-8") as f:
+        writer = csv.DictWriter(f, fieldnames=fieldnames)
+        writer.writeheader()
+        
+        for (idx, result) in results:
+            row = dict(original_rows[idx])
+            if result.error:
+                row[response_column] = json.dumps({"error": result.error}, indent=2)
+            else:
+                row[response_column] = result.response_json
+            writer.writerow(row)
 
 
 def main():
-    parser = argparse.ArgumentParser(description='Step 2: Drug Validation Processor')
-    parser.add_argument('--input_file', default='step1_filtered.csv', help='Input CSV file from Step 1 (extraction results)')
-    parser.add_argument('--output_file', default='step2_filtered.csv', help='Output CSV file (default: auto-generated)')
-    parser.add_argument('--num_rows', type=int, default=None, help='Number of rows to process')
-    parser.add_argument('--model', default='gemini/gemini-3-flash-preview', help='Model to use for validation')
-    parser.add_argument('--temperature', type=float, default=0, help='Temperature for LLM')
-    parser.add_argument('--max_tokens', type=int, default=50000, help='Max tokens for LLM')
-    parser.add_argument('--parallel_workers', type=int, default=3, help='Number of parallel workers')
-    parser.add_argument('--enable_caching', action='store_true', help='Enable Anthropic prompt caching for reduced costs')
-
+    parser = argparse.ArgumentParser(description="Drug Validation Processor")
+    parser.add_argument("--input", default="data/drug/input/extraction_result.csv", help="Input CSV from extraction processor")
+    parser.add_argument("--output", default=None)
+    parser.add_argument("--extraction_column", default="extraction_response", 
+                        help="Column name containing extraction response JSON")
+    parser.add_argument("--limit", type=int, default=None, help="Limit rows to validate")
+    parser.add_argument("--model_name", default="validation", help="Model name for column prefix")
+    parser.add_argument("--parallel_workers", type=int, default=3, help="Number of parallel workers")
     args = parser.parse_args()
-
-    # Generate output filename
-    if not args.output_file:
+    
+    # Auto-generate output path
+    if not args.output:
         timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-        model_name = (args.model or settings.llm.LLM_MODEL).replace("/", "_")
-        args.output_file = f"step2_validation_{model_name}_{timestamp}.csv"
-
-    print("✅ Step 2: Drug Validation Processor")
-    print("=" * 80)
-    print(f"Input file: {args.input_file}")
-    print(f"Output file: {args.output_file}")
-    print(f"Model: {args.model or settings.llm.LLM_MODEL}")
-    print(f"Number of rows: {args.num_rows or 'all'}")
+        args.output = f"data/drug/output/validation_{args.model_name}_{timestamp}.csv"
+    
+    # Ensure output directory exists
+    Path(args.output).parent.mkdir(parents=True, exist_ok=True)
+    
+    print("✅ Drug Validation Processor")
+    print("=" * 60)
+    print(f"Input:  {args.input}")
+    print(f"Output: {args.output}")
+    print(f"Model:  {config.VALIDATION_MODEL}")
+    print(f"Extraction column: {args.extraction_column}")
+    print(f"Limit:  {args.limit or 'all'}")
+    print(f"Workers: {args.parallel_workers}")
     print()
-
-    # Load extraction results
-    rows = load_extraction_results(args.input_file, args.num_rows)
-    if not rows:
-        print("No extraction results loaded. Exiting.")
-        return
-
-    print(f"Loaded {len(rows)} extraction results")
-
-    # Initialize processor
-    processor = DrugValidationProcessor(
-        model=args.model,
-        temperature=args.temperature,
-        max_tokens=args.max_tokens,
-        enable_caching=args.enable_caching,
+    
+    # Load extractions
+    print("Loading extraction results...")
+    inputs, original_rows, input_fieldnames = load_extractions(
+        args.input, args.extraction_column, args.limit
     )
-
-    # Process rows with intermediate saves every 5 results
-    results = []
+    print(f"✓ Loaded {len(inputs)} extraction results")
+    print()
+    
+    # Process with parallel workers and intermediate saves
+    print("Validating...")
+    results: list[tuple[int, ProcessResult]] = []
     save_interval = 5
     last_saved_count = 0
     
     with concurrent.futures.ThreadPoolExecutor(max_workers=args.parallel_workers) as executor:
         future_to_index = {
-            executor.submit(process_single_row, row, processor, i): i
-            for i, row in enumerate(rows, 1)
+            executor.submit(process_single, inp): i
+            for i, inp in enumerate(inputs)
         }
+        
         for future in concurrent.futures.as_completed(future_to_index):
             index = future_to_index[future]
+            inp = inputs[index]
+            
             try:
                 result = future.result()
                 results.append((index, result))
                 
-                # Save intermediate results every 5 processed
+                # Extract validation status for logging
+                status_icon = "✓" if result.success else "✗"
+                if result.success:
+                    try:
+                        parsed = json.loads(result.response_json)
+                        validation_status = parsed.get("validation_status", "?")
+                        output = validation_status
+                    except:
+                        output = "parsed"
+                else:
+                    output = result.error[:30] if result.error else "error"
+                
+                print(f"[{len(results)}/{len(inputs)}] {inp.abstract_id}: {status_icon} {output}")
+                
+                # Intermediate save every 5 results
                 if len(results) - last_saved_count >= save_interval:
-                    # Sort by original order before saving
-                    sorted_results = sorted(results, key=lambda x: x[0])
-                    sorted_data = [r for _, r in sorted_results]
-                    df = pd.DataFrame(sorted_data)
-                    df.to_csv(args.output_file, index=False)
+                    save_results(results, original_rows, input_fieldnames, args.output, args.model_name)
                     last_saved_count = len(results)
-                    print(f"💾 Intermediate save: {len(results)} results saved to {args.output_file}")
+                    print(f"💾 Intermediate save: {len(results)} results")
                     
             except Exception as e:
-                print(f"Error processing row {index}: {e}")
-
-    # Sort by original order
-    results.sort(key=lambda x: x[0])
-    results = [r for _, r in results]
-
+                print(f"✗ Error validating {inp.abstract_id}: {e}")
+                results.append((index, ProcessResult(abstract_id=inp.abstract_id, error=str(e))))
+    
     # Final save
-    df = pd.DataFrame(results)
-    df.to_csv(args.output_file, index=False)
-
+    print()
+    save_results(results, original_rows, input_fieldnames, args.output, args.model_name)
+    print(f"✓ Results saved to {args.output}")
+    
     # Summary
-    successful = sum(1 for r in results if r['validation_success'])
+    successful = sum(1 for _, r in results if r.success)
     print()
     print("📊 Summary:")
-    print(f"Total processed: {len(results)}")
-    print(f"Successful: {successful}")
-    print(f"Success rate: {successful/len(results)*100:.1f}%")
-    print(f"Results saved to: {args.output_file}")
+    print(f"   Total:   {len(results)}")
+    print(f"   Success: {successful}")
+    print(f"   Failed:  {len(results) - successful}")
+    if results:
+        print(f"   Rate:    {successful/len(results)*100:.1f}%")
 
 
 if __name__ == "__main__":
     main()
-

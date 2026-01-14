@@ -51,7 +51,7 @@ class IndicationConfig(BaseSettings):
         description="Temperature for validation LLM"
     )
     VALIDATION_LLM_MAX_TOKENS: int = Field(
-        default=16000,
+        default=50000,
         description="Maximum tokens for validation LLM"
     )
     
