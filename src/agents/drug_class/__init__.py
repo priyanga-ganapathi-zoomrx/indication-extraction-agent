@@ -129,17 +129,6 @@ from src.agents.drug_class.prompts import (
     REGIMEN_IDENTIFICATION_PROMPT_NAME,
 )
 
-# =============================================================================
-# LEGACY AGENT CLASSES (for backward compatibility)
-# =============================================================================
-from src.agents.drug_class.consolidation_agent import DrugClassConsolidationOnlyAgent
-from src.agents.drug_class.extraction_title_agent import DrugClassExtractionTitleAgent
-from src.agents.drug_class.grounded_search_agent import DrugClassGroundedSearchAgent
-from src.agents.drug_class.react_agent import DrugClassReActAgent
-from src.agents.drug_class.regimen_identification_agent import RegimenIdentificationAgent
-from src.agents.drug_class.selection_agent import DrugClassSelectionAgent
-from src.agents.drug_class.validation_agent import DrugClassValidationAgent
-
 __all__ = [
     # Main pipeline
     "run_drug_class_pipeline",
@@ -245,13 +234,4 @@ __all__ = [
     "GROUNDED_SEARCH_PROMPT_NAME",
     "CONSOLIDATION_PROMPT_NAME",
     "REGIMEN_IDENTIFICATION_PROMPT_NAME",
-    
-    # Legacy agent classes (backward compatibility)
-    "DrugClassConsolidationOnlyAgent",
-    "DrugClassExtractionTitleAgent",
-    "DrugClassGroundedSearchAgent",
-    "DrugClassReActAgent",
-    "RegimenIdentificationAgent",
-    "DrugClassSelectionAgent",
-    "DrugClassValidationAgent",
 ]
