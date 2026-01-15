@@ -1,23 +1,109 @@
-# src/agents/drug_class/__init__.py
-"""Drug class extraction agent package.
+"""Drug class extraction module.
 
-This package contains all drug class-related agents:
-- DrugClassConsolidationOnlyAgent: Consolidates multiple extraction results
-- DrugClassExtractionTitleAgent: Extracts drug classes from titles
-- DrugClassGroundedSearchAgent: Grounded search-based extraction
-- DrugClassReActAgent: ReAct pattern-based extraction
-- DrugClassSelectionAgent: Selects best drug classes from candidates
-- DrugClassValidationAgent: Validates extraction results
+Revamped module with function-based architecture and per-step checkpointing.
+Designed for Temporal integration.
+
+Pipeline Steps:
+1. Regimen Identification - Split drug regimens into components
+2. Drug Class Extraction - Extract classes via Tavily + Grounded search
+3. Drug Class Selection - Select best class per drug
+4. Explicit Extraction - Extract classes from abstract title
+5. Consolidation - Deduplicate and refine classes
 """
 
-from src.agents.drug_class.consolidation_agent import DrugClassConsolidationOnlyAgent
-from src.agents.drug_class.extraction_title_agent import DrugClassExtractionTitleAgent
-from src.agents.drug_class.grounded_search_agent import DrugClassGroundedSearchAgent
-from src.agents.drug_class.react_agent import DrugClassReActAgent
-from src.agents.drug_class.regimen_identification_agent import RegimenIdentificationAgent
-from src.agents.drug_class.selection_agent import DrugClassSelectionAgent
-from src.agents.drug_class.validation_agent import DrugClassValidationAgent
+# =============================================================================
+# MAIN PIPELINE FUNCTION
+# =============================================================================
+from src.agents.drug_class.pipeline import (
+    run_drug_class_pipeline,
+    LocalStorageClient,
+)
+
+# =============================================================================
+# STEP FUNCTIONS (Single-item, atomic functions for Temporal activities)
+# =============================================================================
+from src.agents.drug_class.step1_regimen import identify_regimen
+from src.agents.drug_class.step2_search import (
+    fetch_search_results,
+    search_drug_class,
+    search_drug_firm,
+    load_search_cache,
+    save_search_cache,
+)
+from src.agents.drug_class.step2_extraction import (
+    extract_with_tavily,
+    extract_with_grounded,
+)
+from src.agents.drug_class.step3_selection import (
+    select_drug_class,
+    needs_llm_selection,
+)
+from src.agents.drug_class.step4_explicit import extract_explicit_classes
+from src.agents.drug_class.step5_consolidation import consolidate_drug_classes
+from src.agents.drug_class.step_validation import validate_drug_class
+
+# =============================================================================
+# SCHEMAS
+# =============================================================================
+from src.agents.drug_class.schemas import (
+    # Pipeline input/output
+    DrugClassInput,
+    DrugClassPipelineResult,
+    # Step 1 schemas
+    RegimenInput,
+    RegimenLLMResponse,
+    Step1Output,
+    # Step 2 schemas
+    DrugSearchCache,
+    DrugClassExtractionInput,
+    DrugClassLLMResponse,
+    GroundedSearchClassDetail,
+    GroundedSearchLLMResponse,
+    DrugExtractionResult,
+    ExtractionDetail,
+    Step2Output,
+    # Step 3 schemas
+    SelectionInput,
+    DrugSelectionResult,
+    Step3Output,
+    # Step 4 schemas
+    ExplicitExtractionInput,
+    ExplicitExtractionDetail,
+    ExplicitLLMResponse,
+    Step4Output,
+    # Step 5 schemas
+    ConsolidationInput,
+    RemovedClassInfo,
+    RefinedExplicitClasses,
+    ConsolidationLLMResponse,
+    Step5Output,
+    # Validation schemas
+    ValidationInput,
+    ValidationIssue,
+    CheckResult,
+    ChecksPerformed,
+    ValidationLLMResponse,
+    ValidationOutput,
+    # Status tracking
+    PipelineStatus,
+    StepResult,
+    # Errors
+    DrugClassExtractionError,
+    DrugClassPipelineError,
+)
+
+# =============================================================================
+# CONFIG
+# =============================================================================
+from src.agents.drug_class.config import config
+
+# =============================================================================
+# PROMPTS
+# =============================================================================
 from src.agents.drug_class.prompts import (
+    # Helper
+    extract_section,
+    # Prompt loaders
     get_system_prompt,
     get_extraction_title_prompt,
     get_extraction_rules_prompt,
@@ -26,6 +112,14 @@ from src.agents.drug_class.prompts import (
     get_grounded_search_prompt,
     get_consolidation_prompt,
     get_regimen_identification_prompt,
+    # Parsed prompt loaders
+    get_extraction_rules_prompt_parts,
+    get_grounded_search_prompt_parts,
+    get_selection_prompt_parts,
+    get_explicit_extraction_prompt_parts,
+    get_consolidation_prompt_parts,
+    get_validation_prompt_parts,
+    # Prompt names
     EXTRACTION_TITLE_PROMPT_NAME,
     EXTRACTION_RULES_PROMPT_NAME,
     VALIDATION_PROMPT_NAME,
@@ -35,16 +129,101 @@ from src.agents.drug_class.prompts import (
     REGIMEN_IDENTIFICATION_PROMPT_NAME,
 )
 
+# =============================================================================
+# LEGACY AGENT CLASSES (for backward compatibility)
+# =============================================================================
+from src.agents.drug_class.consolidation_agent import DrugClassConsolidationOnlyAgent
+from src.agents.drug_class.extraction_title_agent import DrugClassExtractionTitleAgent
+from src.agents.drug_class.grounded_search_agent import DrugClassGroundedSearchAgent
+from src.agents.drug_class.react_agent import DrugClassReActAgent
+from src.agents.drug_class.regimen_identification_agent import RegimenIdentificationAgent
+from src.agents.drug_class.selection_agent import DrugClassSelectionAgent
+from src.agents.drug_class.validation_agent import DrugClassValidationAgent
+
 __all__ = [
-    # Agents
-    "DrugClassConsolidationOnlyAgent",
-    "DrugClassExtractionTitleAgent",
-    "DrugClassGroundedSearchAgent",
-    "DrugClassReActAgent",
-    "DrugClassSelectionAgent",
-    "DrugClassValidationAgent",
-    "RegimenIdentificationAgent",
+    # Main pipeline
+    "run_drug_class_pipeline",
+    "LocalStorageClient",
+    
+    # Step 1 functions
+    "identify_regimen",
+    
+    # Step 2 functions (search + extraction)
+    "fetch_search_results",
+    "search_drug_class",
+    "search_drug_firm",
+    "load_search_cache",
+    "save_search_cache",
+    "extract_with_tavily",
+    "extract_with_grounded",
+    
+    # Step 3-5 functions
+    "select_drug_class",
+    "needs_llm_selection",
+    "extract_explicit_classes",
+    "consolidate_drug_classes",
+    
+    # Validation function
+    "validate_drug_class",
+    
+    # Pipeline schemas
+    "DrugClassInput",
+    "DrugClassPipelineResult",
+    
+    # Step 1 schemas
+    "RegimenInput",
+    "RegimenLLMResponse",
+    "Step1Output",
+    
+    # Step 2 schemas
+    "DrugSearchCache",
+    "DrugClassExtractionInput",
+    "DrugClassLLMResponse",
+    "GroundedSearchClassDetail",
+    "GroundedSearchLLMResponse",
+    "DrugExtractionResult",
+    "ExtractionDetail",
+    "Step2Output",
+    
+    # Step 3 schemas
+    "SelectionInput",
+    "DrugSelectionResult",
+    "Step3Output",
+    
+    # Step 4 schemas
+    "ExplicitExtractionInput",
+    "ExplicitExtractionDetail",
+    "ExplicitLLMResponse",
+    "Step4Output",
+    
+    # Step 5 schemas
+    "ConsolidationInput",
+    "RemovedClassInfo",
+    "RefinedExplicitClasses",
+    "ConsolidationLLMResponse",
+    "Step5Output",
+    
+    # Validation schemas
+    "ValidationInput",
+    "ValidationIssue",
+    "CheckResult",
+    "ChecksPerformed",
+    "ValidationLLMResponse",
+    "ValidationOutput",
+    
+    # Status tracking
+    "PipelineStatus",
+    "StepResult",
+    
+    # Errors
+    "DrugClassExtractionError",
+    "DrugClassPipelineError",
+    
+    # Config
+    "config",
+    
     # Prompts
+    "extract_section",
     "get_system_prompt",
     "get_extraction_title_prompt",
     "get_extraction_rules_prompt",
@@ -53,6 +232,12 @@ __all__ = [
     "get_grounded_search_prompt",
     "get_consolidation_prompt",
     "get_regimen_identification_prompt",
+    "get_extraction_rules_prompt_parts",
+    "get_grounded_search_prompt_parts",
+    "get_selection_prompt_parts",
+    "get_explicit_extraction_prompt_parts",
+    "get_consolidation_prompt_parts",
+    "get_validation_prompt_parts",
     "EXTRACTION_TITLE_PROMPT_NAME",
     "EXTRACTION_RULES_PROMPT_NAME",
     "VALIDATION_PROMPT_NAME",
@@ -60,4 +245,13 @@ __all__ = [
     "GROUNDED_SEARCH_PROMPT_NAME",
     "CONSOLIDATION_PROMPT_NAME",
     "REGIMEN_IDENTIFICATION_PROMPT_NAME",
+    
+    # Legacy agent classes (backward compatibility)
+    "DrugClassConsolidationOnlyAgent",
+    "DrugClassExtractionTitleAgent",
+    "DrugClassGroundedSearchAgent",
+    "DrugClassReActAgent",
+    "RegimenIdentificationAgent",
+    "DrugClassSelectionAgent",
+    "DrugClassValidationAgent",
 ]
