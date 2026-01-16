@@ -49,7 +49,7 @@ from src.agents.drug_class import (
     PipelineStatus,
     config,
 )
-from src.agents.drug_class.pipeline import LocalStorageClient
+from src.agents.core.storage import LocalStorageClient
 
 
 @dataclass
@@ -236,14 +236,14 @@ def process_step1_single(inp: DrugClassInput, storage: LocalStorageClient) -> di
             status.steps["step1_regimen"] = {"status": "failed", "error": "Some drugs failed"}
         
         # Save status
-        storage.write(f"abstracts/{abstract_id}/status.json", json.dumps(status.to_dict(), indent=2))
+        storage.write(f"abstracts/{abstract_id}/status.json", json.dumps(status.to_dict(), indent=2, ensure_ascii=False))
         storage.write(f"abstracts/{abstract_id}/step1_output.json", step1_output.model_dump_json(indent=2))
         
         return {"abstract_id": abstract_id, "success": True, "llm_calls": step1_llm_calls}
         
     except Exception as e:
         status.steps["step1_regimen"] = {"status": "failed", "error": str(e)}
-        storage.write(f"abstracts/{abstract_id}/status.json", json.dumps(status.to_dict(), indent=2))
+        storage.write(f"abstracts/{abstract_id}/status.json", json.dumps(status.to_dict(), indent=2, ensure_ascii=False))
         return {"abstract_id": abstract_id, "success": False, "error": str(e)}
 
 
@@ -314,14 +314,14 @@ def process_step2_single(inp: DrugClassInput, storage: LocalStorageClient) -> di
             status.steps["step2_extraction"] = {"status": "failed", "error": "Some drugs failed"}
         
         status.total_llm_calls += step2_llm_calls
-        storage.write(f"abstracts/{abstract_id}/status.json", json.dumps(status.to_dict(), indent=2))
+        storage.write(f"abstracts/{abstract_id}/status.json", json.dumps(status.to_dict(), indent=2, ensure_ascii=False))
         storage.write(f"abstracts/{abstract_id}/step2_output.json", step2_output.model_dump_json(indent=2))
         
         return {"abstract_id": abstract_id, "success": True, "llm_calls": step2_llm_calls}
         
     except Exception as e:
         status.steps["step2_extraction"] = {"status": "failed", "error": str(e)}
-        storage.write(f"abstracts/{abstract_id}/status.json", json.dumps(status.to_dict(), indent=2))
+        storage.write(f"abstracts/{abstract_id}/status.json", json.dumps(status.to_dict(), indent=2, ensure_ascii=False))
         return {"abstract_id": abstract_id, "success": False, "error": str(e)}
 
 
@@ -383,14 +383,14 @@ def process_step3_single(inp: DrugClassInput, storage: LocalStorageClient) -> di
             status.steps["step3_selection"] = {"status": "failed", "error": "Some drugs failed"}
         
         status.total_llm_calls += step3_llm_calls
-        storage.write(f"abstracts/{abstract_id}/status.json", json.dumps(status.to_dict(), indent=2))
+        storage.write(f"abstracts/{abstract_id}/status.json", json.dumps(status.to_dict(), indent=2, ensure_ascii=False))
         storage.write(f"abstracts/{abstract_id}/step3_output.json", step3_output.model_dump_json(indent=2))
         
         return {"abstract_id": abstract_id, "success": True, "llm_calls": step3_llm_calls}
         
     except Exception as e:
         status.steps["step3_selection"] = {"status": "failed", "error": str(e)}
-        storage.write(f"abstracts/{abstract_id}/status.json", json.dumps(status.to_dict(), indent=2))
+        storage.write(f"abstracts/{abstract_id}/status.json", json.dumps(status.to_dict(), indent=2, ensure_ascii=False))
         return {"abstract_id": abstract_id, "success": False, "error": str(e)}
 
 
@@ -421,14 +421,14 @@ def process_step4_single(inp: DrugClassInput, storage: LocalStorageClient) -> di
         status.last_completed_step = "step4_explicit"
         status.total_llm_calls += step4_llm_calls
         
-        storage.write(f"abstracts/{abstract_id}/status.json", json.dumps(status.to_dict(), indent=2))
+        storage.write(f"abstracts/{abstract_id}/status.json", json.dumps(status.to_dict(), indent=2, ensure_ascii=False))
         storage.write(f"abstracts/{abstract_id}/step4_output.json", step4_output.model_dump_json(indent=2))
         
         return {"abstract_id": abstract_id, "success": True, "llm_calls": step4_llm_calls}
         
     except Exception as e:
         status.steps["step4_explicit"] = {"status": "failed", "error": str(e)}
-        storage.write(f"abstracts/{abstract_id}/status.json", json.dumps(status.to_dict(), indent=2))
+        storage.write(f"abstracts/{abstract_id}/status.json", json.dumps(status.to_dict(), indent=2, ensure_ascii=False))
         return {"abstract_id": abstract_id, "success": False, "error": str(e)}
 
 
@@ -480,14 +480,14 @@ def process_step5_single(inp: DrugClassInput, storage: LocalStorageClient) -> di
         status.pipeline_status = "success"
         status.total_llm_calls += step5_llm_calls
         
-        storage.write(f"abstracts/{abstract_id}/status.json", json.dumps(status.to_dict(), indent=2))
+        storage.write(f"abstracts/{abstract_id}/status.json", json.dumps(status.to_dict(), indent=2, ensure_ascii=False))
         storage.write(f"abstracts/{abstract_id}/step5_output.json", step5_output.model_dump_json(indent=2))
         
         return {"abstract_id": abstract_id, "success": True, "llm_calls": step5_llm_calls}
         
     except Exception as e:
         status.steps["step5_consolidation"] = {"status": "failed", "error": str(e)}
-        storage.write(f"abstracts/{abstract_id}/status.json", json.dumps(status.to_dict(), indent=2))
+        storage.write(f"abstracts/{abstract_id}/status.json", json.dumps(status.to_dict(), indent=2, ensure_ascii=False))
         return {"abstract_id": abstract_id, "success": False, "error": str(e)}
 
 
@@ -571,7 +571,7 @@ def main():
     print()
     
     # Initialize storage
-    storage = LocalStorageClient(base_path=args.output_dir)
+    storage = LocalStorageClient(base_dir=args.output_dir)
     
     # Load abstracts
     print("Loading abstracts...")

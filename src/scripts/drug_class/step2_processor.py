@@ -29,7 +29,7 @@ from src.agents.drug_class import (
     PipelineStatus,
     config,
 )
-from src.agents.drug_class.pipeline import LocalStorageClient
+from src.agents.core.storage import LocalStorageClient
 
 
 @dataclass
@@ -101,11 +101,12 @@ def process_single(inp: DrugClassInput, storage: LocalStorageClient) -> ProcessR
     abstract_id = inp.abstract_id
     
     # Load step1 output
-    step1_data = storage.read(f"abstracts/{abstract_id}/step1_output.json")
-    if not step1_data:
+    try:
+        step1_data = storage.download_json(f"abstracts/{abstract_id}/step1_output.json")
+    except FileNotFoundError:
         return ProcessResult(abstract_id=abstract_id, error="Step 1 output not found")
     
-    step1_output = Step1Output(**json.loads(step1_data))
+    step1_output = Step1Output(**step1_data)
     all_components = step1_output.get_all_components()
     
     if not all_components:
@@ -145,18 +146,22 @@ def process_single(inp: DrugClassInput, storage: LocalStorageClient) -> ProcessR
             step2_output.mark_success(drug, result)
         
         # Save output
-        storage.write(
+        storage.upload_json(
             f"abstracts/{abstract_id}/step2_output.json",
-            step2_output.model_dump_json(indent=2)
+            step2_output.model_dump()
         )
         
         # Update status
-        status_data = storage.read(f"abstracts/{abstract_id}/status.json")
-        status = PipelineStatus(**json.loads(status_data)) if status_data else PipelineStatus(abstract_id=abstract_id, abstract_title=inp.abstract_title)
+        try:
+            status_data = storage.download_json(f"abstracts/{abstract_id}/status.json")
+            status = PipelineStatus(**status_data)
+        except FileNotFoundError:
+            status = PipelineStatus(abstract_id=abstract_id, abstract_title=inp.abstract_title)
         status.steps["step2_extraction"] = {"status": "success", "llm_calls": llm_calls}
         status.last_completed_step = "step2_extraction"
         status.total_llm_calls += llm_calls
-        storage.write(f"abstracts/{abstract_id}/status.json", json.dumps(status.to_dict(), indent=2))
+        status.last_updated = datetime.utcnow().isoformat() + "Z"
+        storage.upload_json(f"abstracts/{abstract_id}/status.json", status.to_dict())
         
         return ProcessResult(
             abstract_id=abstract_id,
@@ -180,7 +185,7 @@ def save_results(results: list[tuple[int, ProcessResult]], original_rows: list[d
         
         for idx, result in results:
             row = dict(original_rows[idx])
-            row["step2_extractions"] = json.dumps(result.extractions) if result.extractions else ""
+            row["step2_extractions"] = json.dumps(result.extractions, ensure_ascii=False) if result.extractions else ""
             row["step2_llm_calls"] = result.llm_calls
             row["step2_error"] = result.error or ""
             writer.writerow(row)
@@ -188,7 +193,7 @@ def save_results(results: list[tuple[int, ProcessResult]], original_rows: list[d
 
 def main():
     parser = argparse.ArgumentParser(description="Step 2 Processor: Drug Class Extraction")
-    parser.add_argument("--input", required=True, help="Input CSV file")
+    parser.add_argument("--input", default="data/drug_class/input/drugs.csv", help="Input CSV file")
     parser.add_argument("--output_dir", default="data/drug_class/output", help="Output directory")
     parser.add_argument("--output_csv", default=None, help="Output CSV file")
     parser.add_argument("--limit", type=int, default=None, help="Limit abstracts")
@@ -213,7 +218,7 @@ def main():
     print(f"Workers:    {args.parallel_workers}")
     print()
     
-    storage = LocalStorageClient(base_path=args.output_dir)
+    storage = LocalStorageClient(base_dir=args.output_dir)
     
     print("Loading abstracts...")
     inputs, original_rows, fieldnames = load_abstracts(args.input, args.limit)

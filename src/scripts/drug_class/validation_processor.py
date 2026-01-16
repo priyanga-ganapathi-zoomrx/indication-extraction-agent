@@ -24,7 +24,7 @@ from src.agents.drug_class import (
     ValidationOutput,
     config,
 )
-from src.agents.drug_class.pipeline import LocalStorageClient
+from src.agents.core.storage import LocalStorageClient
 
 
 @dataclass
@@ -217,7 +217,7 @@ def main():
     print(f"Workers:    {args.parallel_workers}")
     print()
     
-    storage = LocalStorageClient(base_path=args.output_dir)
+    storage = LocalStorageClient(base_dir=args.output_dir)
     
     print("Loading extraction results...")
     inputs, original_rows, fieldnames = load_validations(

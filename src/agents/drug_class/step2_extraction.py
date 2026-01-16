@@ -8,7 +8,7 @@ This module exports SINGLE-DRUG functions. Loop/checkpointing is in pipeline.py.
 Uses with_structured_output for reliable JSON parsing.
 """
 
-from langfuse import observe
+from langfuse import observe, get_client
 from langfuse.langchain import CallbackHandler
 from langchain_core.messages import HumanMessage, SystemMessage
 
@@ -129,48 +129,44 @@ def extract_with_tavily(input_data: DrugClassExtractionInput) -> DrugExtractionR
     ))
     llm = base_llm.with_structured_output(DrugClassLLMResponse)
     
-    # Build messages with prompt caching
-    if config.ENABLE_PROMPT_CACHING:
-        system_message = SystemMessage(content=[{
-            "type": "text",
-            "text": system_prompt,
-            "cache_control": {"type": "ephemeral"}
-        }])
-        rules_msg = HumanMessage(content=[{
-            "type": "text",
-            "text": rules_message,
-            "cache_control": {"type": "ephemeral"}
-        }])
-    else:
-        system_message = SystemMessage(content=system_prompt)
-        rules_msg = HumanMessage(content=rules_message)
-    
+    # Build messages
+    system_message = SystemMessage(content=system_prompt)
+    rules_msg = HumanMessage(content=rules_message)
     input_msg = HumanMessage(content=input_content)
     messages = [system_message, rules_msg, input_msg]
     
-    # Setup Langfuse callback if enabled
-    invoke_config = {}
+    # Setup Langfuse callback and metadata if enabled
+    langfuse_handler = None
     if is_langfuse_enabled():
-        invoke_config["callbacks"] = [CallbackHandler()]
-        invoke_config["metadata"] = {
-            "langfuse_tags": [
+        lf = get_client()
+        lf.update_current_trace(
+            tags=[
                 f"abstract_id:{input_data.abstract_id}",
                 f"drug:{input_data.drug}",
                 f"prompt_version:{prompt_version}",
                 f"model:{config.EXTRACTION_MODEL}",
                 f"prompt_name:{EXTRACTION_RULES_PROMPT_NAME}",
                 "source_type:tavily",
-            ]
-        }
+            ],
+        )
+        lf.update_current_generation(
+            model=config.EXTRACTION_MODEL,
+            metadata={
+                "abstract_id": input_data.abstract_id,
+                "drug": input_data.drug,
+                "prompt_version": prompt_version,
+            },
+        )
+        # Create LangChain callback handler linked to current trace
+        langfuse_handler = CallbackHandler()
+    
+    invoke_config = {"callbacks": [langfuse_handler]} if langfuse_handler else {}
     
     try:
         result: DrugClassLLMResponse = llm.invoke(messages, config=invoke_config)
         
-        if result is None:
-            raise DrugClassExtractionError(f"LLM returned None for {input_data.drug}")
-        
         # Build extraction result
-        drug_classes = result.drug_classes if result.drug_classes else ["NA"]
+        drug_classes = result.drug_classes or ["NA"]
         success = bool(result.drug_classes and result.drug_classes != ["NA"])
         
         return DrugExtractionResult(
@@ -184,8 +180,6 @@ def extract_with_tavily(input_data: DrugClassExtractionInput) -> DrugExtractionR
             success=success,
         )
         
-    except DrugClassExtractionError:
-        raise
     except Exception as e:
         raise DrugClassExtractionError(f"Tavily extraction failed for {input_data.drug}: {e}") from e
 
@@ -232,55 +226,47 @@ def extract_with_grounded(input_data: DrugClassExtractionInput) -> DrugExtractio
     llm = base_llm.with_structured_output(GroundedSearchLLMResponse)
     
     # Build messages
-    if config.ENABLE_PROMPT_CACHING:
-        system_message = SystemMessage(content=[{
-            "type": "text",
-            "text": system_prompt,
-            "cache_control": {"type": "ephemeral"}
-        }])
-    else:
-        system_message = SystemMessage(content=system_prompt)
-    
+    system_message = SystemMessage(content=system_prompt)
     messages = [system_message]
     
     if rules_message:
-        if config.ENABLE_PROMPT_CACHING:
-            rules_msg = HumanMessage(content=[{
-                "type": "text",
-                "text": rules_message,
-                "cache_control": {"type": "ephemeral"}
-            }])
-        else:
-            rules_msg = HumanMessage(content=rules_message)
+        rules_msg = HumanMessage(content=rules_message)
         messages.append(rules_msg)
     
     messages.append(HumanMessage(content=input_content))
     
-    # Setup Langfuse callback if enabled
-    invoke_config = {}
+    # Setup Langfuse callback and metadata if enabled
+    langfuse_handler = None
     if is_langfuse_enabled():
-        invoke_config["callbacks"] = [CallbackHandler()]
-        invoke_config["metadata"] = {
-            "langfuse_tags": [
+        lf = get_client()
+        lf.update_current_trace(
+            tags=[
                 f"abstract_id:{input_data.abstract_id}",
                 f"drug:{input_data.drug}",
                 f"prompt_version:{prompt_version}",
                 f"model:{config.GROUNDED_MODEL}",
                 f"prompt_name:{GROUNDED_SEARCH_PROMPT_NAME}",
                 "source_type:grounded",
-            ]
-        }
+            ],
+        )
+        lf.update_current_generation(
+            model=config.GROUNDED_MODEL,
+            metadata={
+                "abstract_id": input_data.abstract_id,
+                "drug": input_data.drug,
+                "prompt_version": prompt_version,
+            },
+        )
+        # Create LangChain callback handler linked to current trace
+        langfuse_handler = CallbackHandler()
+    
+    invoke_config = {"callbacks": [langfuse_handler]} if langfuse_handler else {}
     
     try:
         result: GroundedSearchLLMResponse = llm.invoke(messages, config=invoke_config)
         
-        if result is None:
-            raise DrugClassExtractionError(f"LLM returned None for {input_data.drug}")
-        
         # Convert grounded search format to standard DrugExtractionResult
         return result.to_extraction_result(input_data.drug)
         
-    except DrugClassExtractionError:
-        raise
     except Exception as e:
         raise DrugClassExtractionError(f"Grounded extraction failed for {input_data.drug}: {e}") from e

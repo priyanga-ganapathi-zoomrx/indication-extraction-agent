@@ -132,7 +132,7 @@ def _load_prompt_from_file(prompt_name: str, prompts_directory: Path) -> tuple[s
     """
     prompt_filename = f"{prompt_name}.md"
     print(f"ℹ Loading prompt from local {prompt_filename} file...")
-    
+        
     prompt_file = prompts_directory / prompt_filename
     
     with open(prompt_file, 'r', encoding='utf-8') as f:

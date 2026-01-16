@@ -14,10 +14,8 @@ Pipeline Steps:
 # =============================================================================
 # MAIN PIPELINE FUNCTION
 # =============================================================================
-from src.agents.drug_class.pipeline import (
-    run_drug_class_pipeline,
-    LocalStorageClient,
-)
+from src.agents.drug_class.pipeline import run_drug_class_pipeline
+from src.agents.core.storage import StorageClient, LocalStorageClient
 
 # =============================================================================
 # STEP FUNCTIONS (Single-item, atomic functions for Temporal activities)
@@ -132,6 +130,7 @@ from src.agents.drug_class.prompts import (
 __all__ = [
     # Main pipeline
     "run_drug_class_pipeline",
+    "StorageClient",
     "LocalStorageClient",
     
     # Step 1 functions

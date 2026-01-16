@@ -26,7 +26,7 @@ from src.agents.drug_class import (
     PipelineStatus,
     config,
 )
-from src.agents.drug_class.pipeline import LocalStorageClient
+from src.agents.core.storage import LocalStorageClient
 
 
 @dataclass
@@ -181,7 +181,7 @@ def save_results(
         
         for idx, result in results:
             row = dict(original_rows[idx])
-            row["step1_components"] = json.dumps(result.components) if result.components else ""
+            row["step1_components"] = json.dumps(result.components, ensure_ascii=False) if result.components else ""
             row["step1_error"] = result.error or ""
             writer.writerow(row)
 

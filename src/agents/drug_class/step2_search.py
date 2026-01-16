@@ -12,28 +12,11 @@ This module exports:
 
 import json
 from datetime import datetime, timezone
-from typing import Protocol
 
 from src.agents.core import settings
+from src.agents.core.storage import StorageClient
 from src.agents.drug_class.config import config
 from src.agents.drug_class.schemas import DrugSearchCache
-
-
-# =============================================================================
-# STORAGE PROTOCOL (for type hints)
-# =============================================================================
-
-class StorageClient(Protocol):
-    """Protocol for storage operations."""
-    
-    def download_json(self, path: str) -> dict:
-        ...
-    
-    def upload_json(self, path: str, data: dict) -> None:
-        ...
-    
-    def exists(self, path: str) -> bool:
-        ...
 
 
 # =============================================================================

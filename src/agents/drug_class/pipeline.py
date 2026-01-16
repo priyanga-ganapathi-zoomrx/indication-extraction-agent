@@ -6,13 +6,12 @@ Orchestrates all 5 steps of drug class extraction with:
 - Status tracking for monitoring and debugging
 """
 
-import json
 from datetime import datetime
-from pathlib import Path
-from typing import Optional, Protocol
+from typing import Optional
 
 from langfuse import observe
 
+from src.agents.core.storage import StorageClient, LocalStorageClient
 from src.agents.drug_class.schemas import (
     DrugClassInput,
     DrugClassExtractionInput,
@@ -37,51 +36,6 @@ from src.agents.drug_class.step2_extraction import extract_with_tavily, extract_
 from src.agents.drug_class.step3_selection import select_drug_class, needs_llm_selection
 from src.agents.drug_class.step4_explicit import extract_explicit_classes
 from src.agents.drug_class.step5_consolidation import consolidate_drug_classes
-
-
-# =============================================================================
-# STORAGE PROTOCOL (for GCS or local filesystem)
-# =============================================================================
-
-class StorageClient(Protocol):
-    """Protocol for storage operations (GCS or local filesystem)."""
-    
-    def download_json(self, path: str) -> dict:
-        """Download JSON from storage."""
-        ...
-    
-    def upload_json(self, path: str, data: dict) -> None:
-        """Upload JSON to storage."""
-        ...
-    
-    def exists(self, path: str) -> bool:
-        """Check if path exists in storage."""
-        ...
-
-
-class LocalStorageClient:
-    """Local filesystem storage client for development/testing."""
-    
-    def __init__(self, base_dir: str = "output"):
-        self.base_dir = Path(base_dir)
-        self.base_dir.mkdir(parents=True, exist_ok=True)
-    
-    def _get_path(self, path: str) -> Path:
-        return self.base_dir / path
-    
-    def download_json(self, path: str) -> dict:
-        file_path = self._get_path(path)
-        with open(file_path, 'r', encoding='utf-8') as f:
-            return json.load(f)
-    
-    def upload_json(self, path: str, data: dict) -> None:
-        file_path = self._get_path(path)
-        file_path.parent.mkdir(parents=True, exist_ok=True)
-        with open(file_path, 'w', encoding='utf-8') as f:
-            json.dump(data, f, indent=2, ensure_ascii=False)
-    
-    def exists(self, path: str) -> bool:
-        return self._get_path(path).exists()
 
 
 # =============================================================================

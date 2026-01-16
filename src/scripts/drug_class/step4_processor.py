@@ -26,7 +26,7 @@ from src.agents.drug_class import (
     PipelineStatus,
     config,
 )
-from src.agents.drug_class.pipeline import LocalStorageClient
+from src.agents.core.storage import LocalStorageClient
 
 
 @dataclass
@@ -101,7 +101,7 @@ def process_single(inp: DrugClassInput, storage: LocalStorageClient) -> ProcessR
         status.steps["step4_explicit"] = {"status": "success", "llm_calls": llm_calls}
         status.last_completed_step = "step4_explicit"
         status.total_llm_calls += llm_calls
-        storage.write(f"abstracts/{abstract_id}/status.json", json.dumps(status.to_dict(), indent=2))
+        storage.write(f"abstracts/{abstract_id}/status.json", json.dumps(status.to_dict(), indent=2, ensure_ascii=False))
         
         return ProcessResult(
             abstract_id=abstract_id,
@@ -125,7 +125,7 @@ def save_results(results: list[tuple[int, ProcessResult]], original_rows: list[d
         
         for idx, result in results:
             row = dict(original_rows[idx])
-            row["step4_explicit_classes"] = json.dumps(result.explicit_classes) if result.explicit_classes else ""
+            row["step4_explicit_classes"] = json.dumps(result.explicit_classes, ensure_ascii=False) if result.explicit_classes else ""
             row["step4_llm_calls"] = result.llm_calls
             row["step4_error"] = result.error or ""
             writer.writerow(row)
@@ -157,7 +157,7 @@ def main():
     print(f"Workers:    {args.parallel_workers}")
     print()
     
-    storage = LocalStorageClient(base_path=args.output_dir)
+    storage = LocalStorageClient(base_dir=args.output_dir)
     
     print("Loading abstracts...")
     inputs, original_rows, fieldnames = load_abstracts(args.input, args.limit)
