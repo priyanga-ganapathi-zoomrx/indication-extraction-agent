@@ -8,7 +8,7 @@ from typing import TYPE_CHECKING
 
 from pydantic import BaseModel, Field
 
-from src.agents.drug_class.schemas.base import ClassType, ConfidenceLevel
+from src.agents.drug_class.schemas.base import ConfidenceLevel
 
 if TYPE_CHECKING:
     from src.agents.drug_class.schemas.outputs import (
@@ -39,7 +39,7 @@ class ExtractionDetail(BaseModel):
     """
     extracted_text: str = Field(default="", description="Raw extracted text from source")
     normalized_form: str = Field(default="", description="Normalized drug class name")
-    class_type: ClassType = Field(default="Therapeutic", description="MoA | Chemical | Mode | Therapeutic")
+    class_type: str = Field(default="Therapeutic", description="MoA | Chemical | Mode | Therapeutic")
     evidence: str = Field(default="", description="Exact quote from source")
     source: str = Field(default="", description="Where found: 'abstract_title' | 'abstract_text' | '<url>'")
     rules_applied: list[str] = Field(default_factory=list, description="Rules applied for extraction")
@@ -72,7 +72,7 @@ class GroundedSearchClassDetail(BaseModel):
     Grounded search returns drug_classes as array of objects (not strings).
     """
     class_name: str = Field(default="", description="Drug class name")
-    class_type: ClassType = Field(default="Therapeutic")
+    class_type: str = Field(default="Therapeutic")
     source_url: str = Field(default="")
     source_title: str = Field(default="")
     evidence: str = Field(default="")

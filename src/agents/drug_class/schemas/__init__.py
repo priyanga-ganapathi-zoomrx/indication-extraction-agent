@@ -19,7 +19,6 @@ from src.agents.drug_class.schemas.base import (
     StepName,
     StepStatus,
     DrugStatus,
-    ClassType,
     ConfidenceLevel,
 )
 
@@ -110,7 +109,6 @@ __all__ = [
     "StepName",
     "StepStatus",
     "DrugStatus",
-    "ClassType",
     "ConfidenceLevel",
     # Inputs
     "DrugClassInput",
