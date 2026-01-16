@@ -6,13 +6,10 @@
     "Lucicebtide": {
       "drug_name": "Lucicebtide",
       "drug_classes": [
-        "C/EBPβ Antagonist",
-        "Immunomodulator"
+        "C/EBPβ Antagonist"
       ],
       "selected_sources": [
-        "abstract_title",
-        "https://pubmed.ncbi.nlm.nih.gov/40103809/",
-        "https://www.prnewswire.com/news-releases/sapience-therapeutics-provides-data-update-from-phase-2-trial-of-lucicebtide-in-patients-with-glioblastoma-at-the-2025-american-society-of-clinical-oncology-asco-annual-meeting-302470177.html"
+        "abstract_title"
       ],
       "confidence_score": 1.0,
       "extraction_details": [
@@ -20,29 +17,19 @@
           "extracted_text": "antagonism of C/EBPβ",
           "normalized_form": "C/EBPβ Antagonist",
           "class_type": "MoA",
-          "evidence": "Use of lucicebtide (ST101) in glioblastoma patients by antagonism of C/EBPβ-dependent mesenchymal cell transition",
+          "evidence": "Use of lucicebtide (ST101) in glioblastoma patients by antagonism of C/EBP?-dependent mesenchymal cell transition",
           "source": "abstract_title",
           "rules_applied": [
             "Rule 1: Prioritize abstract title",
             "Rule 3: Apply Title Case",
             "Rule 11: Include biological target",
-            "Rule 15: Capture Antagonist with target"
-          ]
-        },
-        {
-          "extracted_text": "immunomodulator",
-          "normalized_form": "Immunomodulator",
-          "class_type": "Therapeutic",
-          "evidence": "These results identify lucicebtide as a novel immunomodulator that reprograms immunosuppressive macrophage populations",
-          "source": "https://pubmed.ncbi.nlm.nih.gov/40103809/",
-          "rules_applied": [
-            "Rule 3: Apply Title Case",
-            "Rule 5: Singular form"
+            "Rule 13: Format as TARGET-Antagonist/Inhibitor",
+            "Rule 15: Capture Agonist/Antagonist with target"
           ]
         }
       ],
       "extraction_method": "tavily",
-      "reasoning": "The abstract title explicitly identifies the drug as an antagonist of C/EBPβ. Search results confirm this mechanism and also classify the drug as an immunomodulator due to its role in reprogramming macrophage populations.",
+      "reasoning": "The abstract title explicitly identifies lucicebtide as an antagonist of C/EBPβ. Following Rule 1, since the drug class is mentioned in the title, it is prioritized and extracted as the primary class. Rule 11 and Rule 13 are applied to format the target and modality as 'C/EBPβ Antagonist'. Rule 3 is applied for Title Case.",
       "success": true
     }
   }

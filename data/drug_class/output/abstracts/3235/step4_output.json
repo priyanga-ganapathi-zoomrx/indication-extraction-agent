@@ -1,0 +1,31 @@
+{
+  "explicit_drug_classes": [
+    "CD19/CD22-Targeted CAR-T Cell Therapy"
+  ],
+  "extraction_details": [
+    {
+      "extracted_text": "CD19/CD22 dual-target CAR-T therapy",
+      "normalized_form": "CD19/CD22-Targeted CAR-T Cell Therapy",
+      "class_type": "Therapeutic",
+      "evidence": "Autologous hematopoietic stem cell transplantation followed by CD19/CD22 dual-target CAR-T therapy for refractory or relapsed burkitt lymphoma",
+      "source": "abstract_title",
+      "rules_applied": [
+        "Rule 3: Apply Title Case",
+        "Rule 8: Hyphenate target and modality",
+        "Rule 10: List targets alphabetically (CD19/CD22)",
+        "Rule 25: Convert CAR-T therapy to CAR-T Cell Therapy"
+      ]
+    },
+    {
+      "extracted_text": "Autologous hematopoietic stem cell transplantation",
+      "normalized_form": "NA",
+      "class_type": "Procedure",
+      "evidence": "Autologous hematopoietic stem cell transplantation followed by",
+      "source": "abstract_title",
+      "rules_applied": [
+        "Rule 35: Exclude procedures (transplantation)"
+      ]
+    }
+  ],
+  "reasoning": "CD19/CD22 dual-target CAR-T therapy is explicitly stated as the active intervention. Autologous hematopoietic stem cell transplantation is excluded as it is a procedure, not a drug class. The term 'refractory or relapsed' describes the disease state, not the treatment history of the drug class being evaluated."
+}

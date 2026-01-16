@@ -7,8 +7,7 @@
     "Autologous Hematopoietic Stem Cell": {
       "drug_name": "Autologous Hematopoietic Stem Cell",
       "drug_classes": [
-        "Autologous Hematopoietic Stem Cell Therapy",
-        "CD19/CD22-Targeted CAR-T Cell Therapy"
+        "Autologous Hematopoietic Stem Cell Therapy"
       ],
       "selected_sources": [
         "abstract_title"
@@ -18,34 +17,19 @@
         {
           "extracted_text": "Autologous hematopoietic stem cell",
           "normalized_form": "Autologous Hematopoietic Stem Cell Therapy",
-          "class_type": "Mode",
-          "evidence": "Autologous hematopoietic stem cell transplantation followed by CD19/CD22 dual-target CAR-T therapy",
-          "source": "abstract_title",
-          "rules_applied": [
-            "Rule 1: Prioritize title",
-            "Rule 2: Capture all classes in title",
-            "Rule 3: Apply Title Case",
-            "Rule 25: Append 'therapy' to cell types"
-          ]
-        },
-        {
-          "extracted_text": "CD19/CD22 dual-target CAR-T therapy",
-          "normalized_form": "CD19/CD22-Targeted CAR-T Cell Therapy",
           "class_type": "MoA",
           "evidence": "Autologous hematopoietic stem cell transplantation followed by CD19/CD22 dual-target CAR-T therapy",
           "source": "abstract_title",
           "rules_applied": [
-            "Rule 1: Prioritize title",
-            "Rule 2: Capture all classes in title",
+            "Rule 1: Prioritize abstract title",
             "Rule 3: Apply Title Case",
-            "Rule 10: Alphabetical targets",
-            "Rule 11: TARGET-Modality format",
-            "Rule 25: Append 'therapy' to cell types"
+            "Rule 25: Append 'therapy' to cell type",
+            "Rule 32: Do not semantically alter modality"
           ]
         }
       ],
       "extraction_method": "tavily",
-      "reasoning": "Following Stage 1 of the extraction workflow, the abstract title was prioritized. It contains two distinct drug classes: 'Autologous hematopoietic stem cell' and 'CD19/CD22 dual-target CAR-T therapy'. These were extracted and normalized according to the rules (Rule 25 for cell therapy and Rule 10/11 for the CAR-T therapy).",
+      "reasoning": "The abstract title explicitly mentions 'Autologous hematopoietic stem cell transplantation'. Following Rule 25, the cell type 'Autologous hematopoietic stem cell' is converted to therapy format by appending 'therapy'. Rule 1 and Rule 2 prioritize classes found in the abstract title.",
       "success": true
     },
     "CD19/CD22 Dual-Target CAR-T": {
@@ -67,15 +51,15 @@
           "rules_applied": [
             "Rule 1: Prioritize abstract title",
             "Rule 3: Apply Title Case",
-            "Rule 8: Hyphenate target-modality",
-            "Rule 10: List targets alphabetically",
-            "Rule 11: Include biological targets",
-            "Rule 25: Append 'therapy' to cell type"
+            "Rule 10: List targets alphabetically (CD19 before CD22)",
+            "Rule 11: Include biological targets in TARGET-Modality format",
+            "Rule 25: Append 'therapy' to cell type (CAR-T Cell Therapy)",
+            "Rule 29: Use standard nomenclature"
           ]
         }
       ],
       "extraction_method": "tavily",
-      "reasoning": "The abstract title explicitly identifies the drug as a 'CD19/CD22 dual-target CAR-T therapy'. Following Rule 1 and Rule 2, the class from the title is prioritized. Applying Rule 25, 'CAR-T cell' is converted to 'CAR-T Cell Therapy'. Rule 11 and Rule 8 are applied to format the targets with hyphens and Title Case. Rule 10 is applied to ensure targets are listed alphabetically (CD19 before CD22).",
+      "reasoning": "The abstract title explicitly identifies the drug as a 'CD19/CD22 dual-target CAR-T therapy'. Following Rule 1 and Rule 2, the title is the highest priority source. Applying Rule 3 (Title Case), Rule 10 (Alphabetical order of targets), Rule 11 (Target-Modality format), Rule 25 (Appending 'therapy' to cell types), and Rule 29 (Standard nomenclature), the class is normalized to 'CD19/CD22-Targeted CAR-T Cell Therapy'.",
       "success": true
     }
   }

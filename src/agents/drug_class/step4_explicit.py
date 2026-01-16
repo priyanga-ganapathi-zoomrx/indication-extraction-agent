@@ -7,7 +7,7 @@ This module exports a single function. Orchestration is in pipeline.py.
 Uses with_structured_output for reliable JSON parsing.
 """
 
-from langfuse import observe
+from langfuse import observe, get_client
 from langfuse.langchain import CallbackHandler
 from langchain_core.messages import HumanMessage, SystemMessage
 
@@ -92,30 +92,35 @@ def extract_explicit_classes(input_data: ExplicitExtractionInput) -> Step4Output
     input_msg = HumanMessage(content=input_content)
     messages = [system_message, rules_msg, input_msg]
     
-    # Setup Langfuse callback if enabled
-    invoke_config = {}
+    # Setup Langfuse callback and metadata if enabled
+    langfuse_handler = None
     if is_langfuse_enabled():
-        invoke_config["callbacks"] = [CallbackHandler()]
-        invoke_config["metadata"] = {
-            "langfuse_tags": [
+        lf = get_client()
+        lf.update_current_trace(
+            tags=[
                 f"abstract_id:{input_data.abstract_id}",
                 f"prompt_version:{prompt_version}",
                 f"model:{config.EXPLICIT_MODEL}",
                 f"prompt_name:{EXTRACTION_TITLE_PROMPT_NAME}",
-            ]
-        }
+            ],
+        )
+        lf.update_current_generation(
+            model=config.EXPLICIT_MODEL,
+            metadata={
+                "abstract_id": input_data.abstract_id,
+                "prompt_version": prompt_version,
+            },
+        )
+        langfuse_handler = CallbackHandler()
+    
+    invoke_config = {"callbacks": [langfuse_handler]} if langfuse_handler else {}
     
     try:
         result: ExplicitLLMResponse = llm.invoke(messages, config=invoke_config)
-        
-        if result is None:
-            raise DrugClassExtractionError("LLM returned None for explicit extraction")
         
         # Convert to Step4Output
         output = result.to_step4_output()
         return output
         
-    except DrugClassExtractionError:
-        raise
     except Exception as e:
         raise DrugClassExtractionError(f"Explicit extraction failed: {e}") from e

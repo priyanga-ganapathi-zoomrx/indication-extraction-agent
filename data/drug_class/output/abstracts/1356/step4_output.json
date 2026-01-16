@@ -1,0 +1,19 @@
+{
+  "explicit_drug_classes": [
+    "NA"
+  ],
+  "extraction_details": [
+    {
+      "extracted_text": "antagonism of C/EBP?-dependent mesenchymal cell transition",
+      "normalized_form": "NA",
+      "class_type": "MoA",
+      "evidence": "Use of lucicebtide (ST101) in glioblastoma patients by antagonism of C/EBP?-dependent mesenchymal cell transition",
+      "source": "abstract_title",
+      "rules_applied": [
+        "Rule 36: Do not invent or infer a drug class",
+        "Rule 35: Do not capture biological processes (mesenchymal cell transition)"
+      ]
+    }
+  ],
+  "reasoning": "The title mentions 'antagonism of C/EBP?-dependent mesenchymal cell transition', but this describes a biological process/mechanism of action for the specific drug lucicebtide (ST101) rather than an explicit drug class. Per Rule 32 and Rule 36, drug classes must be explicitly stated as a modality (e.g., 'C/EBP Antagonist'). Since 'Antagonist' is used as a verb/process ('antagonism of...') and not as a standalone drug class label for the intervention, no drug class is extracted. Lucicebtide is a drug name, and its class is not to be inferred."
+}

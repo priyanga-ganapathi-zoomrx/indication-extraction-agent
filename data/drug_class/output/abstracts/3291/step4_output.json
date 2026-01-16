@@ -1,0 +1,58 @@
+{
+  "explicit_drug_classes": [
+    "NA"
+  ],
+  "extraction_details": [
+    {
+      "extracted_text": "zilovertamab vedotin",
+      "normalized_form": "NA",
+      "class_type": "Drug Name",
+      "evidence": "Phase 2 trial of zilovertamab vedotin",
+      "source": "abstract_title",
+      "rules_applied": [
+        "Rule 36: Do NOT invent or infer a drug class from a drug name"
+      ]
+    },
+    {
+      "extracted_text": "cyclophosphamide",
+      "normalized_form": "NA",
+      "class_type": "Drug Name",
+      "evidence": "in combination with cyclophosphamide",
+      "source": "abstract_title",
+      "rules_applied": [
+        "Rule 36: Do NOT invent or infer a drug class from a drug name"
+      ]
+    },
+    {
+      "extracted_text": "doxorubicin",
+      "normalized_form": "NA",
+      "class_type": "Drug Name",
+      "evidence": "doxorubicin",
+      "source": "abstract_title",
+      "rules_applied": [
+        "Rule 36: Do NOT invent or infer a drug class from a drug name"
+      ]
+    },
+    {
+      "extracted_text": "prednisone",
+      "normalized_form": "NA",
+      "class_type": "Drug Name",
+      "evidence": "prednisone",
+      "source": "abstract_title",
+      "rules_applied": [
+        "Rule 36: Do NOT invent or infer a drug class from a drug name"
+      ]
+    },
+    {
+      "extracted_text": "rituximab",
+      "normalized_form": "NA",
+      "class_type": "Drug Name",
+      "evidence": "plus rituximab",
+      "source": "abstract_title",
+      "rules_applied": [
+        "Rule 36: Do NOT invent or infer a drug class from a drug name"
+      ]
+    }
+  ],
+  "reasoning": "The abstract title mentions several specific drug names (zilovertamab vedotin, cyclophosphamide, doxorubicin, prednisone, rituximab) but does not explicitly state any drug classes for these agents. Per the instructions, drug classes must not be inferred from drug names (e.g., rituximab is not converted to CD20-Targeted Antibody). No standalone drug classes are present in the title."
+}

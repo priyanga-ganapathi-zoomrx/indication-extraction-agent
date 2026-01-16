@@ -90,18 +90,22 @@ def process_single(inp: DrugClassInput, storage: LocalStorageClient) -> ProcessR
             llm_calls = 1
         
         # Save output
-        storage.write(
+        storage.upload_json(
             f"abstracts/{abstract_id}/step4_output.json",
-            step4_output.model_dump_json(indent=2)
+            step4_output.model_dump()
         )
         
         # Update status
-        status_data = storage.read(f"abstracts/{abstract_id}/status.json")
-        status = PipelineStatus(**json.loads(status_data)) if status_data else PipelineStatus(abstract_id=abstract_id, abstract_title=inp.abstract_title)
+        try:
+            status_data = storage.download_json(f"abstracts/{abstract_id}/status.json")
+            status = PipelineStatus(**status_data)
+        except FileNotFoundError:
+            status = PipelineStatus(abstract_id=abstract_id, abstract_title=inp.abstract_title)
         status.steps["step4_explicit"] = {"status": "success", "llm_calls": llm_calls}
         status.last_completed_step = "step4_explicit"
         status.total_llm_calls += llm_calls
-        storage.write(f"abstracts/{abstract_id}/status.json", json.dumps(status.to_dict(), indent=2, ensure_ascii=False))
+        status.last_updated = datetime.utcnow().isoformat() + "Z"
+        storage.upload_json(f"abstracts/{abstract_id}/status.json", status.to_dict())
         
         return ProcessResult(
             abstract_id=abstract_id,
@@ -133,7 +137,7 @@ def save_results(results: list[tuple[int, ProcessResult]], original_rows: list[d
 
 def main():
     parser = argparse.ArgumentParser(description="Step 4 Processor: Explicit Drug Class Extraction")
-    parser.add_argument("--input", required=True, help="Input CSV file")
+    parser.add_argument("--input", default="data/drug_class/input/drugs.csv", help="Input CSV file")
     parser.add_argument("--output_dir", default="data/drug_class/output", help="Output directory")
     parser.add_argument("--output_csv", default=None, help="Output CSV file")
     parser.add_argument("--limit", type=int, default=None, help="Limit abstracts")
