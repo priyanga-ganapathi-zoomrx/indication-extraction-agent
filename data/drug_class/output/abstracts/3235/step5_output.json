@@ -1,0 +1,9 @@
+{
+  "refined_explicit_classes": [
+    "NA"
+  ],
+  "removed_classes": [
+    "CD19/CD22-Targeted CAR-T Cell Therapy"
+  ],
+  "reasoning": "The explicit drug class 'CD19/CD22-Targeted CAR-T Cell Therapy' was removed because it is an exact match for the class already associated with the specific drug 'CD19/CD22 Dual-Target CAR-T' per Consolidation Rule 1."
+}

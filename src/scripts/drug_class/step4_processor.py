@@ -22,7 +22,6 @@ from src.agents.drug_class import (
     extract_explicit_classes,
     DrugClassInput,
     ExplicitExtractionInput,
-    Step4Output,
     PipelineStatus,
     config,
 )

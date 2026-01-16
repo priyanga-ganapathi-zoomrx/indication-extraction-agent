@@ -9,7 +9,7 @@ Uses with_structured_output for reliable JSON parsing.
 
 import json
 
-from langfuse import observe
+from langfuse import observe, get_client
 from langfuse.langchain import CallbackHandler
 from langchain_core.messages import HumanMessage, SystemMessage
 
@@ -120,32 +120,39 @@ def consolidate_drug_classes(input_data: ConsolidationInput) -> Step5Output:
     input_msg = HumanMessage(content=input_content)
     messages = [system_message, rules_msg, input_msg]
     
-    # Setup Langfuse callback if enabled
-    invoke_config = {}
+    # Setup Langfuse callback and metadata if enabled
+    langfuse_handler = None
     if is_langfuse_enabled():
-        invoke_config["callbacks"] = [CallbackHandler()]
-        invoke_config["metadata"] = {
-            "langfuse_tags": [
+        lf = get_client()
+        lf.update_current_trace(
+            tags=[
                 f"abstract_id:{input_data.abstract_id}",
                 f"prompt_version:{prompt_version}",
                 f"model:{config.CONSOLIDATION_MODEL}",
                 f"prompt_name:{CONSOLIDATION_PROMPT_NAME}",
                 f"explicit_classes_count:{len(input_data.explicit_drug_classes)}",
                 f"drug_selections_count:{len(input_data.drug_selections)}",
-            ]
-        }
+            ],
+        )
+        lf.update_current_generation(
+            model=config.CONSOLIDATION_MODEL,
+            metadata={
+                "abstract_id": input_data.abstract_id,
+                "prompt_version": prompt_version,
+                "explicit_classes_count": len(input_data.explicit_drug_classes),
+                "drug_selections_count": len(input_data.drug_selections),
+            },
+        )
+        langfuse_handler = CallbackHandler()
+    
+    invoke_config = {"callbacks": [langfuse_handler]} if langfuse_handler else {}
     
     try:
         result: ConsolidationLLMResponse = llm.invoke(messages, config=invoke_config)
-        
-        if result is None:
-            raise DrugClassExtractionError("LLM returned None for consolidation")
         
         # Convert to Step5Output
         output = result.to_step5_output()
         return output
         
-    except DrugClassExtractionError:
-        raise
     except Exception as e:
         raise DrugClassExtractionError(f"Consolidation failed: {e}") from e

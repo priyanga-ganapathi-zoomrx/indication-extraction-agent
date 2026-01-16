@@ -82,16 +82,17 @@ def process_single(inp: DrugClassInput, storage: LocalStorageClient) -> ProcessR
     abstract_id = inp.abstract_id
     
     # Load step3 and step4 outputs
-    step3_data = storage.read(f"abstracts/{abstract_id}/step3_output.json")
-    step4_data = storage.read(f"abstracts/{abstract_id}/step4_output.json")
-    
-    if not step3_data:
+    try:
+        step3_data = storage.download_json(f"abstracts/{abstract_id}/step3_output.json")
+        step3_output = Step3Output(**step3_data)
+    except FileNotFoundError:
         return ProcessResult(abstract_id=abstract_id, error="Step 3 output not found")
-    if not step4_data:
-        return ProcessResult(abstract_id=abstract_id, error="Step 4 output not found")
     
-    step3_output = Step3Output(**json.loads(step3_data))
-    step4_output = Step4Output(**json.loads(step4_data))
+    try:
+        step4_data = storage.download_json(f"abstracts/{abstract_id}/step4_output.json")
+        step4_output = Step4Output(**step4_data)
+    except FileNotFoundError:
+        return ProcessResult(abstract_id=abstract_id, error="Step 4 output not found")
     
     llm_calls = 0
     
@@ -116,19 +117,23 @@ def process_single(inp: DrugClassInput, storage: LocalStorageClient) -> ProcessR
             llm_calls = 1
         
         # Save output
-        storage.write(
+        storage.upload_json(
             f"abstracts/{abstract_id}/step5_output.json",
-            step5_output.model_dump_json(indent=2)
+            step5_output.model_dump()
         )
         
         # Update status
-        status_data = storage.read(f"abstracts/{abstract_id}/status.json")
-        status = PipelineStatus(**json.loads(status_data)) if status_data else PipelineStatus(abstract_id=abstract_id, abstract_title=inp.abstract_title)
+        try:
+            status_data = storage.download_json(f"abstracts/{abstract_id}/status.json")
+            status = PipelineStatus(**status_data)
+        except FileNotFoundError:
+            status = PipelineStatus(abstract_id=abstract_id, abstract_title=inp.abstract_title)
         status.steps["step5_consolidation"] = {"status": "success", "llm_calls": llm_calls}
         status.last_completed_step = "step5_consolidation"
         status.pipeline_status = "success"
         status.total_llm_calls += llm_calls
-        storage.write(f"abstracts/{abstract_id}/status.json", json.dumps(status.to_dict(), indent=2, ensure_ascii=False))
+        status.last_updated = datetime.utcnow().isoformat() + "Z"
+        storage.upload_json(f"abstracts/{abstract_id}/status.json", status.to_dict())
         
         return ProcessResult(
             abstract_id=abstract_id,
@@ -162,7 +167,7 @@ def save_results(results: list[tuple[int, ProcessResult]], original_rows: list[d
 
 def main():
     parser = argparse.ArgumentParser(description="Step 5 Processor: Consolidation")
-    parser.add_argument("--input", required=True, help="Input CSV file")
+    parser.add_argument("--input", default="data/drug_class/input/drugs.csv", help="Input CSV file")
     parser.add_argument("--output_dir", default="data/drug_class/output", help="Output directory")
     parser.add_argument("--output_csv", default=None, help="Output CSV file")
     parser.add_argument("--limit", type=int, default=None, help="Limit abstracts")
