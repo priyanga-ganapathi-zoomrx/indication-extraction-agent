@@ -82,7 +82,7 @@ def _format_validation_input(input_data: ValidationInput) -> str:
     
     # Format extraction details
     extraction_details = extraction_result.get("extraction_details", [])
-    extraction_details_str = json.dumps(extraction_details, indent=2) if extraction_details else "[]"
+    extraction_details_str = json.dumps(extraction_details, indent=2, ensure_ascii=False) if extraction_details else "[]"
     
     input_content = f"""## Validation Input
 

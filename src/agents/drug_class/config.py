@@ -39,54 +39,54 @@ class DrugClassConfig(BaseSettings):
         description="Model for drug class extraction (complex reasoning)"
     )
     EXTRACTION_TEMPERATURE: float = Field(default=0)
-    EXTRACTION_MAX_TOKENS: int = Field(default=16384)
+    EXTRACTION_MAX_TOKENS: int = Field(default=50000)
     
     GROUNDED_MODEL: str = Field(
-        default="openai/gpt-4o-search-preview",
+        default="gemini/gemini-3-flash-preview",
         description="Model for grounded search fallback (OpenAI with web search)"
     )
     GROUNDED_TEMPERATURE: float = Field(default=0)
-    GROUNDED_MAX_TOKENS: int = Field(default=8192)
+    GROUNDED_MAX_TOKENS: int = Field(default=50000)
     
     # ==========================================================================
     # Step 3: Selection
     # ==========================================================================
     SELECTION_MODEL: str = Field(
-        default="gemini/gemini-2.5-flash",
+        default="gemini/gemini-3-flash-preview",
         description="Model for drug class selection"
     )
     SELECTION_TEMPERATURE: float = Field(default=0)
-    SELECTION_MAX_TOKENS: int = Field(default=4096)
+    SELECTION_MAX_TOKENS: int = Field(default=50000)
     
     # ==========================================================================
     # Step 4: Explicit Extraction
     # ==========================================================================
     EXPLICIT_MODEL: str = Field(
-        default="gemini/gemini-2.5-flash",
+        default="gemini/gemini-3-flash-preview",
         description="Model for explicit drug class extraction from title"
     )
     EXPLICIT_TEMPERATURE: float = Field(default=0)
-    EXPLICIT_MAX_TOKENS: int = Field(default=4096)
+    EXPLICIT_MAX_TOKENS: int = Field(default=50000)
     
     # ==========================================================================
     # Step 5: Consolidation
     # ==========================================================================
     CONSOLIDATION_MODEL: str = Field(
-        default="gemini/gemini-2.5-flash",
+        default="gemini/gemini-3-flash-preview",
         description="Model for consolidation"
     )
     CONSOLIDATION_TEMPERATURE: float = Field(default=0)
-    CONSOLIDATION_MAX_TOKENS: int = Field(default=4096)
+    CONSOLIDATION_MAX_TOKENS: int = Field(default=50000)
     
     # ==========================================================================
     # Validation
     # ==========================================================================
     VALIDATION_MODEL: str = Field(
-        default="gemini/gemini-2.5-pro",
+        default="gemini/gemini-3-flash-preview",
         description="Model for validation (requires strong reasoning)"
     )
     VALIDATION_TEMPERATURE: float = Field(default=0)
-    VALIDATION_MAX_TOKENS: int = Field(default=16384)
+    VALIDATION_MAX_TOKENS: int = Field(default=50000)
     
     # ==========================================================================
     # Prompt settings

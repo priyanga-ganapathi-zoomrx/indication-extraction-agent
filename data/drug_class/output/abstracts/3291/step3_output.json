@@ -1,0 +1,46 @@
+{
+  "drug_status": {
+    "Zilovertamab Vedotin": "success",
+    "Cyclophosphamide": "success",
+    "Doxorubicin": "success",
+    "Prednisone": "success",
+    "Rituximab": "success"
+  },
+  "selections": {
+    "Zilovertamab Vedotin": {
+      "drug_name": "Zilovertamab Vedotin",
+      "selected_drug_classes": [
+        "ROR1-Targeted Antibody Drug Conjugate"
+      ],
+      "reasoning": "After reviewing the 36 extraction rules, I understand that Rule 11 requires including the biological target when known and Rule 38 requires expanding abbreviations like ADC. Analyzing the evidence: (1) 'Antibody Drug Conjugate' is a general MoA class, (2) 'ROR1-Targeted Antibody Drug Conjugate' is a specific MoA class that includes the biological target (ROR1) as supported by the source text. Applied Selection Rule 2 (Specificity): Both candidates are MoA class types. 'ROR1-Targeted Antibody Drug Conjugate' is the more specific child class of 'Antibody Drug Conjugate'. Therefore, the more specific class is selected and the parent class is excluded per Rule 3 (Redundancy Control)."
+    },
+    "Cyclophosphamide": {
+      "drug_name": "Cyclophosphamide",
+      "selected_drug_classes": [
+        "Alkylating Agent"
+      ],
+      "reasoning": "After reviewing the 36 extraction rules and analyzing the evidence, I applied the selection rules to determine the optimal class. (1) Rule 1 (Class Type Priority): 'Alkylating Agent' is categorized as an MoA (Mechanism of Action) class, which holds the highest priority. (2) Rule 34 (Redundancy Control): 'Antineoplastic Agent' is explicitly listed as a generic label to be excluded under Rule 34. (3) Rule 1 (Class Type Priority): The MoA 'Alkylating Agent' takes precedence over the Chemical class 'Nitrogen Mustard' and the Therapeutic classes 'Immunosuppressive Agent' and 'Antirheumatic Drug'. The evidence from PubChem and NCBI confirms that alkylation is the primary mechanism of action for this drug. Therefore, 'Alkylating Agent' is the most appropriate selection."
+    },
+    "Doxorubicin": {
+      "drug_name": "Doxorubicin",
+      "selected_drug_classes": [
+        "Anthracycline Topoisomerase Inhibitor"
+      ],
+      "reasoning": "After reviewing the 36 extraction rules and analyzing the evidence, I applied the selection rules as follows: (1) Rule 1 (Class Type Priority): MoA classes ('Anthracycline Topoisomerase Inhibitor' and 'Topoisomerase Inhibitor') take priority over the Chemical class ('Anthracycline Antibiotic'). (2) Rule 2 (Specificity): Between the two MoA candidates, 'Anthracycline Topoisomerase Inhibitor' is more specific than 'Topoisomerase Inhibitor' as it incorporates the specific chemical-mechanistic subtype mentioned in the evidence. This aligns with extraction Rule 7 (do not generalize subtype wording) and Rule 11 (include biological target/mechanism specificity). Therefore, the most specific MoA class was selected."
+    },
+    "Prednisone": {
+      "drug_name": "Prednisone",
+      "selected_drug_classes": [
+        "Glucocorticoid"
+      ],
+      "reasoning": "After reviewing the 36 extraction rules and applying the selection hierarchy, I identified multiple candidate classes across MoA, Chemical, and Therapeutic types. Following Selection Rule 1 (Class Type Priority), MoA is the highest priority. Within the MoA candidates ('Glucocorticoid', 'Corticosteroid', and 'Adrenergic Agent'), I applied Selection Rule 2 (Specificity). 'Glucocorticoid' is a more specific subtype of 'Corticosteroid' (which also includes mineralocorticoids). While 'Adrenergic Agent' was mentioned in PubChem, the primary pharmacological mechanism of Prednisone is as a glucocorticoid receptor ligand. Therapeutic classes like 'Antineoplastic Agent' and 'Immunosuppressive Agent' were excluded per Selection Rule 3 as higher-priority MoA classes were available. Therefore, 'Glucocorticoid' is the most specific and highest-priority class."
+    },
+    "Rituximab": {
+      "drug_name": "Rituximab",
+      "selected_drug_classes": [
+        "CD20-Targeted Monoclonal Antibody"
+      ],
+      "reasoning": "After reviewing the 36 extraction rules and analyzing the evidence, I applied the selection rules as follows: (1) Rule 1 (Class Type Priority): MoA is the highest priority class type. I excluded 'CD20-Directed Cytolytic Antibody' as it was categorized as Therapeutic. (2) Rule 2 (Specificity): Among the MoA candidates, 'CD20-Targeted Monoclonal Antibody' is the most specific and scientifically descriptive. 'CD20-Targeted Antibody' is a parent class (less specific), and 'CD20-Directed Antibody Interaction' is a less precise description of the modality. (3) Extraction Rule 7 and 9: The evidence 'anti-CD20 monoclonal antibody' was correctly transformed to 'CD20-Targeted Monoclonal Antibody' to maintain the specific 'monoclonal' subtype while following the required 'Targeted' formatting. This provides the highest level of mechanistic specificity for Rituximab."
+    }
+  }
+}

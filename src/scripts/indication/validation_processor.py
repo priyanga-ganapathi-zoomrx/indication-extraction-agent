@@ -147,7 +147,7 @@ def save_results(
     response_column = f"{model_name}_validation_response"
     fieldnames = input_fieldnames + [response_column]
     
-    with open(output_path, "w", newline="", encoding="utf-8") as f:
+    with open(output_path, "w", newline="", encoding="utf-8-sig") as f:
         writer = csv.DictWriter(f, fieldnames=fieldnames)
         writer.writeheader()
         

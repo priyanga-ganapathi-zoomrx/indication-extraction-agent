@@ -2,7 +2,7 @@
   "abstract_id": "1356",
   "abstract_title": "Use of lucicebtide (ST101) in glioblastoma patients by antagonism of C/EBP?-dependent mesenchymal cell transition and immunosuppressive M2 macrophage polarization.",
   "pipeline_status": "pending",
-  "last_completed_step": "step2_extraction",
+  "last_completed_step": "step3_selection",
   "failed_step": null,
   "error": null,
   "steps": {
@@ -13,8 +13,12 @@
     "step2_extraction": {
       "status": "success",
       "llm_calls": 1
+    },
+    "step3_selection": {
+      "status": "success",
+      "llm_calls": 1
     }
   },
-  "total_llm_calls": 2,
-  "last_updated": "2026-01-16T12:30:11.621913Z"
+  "total_llm_calls": 7,
+  "last_updated": "2026-01-16T14:07:23.228463Z"
 }

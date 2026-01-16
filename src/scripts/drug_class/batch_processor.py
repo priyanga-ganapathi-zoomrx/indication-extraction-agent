@@ -352,7 +352,8 @@ def process_step3_single(inp: DrugClassInput, storage: LocalStorageClient) -> di
                 # No LLM needed - just copy the single class
                 from src.agents.drug_class.schemas import DrugSelectionResult
                 if extraction_result.extraction_details:
-                    selected = [extraction_result.extraction_details[0].get("normalized_form", "NA")]
+                    first_detail = extraction_result.extraction_details[0]
+                    selected = [first_detail.normalized_form or first_detail.extracted_text or "NA"]
                 else:
                     selected = extraction_result.drug_classes or ["NA"]
                 

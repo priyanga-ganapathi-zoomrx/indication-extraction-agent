@@ -130,8 +130,20 @@ def extract_with_tavily(input_data: DrugClassExtractionInput) -> DrugExtractionR
     llm = base_llm.with_structured_output(DrugClassLLMResponse)
     
     # Build messages
-    system_message = SystemMessage(content=system_prompt)
-    rules_msg = HumanMessage(content=rules_message)
+    if config.ENABLE_PROMPT_CACHING:
+        system_message = SystemMessage(content=[{
+            "type": "text",
+            "text": system_prompt,
+            "cache_control": {"type": "ephemeral"}
+        }])
+        rules_msg = HumanMessage(content=[{
+            "type": "text",
+            "text": rules_message,
+            "cache_control": {"type": "ephemeral"}
+        }])
+    else:
+        system_message = SystemMessage(content=system_prompt)
+        rules_msg = HumanMessage(content=rules_message)
     input_msg = HumanMessage(content=input_content)
     messages = [system_message, rules_msg, input_msg]
     
@@ -226,12 +238,28 @@ def extract_with_grounded(input_data: DrugClassExtractionInput) -> DrugExtractio
     llm = base_llm.with_structured_output(GroundedSearchLLMResponse)
     
     # Build messages
-    system_message = SystemMessage(content=system_prompt)
-    messages = [system_message]
-    
-    if rules_message:
-        rules_msg = HumanMessage(content=rules_message)
-        messages.append(rules_msg)
+    if config.ENABLE_PROMPT_CACHING:
+        system_message = SystemMessage(content=[{
+            "type": "text",
+            "text": system_prompt,
+            "cache_control": {"type": "ephemeral"}
+        }])
+        messages = [system_message]
+        
+        if rules_message:
+            rules_msg = HumanMessage(content=[{
+                "type": "text",
+                "text": rules_message,
+                "cache_control": {"type": "ephemeral"}
+            }])
+            messages.append(rules_msg)
+    else:
+        system_message = SystemMessage(content=system_prompt)
+        messages = [system_message]
+        
+        if rules_message:
+            rules_msg = HumanMessage(content=rules_message)
+            messages.append(rules_msg)
     
     messages.append(HumanMessage(content=input_content))
     

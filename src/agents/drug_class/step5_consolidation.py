@@ -69,10 +69,10 @@ def consolidate_drug_classes(input_data: ConsolidationInput) -> Step5Output:
     explicit_data = {
         "drug_classes": input_data.explicit_drug_classes,
     }
-    explicit_json = json.dumps(explicit_data, indent=2)
+    explicit_json = json.dumps(explicit_data, indent=2, ensure_ascii=False)
     
     # Format drug selections as JSON
-    selections_json = json.dumps(input_data.drug_selections, indent=2)
+    selections_json = json.dumps(input_data.drug_selections, indent=2, ensure_ascii=False)
     
     # Build input message
     if input_template:

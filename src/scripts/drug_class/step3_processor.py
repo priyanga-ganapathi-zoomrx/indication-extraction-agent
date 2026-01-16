@@ -82,11 +82,12 @@ def process_single(inp: DrugClassInput, storage: LocalStorageClient) -> ProcessR
     abstract_id = inp.abstract_id
     
     # Load step2 output
-    step2_data = storage.read(f"abstracts/{abstract_id}/step2_output.json")
-    if not step2_data:
+    try:
+        step2_data = storage.download_json(f"abstracts/{abstract_id}/step2_output.json")
+    except FileNotFoundError:
         return ProcessResult(abstract_id=abstract_id, error="Step 2 output not found")
     
-    step2_output = Step2Output(**json.loads(step2_data))
+    step2_output = Step2Output(**step2_data)
     
     step3_output = Step3Output()
     llm_calls = 0
@@ -97,7 +98,8 @@ def process_single(inp: DrugClassInput, storage: LocalStorageClient) -> ProcessR
             if not needs_llm_selection(extraction_result.extraction_details):
                 # No LLM needed
                 if extraction_result.extraction_details:
-                    selected = [extraction_result.extraction_details[0].get("normalized_form", "NA")]
+                    first_detail = extraction_result.extraction_details[0]
+                    selected = [first_detail.normalized_form or first_detail.extracted_text or "NA"]
                 else:
                     selected = extraction_result.drug_classes or ["NA"]
                 
@@ -117,18 +119,22 @@ def process_single(inp: DrugClassInput, storage: LocalStorageClient) -> ProcessR
             step3_output.mark_success(drug_name, result)
         
         # Save output
-        storage.write(
+        storage.upload_json(
             f"abstracts/{abstract_id}/step3_output.json",
-            step3_output.model_dump_json(indent=2)
+            step3_output.model_dump()
         )
         
         # Update status
-        status_data = storage.read(f"abstracts/{abstract_id}/status.json")
-        status = PipelineStatus(**json.loads(status_data)) if status_data else PipelineStatus(abstract_id=abstract_id, abstract_title=inp.abstract_title)
+        try:
+            status_data = storage.download_json(f"abstracts/{abstract_id}/status.json")
+            status = PipelineStatus(**status_data)
+        except FileNotFoundError:
+            status = PipelineStatus(abstract_id=abstract_id, abstract_title=inp.abstract_title)
         status.steps["step3_selection"] = {"status": "success", "llm_calls": llm_calls}
         status.last_completed_step = "step3_selection"
         status.total_llm_calls += llm_calls
-        storage.write(f"abstracts/{abstract_id}/status.json", json.dumps(status.to_dict(), indent=2, ensure_ascii=False))
+        status.last_updated = datetime.utcnow().isoformat() + "Z"
+        storage.upload_json(f"abstracts/{abstract_id}/status.json", status.to_dict())
         
         return ProcessResult(
             abstract_id=abstract_id,
@@ -146,7 +152,7 @@ def save_results(results: list[tuple[int, ProcessResult]], original_rows: list[d
     
     output_fieldnames = fieldnames + ["step3_selections", "step3_llm_calls", "step3_error"]
     
-    with open(output_path, "w", newline="", encoding="utf-8") as f:
+    with open(output_path, "w", newline="", encoding="utf-8-sig") as f:
         writer = csv.DictWriter(f, fieldnames=output_fieldnames)
         writer.writeheader()
         
@@ -160,7 +166,7 @@ def save_results(results: list[tuple[int, ProcessResult]], original_rows: list[d
 
 def main():
     parser = argparse.ArgumentParser(description="Step 3 Processor: Drug Class Selection")
-    parser.add_argument("--input", required=True, help="Input CSV file")
+    parser.add_argument("--input", default="data/drug_class/input/drugs.csv", help="Input CSV file")
     parser.add_argument("--output_dir", default="data/drug_class/output", help="Output directory")
     parser.add_argument("--output_csv", default=None, help="Output CSV file")
     parser.add_argument("--limit", type=int, default=None, help="Limit abstracts")

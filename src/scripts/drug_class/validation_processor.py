@@ -175,7 +175,7 @@ def save_results(
         "validation_error"
     ]
     
-    with open(output_path, "w", newline="", encoding="utf-8") as f:
+    with open(output_path, "w", newline="", encoding="utf-8-sig") as f:
         writer = csv.DictWriter(f, fieldnames=output_fieldnames)
         writer.writeheader()
         

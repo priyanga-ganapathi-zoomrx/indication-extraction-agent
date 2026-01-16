@@ -10,7 +10,7 @@ Uses with_structured_output for reliable JSON parsing.
 
 import json
 
-from langfuse import observe
+from langfuse import observe, get_client
 from langfuse.langchain import CallbackHandler
 from langchain_core.messages import HumanMessage, SystemMessage
 
@@ -56,9 +56,9 @@ def select_drug_class(input_data: SelectionInput) -> DrugSelectionResult:
     
     # Handle edge case: only one unique class - no LLM call needed
     unique_classes = list(set(
-        detail.get('normalized_form', detail.get('extracted_text', ''))
+        detail.normalized_form or detail.extracted_text
         for detail in input_data.extraction_details
-        if detail.get('normalized_form') or detail.get('extracted_text')
+        if detail.normalized_form or detail.extracted_text
     ))
     
     if len(unique_classes) <= 1:
@@ -76,21 +76,18 @@ def select_drug_class(input_data: SelectionInput) -> DrugSelectionResult:
     extracted_classes = []
     for detail in input_data.extraction_details:
         extracted_classes.append({
-            "extracted_text": detail.get("extracted_text", ""),
-            "class_type": detail.get("class_type", "Therapeutic"),
-            "drug_class": detail.get("normalized_form", detail.get("extracted_text", "")),
-            "evidence": detail.get("evidence", ""),
-            "source": detail.get("source", ""),
-            "rules_applied": detail.get("rules_applied", []),
+            "extracted_text": detail.extracted_text or "",
+            "class_type": detail.class_type or "Therapeutic",
+            "drug_class": detail.normalized_form or detail.extracted_text or "",
+            "evidence": detail.evidence or "",
+            "source": detail.source or "",
+            "rules_applied": detail.rules_applied or [],
         })
     
     input_json = json.dumps({
         "drug_name": input_data.drug_name,
         "extracted_classes": extracted_classes,
-    }, indent=2)
-    
-    # Substitute input into prompt
-    prompt_with_input = selection_prompt.replace("{input_json}", input_json)
+    }, indent=2, ensure_ascii=False)
     
     # Create LLM with structured output
     base_llm = create_llm(LLMConfig(
@@ -102,11 +99,11 @@ def select_drug_class(input_data: SelectionInput) -> DrugSelectionResult:
     ))
     llm = base_llm.with_structured_output(DrugSelectionResult)
     
-    # Build messages
+    # Build messages - system prompt is static (enables prompt caching)
     if config.ENABLE_PROMPT_CACHING:
         system_message = SystemMessage(content=[{
             "type": "text",
-            "text": prompt_with_input,
+            "text": selection_prompt,
             "cache_control": {"type": "ephemeral"}
         }])
         rules_msg = HumanMessage(content=[{
@@ -115,35 +112,49 @@ def select_drug_class(input_data: SelectionInput) -> DrugSelectionResult:
             "cache_control": {"type": "ephemeral"}
         }])
     else:
-        system_message = SystemMessage(content=prompt_with_input)
+        system_message = SystemMessage(content=selection_prompt)
         rules_msg = HumanMessage(content=rules_message)
     
-    instruction_msg = HumanMessage(
-        content="Understand the extraction rules, analyze the evidence for each extracted class, "
-                "and select the most appropriate drug class(es) based on the selection rules."
+    # Input as a separate user message (not in system prompt for caching)
+    input_msg = HumanMessage(
+        content=f"""## INPUT
+
+```json
+{input_json}
+```
+
+Understand the extraction rules, analyze the evidence for each extracted class, and select the most appropriate drug class(es) based on the selection rules."""
     )
     
-    messages = [system_message, rules_msg, instruction_msg]
+    messages = [system_message, rules_msg, input_msg]
     
-    # Setup Langfuse callback if enabled
-    invoke_config = {}
+    # Setup Langfuse callback and metadata if enabled
+    langfuse_handler = None
     if is_langfuse_enabled():
-        invoke_config["callbacks"] = [CallbackHandler()]
-        invoke_config["metadata"] = {
-            "langfuse_tags": [
+        lf = get_client()
+        lf.update_current_trace(
+            tags=[
                 f"abstract_id:{input_data.abstract_id}",
                 f"drug:{input_data.drug_name}",
                 f"prompt_version:{prompt_version}",
                 f"model:{config.SELECTION_MODEL}",
                 f"prompt_name:{SELECTION_PROMPT_NAME}",
-            ]
-        }
+            ],
+        )
+        lf.update_current_generation(
+            model=config.SELECTION_MODEL,
+            metadata={
+                "abstract_id": input_data.abstract_id,
+                "drug": input_data.drug_name,
+                "prompt_version": prompt_version,
+            },
+        )
+        langfuse_handler = CallbackHandler()
+    
+    invoke_config = {"callbacks": [langfuse_handler]} if langfuse_handler else {}
     
     try:
         result: DrugSelectionResult = llm.invoke(messages, config=invoke_config)
-        
-        if result is None:
-            raise DrugClassExtractionError(f"LLM returned None for {input_data.drug_name}")
         
         # Ensure drug_name is set
         if not result.drug_name:
@@ -155,19 +166,17 @@ def select_drug_class(input_data: SelectionInput) -> DrugSelectionResult:
         
         return result
         
-    except DrugClassExtractionError:
-        raise
     except Exception as e:
         raise DrugClassExtractionError(f"Selection failed for {input_data.drug_name}: {e}") from e
 
 
-def needs_llm_selection(extraction_details: list[dict]) -> bool:
+def needs_llm_selection(extraction_details: list) -> bool:
     """Check if LLM selection is needed for given extraction details.
     
     Returns False if there's 0 or 1 unique classes (no selection needed).
     
     Args:
-        extraction_details: List of extraction detail dicts
+        extraction_details: List of ExtractionDetail objects
         
     Returns:
         True if LLM call is needed, False otherwise
@@ -176,9 +185,9 @@ def needs_llm_selection(extraction_details: list[dict]) -> bool:
         return False
     
     unique_classes = set(
-        detail.get('normalized_form', detail.get('extracted_text', ''))
+        detail.normalized_form or detail.extracted_text
         for detail in extraction_details
-        if detail.get('normalized_form') or detail.get('extracted_text')
+        if detail.normalized_form or detail.extracted_text
     )
     
     return len(unique_classes) > 1

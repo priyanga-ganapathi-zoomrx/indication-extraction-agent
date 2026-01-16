@@ -119,7 +119,7 @@ def save_results(results: list[tuple[int, ProcessResult]], original_rows: list[d
     
     output_fieldnames = fieldnames + ["step4_explicit_classes", "step4_llm_calls", "step4_error"]
     
-    with open(output_path, "w", newline="", encoding="utf-8") as f:
+    with open(output_path, "w", newline="", encoding="utf-8-sig") as f:
         writer = csv.DictWriter(f, fieldnames=output_fieldnames)
         writer.writeheader()
         

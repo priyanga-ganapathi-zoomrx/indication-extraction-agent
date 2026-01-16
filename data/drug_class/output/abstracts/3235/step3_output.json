@@ -1,0 +1,22 @@
+{
+  "drug_status": {
+    "Autologous Hematopoietic Stem Cell": "success",
+    "CD19/CD22 Dual-Target CAR-T": "success"
+  },
+  "selections": {
+    "Autologous Hematopoietic Stem Cell": {
+      "drug_name": "Autologous Hematopoietic Stem Cell",
+      "selected_drug_classes": [
+        "Autologous Hematopoietic Stem Cell Therapy"
+      ],
+      "reasoning": "After reviewing the 36 extraction rules, I analyzed the evidence for the two candidate classes. The drug name in question is 'Autologous Hematopoietic Stem Cell'. While the source text mentions both 'Autologous Hematopoietic Stem Cell Therapy' and 'CD19/CD22-Targeted CAR-T Cell Therapy', the latter refers to a subsequent treatment ('followed by...') rather than the drug itself. Following Rule 25, cell types must be converted to therapy format. Although 'CD19/CD22-Targeted CAR-T Cell Therapy' is a higher-priority MoA class type, it describes a different therapeutic agent mentioned in the regimen context. Therefore, 'Autologous Hematopoietic Stem Cell Therapy' is the only class that correctly describes the drug name provided."
+    },
+    "CD19/CD22 Dual-Target CAR-T": {
+      "drug_name": "CD19/CD22 Dual-Target CAR-T",
+      "selected_drug_classes": [
+        "CD19/CD22-Targeted CAR-T Cell Therapy"
+      ],
+      "reasoning": "Single class - no selection needed"
+    }
+  }
+}
