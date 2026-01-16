@@ -376,6 +376,7 @@ def run_drug_class_pipeline(
                         abstract_id=abstract_id,
                         abstract_title=input_data.abstract_title,
                         drug=drug,
+                        full_abstract=input_data.full_abstract,
                         firms=firms,
                         drug_class_results=drug_class_results,
                         firm_search_results=firm_results,

@@ -19,6 +19,7 @@ class DrugClassInput:
     """
     abstract_id: str
     abstract_title: str
+    full_abstract: str = ""
     primary_drugs: list[str] = field(default_factory=list)
     secondary_drugs: list[str] = field(default_factory=list)
     comparator_drugs: list[str] = field(default_factory=list)
@@ -47,6 +48,7 @@ class DrugClassExtractionInput:
     abstract_id: str
     abstract_title: str
     drug: str
+    full_abstract: str = ""
     firms: list[str] = field(default_factory=list)
     drug_class_results: list[dict] = field(default_factory=list)  # From Tavily drug class search
     firm_search_results: list[dict] = field(default_factory=list)  # From Tavily firm search

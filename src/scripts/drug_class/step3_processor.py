@@ -58,10 +58,12 @@ def load_abstracts(csv_path: str, limit: int = None) -> tuple[list[DrugClassInpu
         header_map = {h.lower().strip(): h for h in fieldnames}
         id_col = header_map.get('abstract_id') or header_map.get('id')
         title_col = header_map.get('abstract_title') or header_map.get('title')
+        abstract_col = header_map.get('full_abstract') or header_map.get('abstract')
         
         for row in reader:
             abstract_id = row.get(id_col, "") if id_col else ""
             abstract_title = row.get(title_col, "") if title_col else ""
+            full_abstract = row.get(abstract_col, "") if abstract_col else ""
             
             if not abstract_id:
                 continue
@@ -69,6 +71,7 @@ def load_abstracts(csv_path: str, limit: int = None) -> tuple[list[DrugClassInpu
             inputs.append(DrugClassInput(
                 abstract_id=str(abstract_id),
                 abstract_title=str(abstract_title),
+                full_abstract=str(full_abstract),
             ))
             original_rows.append(row)
     

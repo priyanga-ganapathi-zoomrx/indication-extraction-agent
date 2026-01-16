@@ -11,7 +11,7 @@ This module exports a single function. Uses with_structured_output for reliable 
 
 import json
 
-from langfuse import observe
+from langfuse import observe, get_client
 from langfuse.langchain import CallbackHandler
 from langchain_core.messages import HumanMessage, SystemMessage
 
@@ -26,7 +26,6 @@ from src.agents.drug_class.schemas import (
     ValidationInput,
     ValidationLLMResponse,
     ValidationOutput,
-    DrugClassExtractionError,
 )
 
 
@@ -178,30 +177,36 @@ END OF REFERENCE RULES DOCUMENT"""
     input_msg = HumanMessage(content=input_content)
     messages = [system_msg, reference_rules_msg, input_msg]
     
-    # Setup Langfuse callback if enabled
-    invoke_config = {}
+    # Setup Langfuse callback and metadata if enabled
+    langfuse_handler = None
     if is_langfuse_enabled():
-        invoke_config["callbacks"] = [CallbackHandler()]
-        invoke_config["metadata"] = {
-            "langfuse_tags": [
+        lf = get_client()
+        lf.update_current_trace(
+            tags=[
                 f"abstract_id:{input_data.abstract_id}",
                 f"drug:{input_data.drug_name}",
                 f"prompt_version:{prompt_version}",
                 f"model:{config.VALIDATION_MODEL}",
                 f"prompt_name:{VALIDATION_PROMPT_NAME}",
-            ]
-        }
+            ],
+        )
+        lf.update_current_generation(
+            model=config.VALIDATION_MODEL,
+            metadata={
+                "abstract_id": input_data.abstract_id,
+                "drug": input_data.drug_name,
+                "prompt_version": prompt_version,
+            },
+        )
+        langfuse_handler = CallbackHandler()
+    
+    invoke_config = {"callbacks": [langfuse_handler]} if langfuse_handler else {}
     
     try:
         result: ValidationLLMResponse = llm.invoke(messages, config=invoke_config)
         
-        if result is None:
-            raise DrugClassExtractionError(f"LLM returned None for validation of {input_data.drug_name}")
-        
         return ValidationOutput.from_llm_response(result, llm_calls=1)
         
-    except DrugClassExtractionError:
-        raise
     except Exception as e:
         return ValidationOutput.error_response(str(e), llm_calls=1)
 

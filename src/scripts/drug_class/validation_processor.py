@@ -11,7 +11,6 @@ Usage:
 
 import argparse
 import csv
-import json
 import concurrent.futures
 from dataclasses import dataclass
 from datetime import datetime
@@ -22,6 +21,8 @@ from src.agents.drug_class import (
     validate_drug_class,
     ValidationInput,
     ValidationOutput,
+    DrugClassInput,
+    Step2Output,
     config,
 )
 from src.agents.core.storage import LocalStorageClient
@@ -42,20 +43,15 @@ class ProcessResult:
         return bool(self.validation_status and not self.error)
 
 
-def load_validations(
-    csv_path: str,
-    extraction_column: str,
-    limit: int = None
-) -> tuple[list[ValidationInput], list[dict], list[str]]:
-    """Load extraction results from CSV for validation.
+def load_abstracts(csv_path: str, limit: int = None) -> tuple[list[DrugClassInput], list[dict], list[str]]:
+    """Load abstracts from CSV.
     
     Args:
-        csv_path: Path to extraction output CSV
-        extraction_column: Name of column containing extraction response JSON
+        csv_path: Path to input CSV
         limit: Optional limit on rows
         
     Returns:
-        tuple: (validation_inputs, original_rows, fieldnames)
+        tuple: (inputs, original_rows, fieldnames)
     """
     inputs = []
     original_rows = []
@@ -70,44 +66,18 @@ def load_validations(
         title_col = header_map.get('abstract_title') or header_map.get('title')
         abstract_col = header_map.get('full_abstract') or header_map.get('abstract')
         
-        # Find extraction column
-        extraction_col = None
-        for col in fieldnames:
-            if extraction_column.lower() in col.lower():
-                extraction_col = col
-                break
-        
-        if not extraction_col:
-            raise ValueError(f"Could not find extraction column matching '{extraction_column}' in CSV")
-        
         for row in reader:
             abstract_id = row.get(id_col, "") if id_col else ""
             abstract_title = row.get(title_col, "") if title_col else ""
             full_abstract = row.get(abstract_col, "") if abstract_col else ""
-            extraction_response = row.get(extraction_col, "{}")
-            
-            # Parse extraction response
-            try:
-                extraction_result = json.loads(extraction_response) if extraction_response else {}
-            except json.JSONDecodeError:
-                extraction_result = {"error": "Failed to parse extraction response"}
-            
-            # Extract drug name from extraction result or row
-            drug_name = extraction_result.get("drug_name", "")
-            if not drug_name:
-                drug_col = header_map.get('drug_name') or header_map.get('drug')
-                drug_name = row.get(drug_col, "") if drug_col else ""
             
             if not abstract_id:
                 continue
             
-            inputs.append(ValidationInput(
+            inputs.append(DrugClassInput(
                 abstract_id=str(abstract_id),
-                drug_name=str(drug_name),
                 abstract_title=str(abstract_title),
                 full_abstract=str(full_abstract),
-                search_results=[],  # Search results would come from cache
-                extraction_result=extraction_result,
             ))
             original_rows.append(row)
     
@@ -116,59 +86,91 @@ def load_validations(
     return inputs, original_rows, fieldnames
 
 
-def process_single(input_data: ValidationInput, storage: LocalStorageClient) -> ProcessResult:
-    """Validate single extraction and return result."""
-    # Skip if extraction had error
-    if input_data.extraction_result.get("error"):
-        return ProcessResult(
-            abstract_id=input_data.abstract_id,
-            drug_name=input_data.drug_name,
-            validation_status="SKIP",
-            error=f"Extraction had error: {input_data.extraction_result.get('error')}",
-        )
+def process_single(inp: DrugClassInput, storage: LocalStorageClient) -> list[ProcessResult]:
+    """Validate all drug extractions for a single abstract.
     
+    Loads step2_output.json from storage and validates each drug extraction.
+    """
+    abstract_id = inp.abstract_id
+    results = []
+    
+    # Load step2 output from storage
     try:
-        # Load search results from cache if available
-        search_cache_path = f"search_cache/{input_data.drug_name.lower().replace(' ', '_')}.json"
-        cached_data = storage.read(search_cache_path)
-        if cached_data:
-            cache = json.loads(cached_data)
-            input_data.search_results = cache.get("drug_class_results", [])
-        
-        result: ValidationOutput = validate_drug_class(input_data)
-        
-        # Save validation output
-        storage.write(
-            f"abstracts/{input_data.abstract_id}/validation_{input_data.drug_name}.json",
-            result.model_dump_json(indent=2)
-        )
-        
-        return ProcessResult(
-            abstract_id=input_data.abstract_id,
-            drug_name=input_data.drug_name,
-            validation_status=result.validation_status,
-            issues_count=len(result.issues_found),
-            llm_calls=result.llm_calls,
-        )
-        
-    except Exception as e:
-        return ProcessResult(
-            abstract_id=input_data.abstract_id,
-            drug_name=input_data.drug_name,
-            error=f"Validation error: {e}",
-        )
+        step2_data = storage.download_json(f"abstracts/{abstract_id}/step2_output.json")
+        step2_output = Step2Output(**step2_data)
+    except FileNotFoundError:
+        return [ProcessResult(abstract_id=abstract_id, drug_name="", error="Step 2 output not found")]
+    
+    # Validate each drug extraction
+    for drug_name, extraction_result in step2_output.extractions.items():
+        try:
+            # Build extraction result dict for validation
+            extraction_dict = {
+                "drug_name": extraction_result.drug_name,
+                "drug_classes": extraction_result.drug_classes,
+                "selected_sources": extraction_result.selected_sources,
+                "confidence_score": extraction_result.confidence_score,
+                "extraction_details": [d.model_dump() for d in extraction_result.extraction_details],
+                "reasoning": extraction_result.reasoning,
+            }
+            
+            # Load search results from cache if available
+            search_results = []
+            # Normalize drug name the same way step2_search does
+            normalized_drug = drug_name.lower().strip().replace(" ", "_").replace("-", "_")
+            search_cache_path = f"search_cache/{normalized_drug}.json"
+            try:
+                cache = storage.download_json(search_cache_path)
+                # Search cache stores results at drug_class_search.results
+                search_results = cache.get("drug_class_search", {}).get("results", [])
+            except FileNotFoundError:
+                pass  # No cache available
+            
+            validation_input = ValidationInput(
+                abstract_id=abstract_id,
+                drug_name=drug_name,
+                abstract_title=inp.abstract_title or "",
+                full_abstract=inp.full_abstract or "",
+                search_results=search_results,
+                extraction_result=extraction_dict,
+            )
+            
+            result: ValidationOutput = validate_drug_class(validation_input)
+            
+            # Save validation output
+            storage.upload_json(
+                f"abstracts/{abstract_id}/validation_{drug_name}.json",
+                result.model_dump()
+            )
+            
+            results.append(ProcessResult(
+                abstract_id=abstract_id,
+                drug_name=drug_name,
+                validation_status=result.validation_status,
+                issues_count=len(result.issues_found),
+                llm_calls=result.llm_calls,
+            ))
+            
+        except Exception as e:
+            results.append(ProcessResult(
+                abstract_id=abstract_id,
+                drug_name=drug_name,
+                error=f"Validation error: {e}",
+            ))
+    
+    return results
 
 
 def save_results(
-    results: list[tuple[int, ProcessResult]],
+    results: list[ProcessResult],
     original_rows: list[dict],
     fieldnames: list[str],
     output_path: str,
+    abstract_id_to_idx: dict[str, int],
 ):
-    """Save results to CSV with all input columns plus validation response column."""
-    results.sort(key=lambda x: x[0])
-    
+    """Save results to CSV with all input columns plus validation response columns."""
     output_fieldnames = fieldnames + [
+        "drug_name",
         "validation_status",
         "validation_issues_count",
         "validation_llm_calls",
@@ -179,8 +181,10 @@ def save_results(
         writer = csv.DictWriter(f, fieldnames=output_fieldnames)
         writer.writeheader()
         
-        for idx, result in results:
-            row = dict(original_rows[idx])
+        for result in results:
+            idx = abstract_id_to_idx.get(result.abstract_id, 0)
+            row = dict(original_rows[idx]) if idx < len(original_rows) else {}
+            row["drug_name"] = result.drug_name
             row["validation_status"] = result.validation_status
             row["validation_issues_count"] = result.issues_count
             row["validation_llm_calls"] = result.llm_calls
@@ -190,12 +194,10 @@ def save_results(
 
 def main():
     parser = argparse.ArgumentParser(description="Drug Class Validation Processor")
-    parser.add_argument("--input", required=True, help="Input CSV with extraction results")
+    parser.add_argument("--input", default="data/drug_class/input/drugs.csv", help="Input CSV file")
     parser.add_argument("--output_dir", default="data/drug_class/output", help="Output directory")
     parser.add_argument("--output_csv", default=None, help="Output CSV file")
-    parser.add_argument("--extraction_column", default="extraction_response", 
-                        help="Column name containing extraction response JSON")
-    parser.add_argument("--limit", type=int, default=None, help="Limit rows to validate")
+    parser.add_argument("--limit", type=int, default=None, help="Limit abstracts to validate")
     parser.add_argument("--parallel_workers", type=int, default=10, help="Number of parallel workers")
     args = parser.parse_args()
     
@@ -212,81 +214,76 @@ def main():
     print(f"Output dir: {args.output_dir}")
     print(f"Output CSV: {args.output_csv}")
     print(f"Model:      {config.VALIDATION_MODEL}")
-    print(f"Extraction column: {args.extraction_column}")
     print(f"Limit:      {args.limit or 'all'}")
     print(f"Workers:    {args.parallel_workers}")
     print()
     
     storage = LocalStorageClient(base_dir=args.output_dir)
     
-    print("Loading extraction results...")
-    inputs, original_rows, fieldnames = load_validations(
-        args.input, args.extraction_column, args.limit
-    )
-    print(f"✓ Loaded {len(inputs)} extraction results")
+    print("Loading abstracts...")
+    inputs, original_rows, fieldnames = load_abstracts(args.input, args.limit)
+    print(f"✓ Loaded {len(inputs)} abstracts")
     print()
     
+    # Build abstract_id to index mapping
+    abstract_id_to_idx = {inp.abstract_id: i for i, inp in enumerate(inputs)}
+    
     print("Validating...")
-    results: list[tuple[int, ProcessResult]] = []
-    save_interval = 5
-    last_saved_count = 0
+    all_results: list[ProcessResult] = []
+    completed_abstracts = 0
     
     with concurrent.futures.ThreadPoolExecutor(max_workers=args.parallel_workers) as executor:
-        future_to_idx = {
-            executor.submit(process_single, inp, storage): i
-            for i, inp in enumerate(inputs)
+        future_to_inp = {
+            executor.submit(process_single, inp, storage): inp
+            for inp in inputs
         }
         
-        for future in concurrent.futures.as_completed(future_to_idx):
-            idx = future_to_idx[future]
-            inp = inputs[idx]
+        for future in concurrent.futures.as_completed(future_to_inp):
+            inp = future_to_inp[future]
+            completed_abstracts += 1
             
             try:
-                result = future.result()
-                results.append((idx, result))
+                drug_results = future.result()
+                all_results.extend(drug_results)
                 
-                status_icon = "✓" if result.success else "✗"
-                if result.success:
-                    output = f"{result.validation_status} ({result.issues_count} issues)"
-                else:
-                    output = result.error[:30] if result.error else "error"
-                
-                print(f"[{len(results)}/{len(inputs)}] {inp.abstract_id}: {status_icon} {output}")
-                
-                # Intermediate save
-                if len(results) - last_saved_count >= save_interval:
-                    save_results(results, original_rows, fieldnames, args.output_csv)
-                    last_saved_count = len(results)
-                    print(f"💾 Intermediate save: {len(results)} results")
+                for result in drug_results:
+                    status_icon = "✓" if result.success else "✗"
+                    if result.success:
+                        output = f"{result.validation_status} ({result.issues_count} issues)"
+                    else:
+                        output = result.error[:40] if result.error else "error"
+                    
+                    print(f"[{completed_abstracts}/{len(inputs)}] {result.abstract_id}/{result.drug_name}: {status_icon} {output}")
                     
             except Exception as e:
                 print(f"✗ Error validating {inp.abstract_id}: {e}")
-                results.append((idx, ProcessResult(
+                all_results.append(ProcessResult(
                     abstract_id=inp.abstract_id,
-                    drug_name=inp.drug_name,
+                    drug_name="",
                     error=str(e)
-                )))
+                ))
     
     # Final save
     print()
-    save_results(results, original_rows, fieldnames, args.output_csv)
+    save_results(all_results, original_rows, fieldnames, args.output_csv, abstract_id_to_idx)
     print(f"✓ Results saved to {args.output_csv}")
     
     # Summary
-    successful = sum(1 for _, r in results if r.success)
-    passed = sum(1 for _, r in results if r.validation_status == "PASS")
-    review = sum(1 for _, r in results if r.validation_status == "REVIEW")
-    failed = sum(1 for _, r in results if r.validation_status == "FAIL")
+    successful = sum(1 for r in all_results if r.success)
+    passed = sum(1 for r in all_results if r.validation_status == "PASS")
+    review = sum(1 for r in all_results if r.validation_status == "REVIEW")
+    failed = sum(1 for r in all_results if r.validation_status == "FAIL")
     
     print()
     print("📊 Summary:")
-    print(f"   Total:   {len(results)}")
+    print(f"   Total abstracts: {len(inputs)}")
+    print(f"   Total validations: {len(all_results)}")
     print(f"   Success: {successful}")
     print(f"   PASS:    {passed}")
     print(f"   REVIEW:  {review}")
     print(f"   FAIL:    {failed}")
-    if results:
-        print(f"   Rate:    {successful/len(results)*100:.1f}%")
+    if all_results:
+        print(f"   Rate:    {successful/len(all_results)*100:.1f}%")
 
 
 if __name__ == "__main__":

@@ -66,7 +66,7 @@ from src.scripts.drug_class.step5_processor import (
 )
 
 from src.scripts.drug_class.validation_processor import (
-    load_validations,
+    load_abstracts as load_validation_abstracts,
     process_single as validation_process_single,
     main as validation_main,
 )
@@ -91,7 +91,7 @@ __all__ = [
     "step5_process_single",
     "step5_main",
     # Validation processor
-    "load_validations",
+    "load_validation_abstracts",
     "validation_process_single",
     "validation_main",
 ]

@@ -93,6 +93,7 @@ def load_abstracts(
         title_col = header_map.get('abstract_title') or header_map.get('title')
         
         # Optional columns
+        abstract_col = header_map.get('full_abstract') or header_map.get('abstract')
         primary_col = header_map.get('primary_drugs') or header_map.get('primary drugs')
         secondary_col = header_map.get('secondary_drugs') or header_map.get('secondary drugs')
         comparator_col = header_map.get('comparator_drugs') or header_map.get('comparator drugs')
@@ -101,6 +102,7 @@ def load_abstracts(
         for row in reader:
             abstract_id = row.get(id_col, "") if id_col else ""
             abstract_title = row.get(title_col, "") if title_col else ""
+            full_abstract = row.get(abstract_col, "") if abstract_col else ""
             
             if not abstract_id or not abstract_title:
                 continue
@@ -114,6 +116,7 @@ def load_abstracts(
             inputs.append(DrugClassInput(
                 abstract_id=str(abstract_id),
                 abstract_title=str(abstract_title),
+                full_abstract=str(full_abstract),
                 primary_drugs=primary_drugs,
                 secondary_drugs=secondary_drugs,
                 comparator_drugs=comparator_drugs,
@@ -283,6 +286,7 @@ def process_step2_single(inp: DrugClassInput, storage: LocalStorageClient) -> di
                 abstract_id=abstract_id,
                 abstract_title=inp.abstract_title,
                 drug=drug,
+                full_abstract=inp.full_abstract,
                 firms=inp.firms,
                 drug_class_results=drug_results,
                 firm_search_results=firm_results,
@@ -295,6 +299,7 @@ def process_step2_single(inp: DrugClassInput, storage: LocalStorageClient) -> di
                     abstract_id=abstract_id,
                     abstract_title=inp.abstract_title,
                     drug=drug,
+                    full_abstract=inp.full_abstract,
                     firms=inp.firms,
                     drug_class_results=drug_results,
                     firm_search_results=firm_results,

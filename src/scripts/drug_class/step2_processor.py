@@ -58,11 +58,13 @@ def load_abstracts(csv_path: str, limit: int = None) -> tuple[list[DrugClassInpu
         header_map = {h.lower().strip(): h for h in fieldnames}
         id_col = header_map.get('abstract_id') or header_map.get('id')
         title_col = header_map.get('abstract_title') or header_map.get('title')
+        abstract_col = header_map.get('full_abstract') or header_map.get('abstract')
         firms_col = header_map.get('firms') or header_map.get('firm') or header_map.get('sponsor')
         
         for row in reader:
             abstract_id = row.get(id_col, "") if id_col else ""
             abstract_title = row.get(title_col, "") if title_col else ""
+            full_abstract = row.get(abstract_col, "") if abstract_col else ""
             
             if not abstract_id or not abstract_title:
                 continue
@@ -72,6 +74,7 @@ def load_abstracts(csv_path: str, limit: int = None) -> tuple[list[DrugClassInpu
             inputs.append(DrugClassInput(
                 abstract_id=str(abstract_id),
                 abstract_title=str(abstract_title),
+                full_abstract=str(full_abstract),
                 firms=firms,
             ))
             original_rows.append(row)
@@ -125,6 +128,7 @@ def process_single(inp: DrugClassInput, storage: LocalStorageClient) -> ProcessR
                 abstract_id=abstract_id,
                 abstract_title=inp.abstract_title,
                 drug=drug,
+                full_abstract=inp.full_abstract,
                 firms=inp.firms,
                 drug_class_results=drug_results,
                 firm_search_results=firm_results,
@@ -137,6 +141,7 @@ def process_single(inp: DrugClassInput, storage: LocalStorageClient) -> ProcessR
                     abstract_id=abstract_id,
                     abstract_title=inp.abstract_title,
                     drug=drug,
+                    full_abstract=inp.full_abstract,
                     firms=inp.firms,
                     drug_class_results=drug_results,
                     firm_search_results=firm_results,

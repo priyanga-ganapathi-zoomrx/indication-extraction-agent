@@ -65,6 +65,7 @@ def load_abstracts(
         for row in reader:
             abstract_id = row.get('abstract_id', '').strip()
             abstract_title = row.get('abstract_title', '').strip()
+            full_abstract = row.get('full_abstract', '').strip()
             firm = row.get('firm', '').strip()
             
             if not abstract_id or not abstract_title:
@@ -105,6 +106,7 @@ def load_abstracts(
             inputs.append(DrugClassInput(
                 abstract_id=abstract_id,
                 abstract_title=abstract_title,
+                full_abstract=full_abstract,
                 primary_drugs=primary_drugs,
                 secondary_drugs=secondary_drugs,
                 comparator_drugs=comparator_drugs,

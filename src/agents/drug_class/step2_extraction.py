@@ -115,6 +115,9 @@ def extract_with_tavily(input_data: DrugClassExtractionInput) -> DrugExtractionR
 ## Abstract Title
 {input_data.abstract_title or "Not provided"}
 
+## Full Abstract
+{input_data.full_abstract or "Not provided"}
+
 ## Search Results
 
 {formatted_results}"""
@@ -221,7 +224,10 @@ def extract_with_grounded(input_data: DrugClassExtractionInput) -> DrugExtractio
 {input_data.drug}
 
 ## Abstract Title
-{input_data.abstract_title or "Not provided"}"""
+{input_data.abstract_title or "Not provided"}
+
+## Full Abstract
+{input_data.full_abstract or "Not provided"}"""
     
     # Create LLM with web search enabled and structured output
     # Note: Uses GroundedSearchLLMResponse which has different format than Tavily
