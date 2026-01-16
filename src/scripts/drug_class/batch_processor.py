@@ -261,7 +261,7 @@ def process_step2_single(inp: DrugClassInput, storage: LocalStorageClient) -> di
         return {"abstract_id": abstract_id, "success": False, "error": "Step 1 output not found"}
     
     step1_output = Step1Output(**json.loads(step1_data))
-    all_components = step1_output.all_components
+    all_components = step1_output.get_all_components()
     
     if not all_components:
         return {"abstract_id": abstract_id, "success": False, "error": "No components from Step 1"}

@@ -6,6 +6,8 @@ from typing import Optional
 
 from langfuse import Langfuse
 
+from src.agents.core.langfuse_config import langfuse as langfuse_singleton
+
 
 # Available prompt names
 EXTRACTION_TITLE_PROMPT_NAME = "DRUG_CLASS_EXTRACTION_FROM_TITLE"
@@ -18,6 +20,9 @@ REGIMEN_IDENTIFICATION_PROMPT_NAME = "REGIMEN_IDENTIFICATION_PROMPT"
 
 # Default prompts directory (relative to this file)
 PROMPTS_DIR = Path(__file__).parent / "prompts"
+
+# Prompt cache to avoid repeated fetching
+_prompt_cache: dict[str, tuple[str, str]] = {}
 
 
 # =============================================================================
@@ -57,7 +62,7 @@ def get_system_prompt(
     """Load the system prompt from Langfuse or fallback to local file.
 
     Args:
-        langfuse_client: Optional Langfuse client instance. If not provided, will create one using env vars.
+        langfuse_client: Optional Langfuse client instance. If not provided, uses the singleton.
         prompt_name: Name of the prompt in Langfuse (default: EXTRACTION_TITLE_PROMPT_NAME)
         fallback_to_file: If True, fallback to reading from local file (prompt_name.md) if Langfuse fetch fails
         prompt_dir: Optional directory to look for prompt files (default: prompts/ in same folder)
@@ -68,12 +73,23 @@ def get_system_prompt(
     Raises:
         Exception: If Langfuse fetch fails and fallback_to_file is False
     """
+    # Check cache first
+    if prompt_name in _prompt_cache:
+        return _prompt_cache[prompt_name]
+    
+    prompts_directory = prompt_dir or PROMPTS_DIR
+    
+    # Use provided client, singleton, or skip Langfuse if not enabled
+    client = langfuse_client or langfuse_singleton
+    
+    # If no Langfuse client available, go straight to file
+    if client is None:
+        result = _load_prompt_from_file(prompt_name, prompts_directory)
+        _prompt_cache[prompt_name] = result
+        return result
+    
     # Try to fetch from Langfuse
     try:
-        # Use provided client or create a new one
-        client = langfuse_client or Langfuse()
-        
-        # Fetch the prompt from Langfuse
         print(f"ℹ Fetching prompt '{prompt_name}' from Langfuse...")
         langfuse_prompt = client.get_prompt(prompt_name)
         
@@ -89,7 +105,9 @@ def get_system_prompt(
         version = str(langfuse_prompt.version) if hasattr(langfuse_prompt, 'version') else "unknown"
         
         print(f"✓ Successfully fetched prompt from Langfuse (version: {version})")
-        return content.strip(), version
+        result = (content.strip(), version)
+        _prompt_cache[prompt_name] = result
+        return result
         
     except Exception as e:
         print(f"✗ Error fetching prompt from Langfuse: {e}")
@@ -97,24 +115,31 @@ def get_system_prompt(
         if not fallback_to_file:
             raise
         
-        # Fallback to local file
-        prompt_filename = f"{prompt_name}.md"
-        prompts_directory = prompt_dir or PROMPTS_DIR
-        print(f"ℹ Falling back to local {prompt_filename} file...")
+        result = _load_prompt_from_file(prompt_name, prompts_directory)
+        _prompt_cache[prompt_name] = result
+        return result
+
+
+def _load_prompt_from_file(prompt_name: str, prompts_directory: Path) -> tuple[str, str]:
+    """Load prompt from local file.
+    
+    Args:
+        prompt_name: Name of the prompt (used as filename without extension)
+        prompts_directory: Directory containing prompt files
         
-        try:
-            prompt_file = prompts_directory / prompt_filename
-            
-            with open(prompt_file, 'r', encoding='utf-8') as f:
-                content = f.read()
-            
-            print("✓ Successfully loaded prompt from local file")
-            return content.strip(), "local"
-        except Exception as file_error:
-            raise Exception(
-                f"Failed to fetch prompt from Langfuse and local file: "
-                f"Langfuse error: {e}, File error: {file_error}"
-            )
+    Returns:
+        tuple[str, str]: (prompt_content, "local")
+    """
+    prompt_filename = f"{prompt_name}.md"
+    print(f"ℹ Loading prompt from local {prompt_filename} file...")
+    
+    prompt_file = prompts_directory / prompt_filename
+    
+    with open(prompt_file, 'r', encoding='utf-8') as f:
+        content = f.read()
+    
+    print("✓ Successfully loaded prompt from local file")
+    return content.strip(), "local"
 
 
 def get_extraction_title_prompt(

@@ -46,7 +46,14 @@ def load_abstracts(
     csv_path: str,
     limit: int = None
 ) -> tuple[list[DrugClassInput], list[dict], list[str]]:
-    """Load abstracts from CSV into DrugClassInput objects."""
+    """Load abstracts from CSV into DrugClassInput objects.
+    
+    Expects CSV with columns:
+    - abstract_id
+    - abstract_title
+    - firm (comma-separated string, will be parsed to list)
+    - extraction_response (JSON string with Primary Drugs, Secondary Drugs, Comparator Drugs)
+    """
     inputs = []
     original_rows = []
     fieldnames = []
@@ -55,51 +62,59 @@ def load_abstracts(
         reader = csv.DictReader(f)
         fieldnames = list(reader.fieldnames or [])
         
-        header_map = {h.lower().strip(): h for h in fieldnames}
-        id_col = header_map.get('abstract_id') or header_map.get('id')
-        title_col = header_map.get('abstract_title') or header_map.get('title')
-        primary_col = header_map.get('primary_drugs') or header_map.get('primary drugs')
-        secondary_col = header_map.get('secondary_drugs') or header_map.get('secondary drugs')
-        comparator_col = header_map.get('comparator_drugs') or header_map.get('comparator drugs')
-        
         for row in reader:
-            abstract_id = row.get(id_col, "") if id_col else ""
-            abstract_title = row.get(title_col, "") if title_col else ""
+            abstract_id = row.get('abstract_id', '').strip()
+            abstract_title = row.get('abstract_title', '').strip()
+            firm = row.get('firm', '').strip()
             
             if not abstract_id or not abstract_title:
                 continue
             
-            primary_drugs = _parse_list(row.get(primary_col, "") if primary_col else "")
-            secondary_drugs = _parse_list(row.get(secondary_col, "") if secondary_col else "")
-            comparator_drugs = _parse_list(row.get(comparator_col, "") if comparator_col else "")
+            # Parse extraction_response JSON
+            extraction_response_str = row.get('extraction_response', '{}').strip()
+            extraction = {}
+            if extraction_response_str:
+                try:
+                    extraction = json.loads(extraction_response_str)
+                except json.JSONDecodeError:
+                    # If JSON parsing fails, try to handle it gracefully
+                    pass
+            
+            # Extract drug lists from extraction_response
+            # Handle both "Primary Drugs" and "primary_drugs" key variations
+            primary_drugs = extraction.get('Primary Drugs', extraction.get('primary_drugs', []))
+            secondary_drugs = extraction.get('Secondary Drugs', extraction.get('secondary_drugs', []))
+            comparator_drugs = extraction.get('Comparator Drugs', extraction.get('comparator_drugs', []))
+            
+            # Ensure they are lists and convert to strings
+            if not isinstance(primary_drugs, list):
+                primary_drugs = [primary_drugs] if primary_drugs else []
+            if not isinstance(secondary_drugs, list):
+                secondary_drugs = [secondary_drugs] if secondary_drugs else []
+            if not isinstance(comparator_drugs, list):
+                comparator_drugs = [comparator_drugs] if comparator_drugs else []
+            
+            # Normalize drug names (strip whitespace, filter empty)
+            primary_drugs = [str(d).strip() for d in primary_drugs if d and str(d).strip()]
+            secondary_drugs = [str(d).strip() for d in secondary_drugs if d and str(d).strip()]
+            comparator_drugs = [str(d).strip() for d in comparator_drugs if d and str(d).strip()]
+            
+            # Parse firms from comma-separated string to list
+            firms = [f.strip() for f in firm.split(',') if f.strip()] if firm else []
             
             inputs.append(DrugClassInput(
-                abstract_id=str(abstract_id),
-                abstract_title=str(abstract_title),
+                abstract_id=abstract_id,
+                abstract_title=abstract_title,
                 primary_drugs=primary_drugs,
                 secondary_drugs=secondary_drugs,
                 comparator_drugs=comparator_drugs,
+                firms=firms,
             ))
             original_rows.append(row)
     
     if limit:
         return inputs[:limit], original_rows[:limit], fieldnames
     return inputs, original_rows, fieldnames
-
-
-def _parse_list(value: str) -> list[str]:
-    """Parse list from JSON array or comma-separated string."""
-    if not value or not value.strip():
-        return []
-    value = value.strip()
-    if value.startswith('['):
-        try:
-            parsed = json.loads(value)
-            if isinstance(parsed, list):
-                return [str(d).strip() for d in parsed if d and str(d).strip()]
-        except json.JSONDecodeError:
-            pass
-    return [d.strip() for d in value.replace(';', ',').split(',') if d.strip()]
 
 
 def process_single(inp: DrugClassInput, storage: LocalStorageClient) -> ProcessResult:
@@ -124,23 +139,24 @@ def process_single(inp: DrugClassInput, storage: LocalStorageClient) -> ProcessR
             llm_calls += 1
         
         # Save output
-        storage.write(
+        storage.upload_json(
             f"abstracts/{abstract_id}/step1_output.json",
-            step1_output.model_dump_json(indent=2)
+            step1_output.model_dump()
         )
         
         # Update status
         status = PipelineStatus(abstract_id=abstract_id, abstract_title=inp.abstract_title)
         status.steps["step1_regimen"] = {"status": "success", "llm_calls": llm_calls}
         status.last_completed_step = "step1_regimen"
-        storage.write(
+        status.last_updated = datetime.utcnow().isoformat() + "Z"
+        storage.upload_json(
             f"abstracts/{abstract_id}/status.json",
-            json.dumps(status.to_dict(), indent=2)
+            status.to_dict()
         )
         
         return ProcessResult(
             abstract_id=abstract_id,
-            components=step1_output.all_components,
+            components=step1_output.get_all_components(),
             llm_calls=llm_calls,
         )
         
@@ -157,7 +173,7 @@ def save_results(
     """Save results to CSV."""
     results.sort(key=lambda x: x[0])
     
-    output_fieldnames = fieldnames + ["step1_components", "step1_llm_calls", "step1_error"]
+    output_fieldnames = fieldnames + ["step1_components", "step1_error"]
     
     with open(output_path, "w", newline="", encoding="utf-8") as f:
         writer = csv.DictWriter(f, fieldnames=output_fieldnames)
@@ -166,14 +182,13 @@ def save_results(
         for idx, result in results:
             row = dict(original_rows[idx])
             row["step1_components"] = json.dumps(result.components) if result.components else ""
-            row["step1_llm_calls"] = result.llm_calls
             row["step1_error"] = result.error or ""
             writer.writerow(row)
 
 
 def main():
     parser = argparse.ArgumentParser(description="Step 1 Processor: Regimen Identification")
-    parser.add_argument("--input", required=True, help="Input CSV file")
+    parser.add_argument("--input", default="data/drug_class/input/drugs.csv", help="Input CSV file")
     parser.add_argument("--output_dir", default="data/drug_class/output", help="Output directory")
     parser.add_argument("--output_csv", default=None, help="Output CSV file (auto-generated if not specified)")
     parser.add_argument("--limit", type=int, default=None, help="Limit abstracts")
@@ -198,7 +213,7 @@ def main():
     print(f"Workers:    {args.parallel_workers}")
     print()
     
-    storage = LocalStorageClient(base_path=args.output_dir)
+    storage = LocalStorageClient(base_dir=args.output_dir)
     
     print("Loading abstracts...")
     inputs, original_rows, fieldnames = load_abstracts(args.input, args.limit)

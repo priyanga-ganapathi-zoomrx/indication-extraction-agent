@@ -25,11 +25,11 @@ class DrugClassConfig(BaseSettings):
     # Step 1: Regimen Identification
     # ==========================================================================
     REGIMEN_MODEL: str = Field(
-        default="gemini/gemini-2.5-flash",
+        default="gemini/gemini-3-pro-preview",
         description="Model for regimen identification (fast, simple task)"
     )
     REGIMEN_TEMPERATURE: float = Field(default=0)
-    REGIMEN_MAX_TOKENS: int = Field(default=4096)
+    REGIMEN_MAX_TOKENS: int = Field(default=50000)
     
     # ==========================================================================
     # Step 2: Drug Class Extraction (Tavily + Grounded)

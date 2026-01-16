@@ -176,8 +176,10 @@ def extract_with_tavily(input_data: DrugClassExtractionInput) -> DrugExtractionR
         return DrugExtractionResult(
             drug_name=result.drug_name or input_data.drug,
             drug_classes=drug_classes,
+            selected_sources=result.selected_sources,
+            confidence_score=result.confidence_score,
             extraction_details=result.extraction_details,
-            source_type="tavily",
+            extraction_method="tavily",
             reasoning=result.reasoning,
             success=success,
         )

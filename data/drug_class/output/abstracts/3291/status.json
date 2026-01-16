@@ -1,0 +1,16 @@
+{
+  "abstract_id": "3291",
+  "abstract_title": "Phase 2 trial of zilovertamab vedotin in combination with cyclophosphamide, doxorubicin, and prednisone plus rituximab in diffuse large B-cell lymphoma: Updated analysis of waveline-007",
+  "pipeline_status": "pending",
+  "last_completed_step": "step1_regimen",
+  "failed_step": null,
+  "error": null,
+  "steps": {
+    "step1_regimen": {
+      "status": "success",
+      "llm_calls": 5
+    }
+  },
+  "total_llm_calls": 0,
+  "last_updated": "2026-01-16T10:48:54.986531Z"
+}

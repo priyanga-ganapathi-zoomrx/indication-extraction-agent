@@ -4,7 +4,7 @@ Contains Pydantic models that match LLM structured outputs.
 Used with llm.with_structured_output() for reliable parsing.
 """
 
-from typing import TYPE_CHECKING, Optional
+from typing import TYPE_CHECKING
 
 from pydantic import BaseModel, Field
 
@@ -24,10 +24,6 @@ if TYPE_CHECKING:
 # =============================================================================
 
 class RegimenLLMResponse(BaseModel):
-    """LLM structured output for regimen identification.
-    
-    Matches exactly what the LLM returns per REGIMEN_IDENTIFICATION_PROMPT.md
-    """
     components: list[str] = Field(default_factory=list, description="Component drugs")
 
 
@@ -36,25 +32,34 @@ class RegimenLLMResponse(BaseModel):
 # =============================================================================
 
 class ExtractionDetail(BaseModel):
-    """Single extracted drug class with evidence."""
+    """Single extracted drug class with evidence.
+    
+    Matches the extraction_details format in DRUG_CLASS_EXTRACTION_FROM_SEARCH_REACT_PATTERN.md
+    Note: confidence is NOT part of this schema (it's a top-level field).
+    """
     extracted_text: str = Field(default="", description="Raw extracted text from source")
     normalized_form: str = Field(default="", description="Normalized drug class name")
-    class_type: ClassType = Field(default="Therapeutic", description="Type of drug class")
-    evidence: str = Field(default="", description="Supporting evidence snippet")
-    source: str = Field(default="", description="Source URL or reference")
-    confidence: ConfidenceLevel = Field(default="medium", description="Confidence level")
-    rules_applied: list[str] = Field(default_factory=list, description="Extraction rules applied")
+    class_type: ClassType = Field(default="Therapeutic", description="MoA | Chemical | Mode | Therapeutic")
+    evidence: str = Field(default="", description="Exact quote from source")
+    source: str = Field(default="", description="Where found: 'abstract_title' | 'abstract_text' | '<url>'")
+    rules_applied: list[str] = Field(default_factory=list, description="Rules applied for extraction")
 
 
 class DrugClassLLMResponse(BaseModel):
     """LLM structured output for drug class extraction.
     
+    Matches exactly what the LLM returns per DRUG_CLASS_EXTRACTION_FROM_SEARCH_REACT_PATTERN.md
     Used with with_structured_output() for reliable parsing.
     """
     drug_name: str = Field(default="", description="Drug being classified")
     drug_classes: list[str] = Field(default_factory=list, description="Extracted drug classes")
-    extraction_details: list[ExtractionDetail] = Field(default_factory=list)
+    selected_sources: list[str] = Field(
+        default_factory=list,
+        description="Sources where classes were found: 'abstract_title' | 'abstract_text' | '<url>'"
+    )
+    confidence_score: float = Field(default=0.0, description="Confidence score 0.0-1.0")
     reasoning: str = Field(default="", description="Extraction reasoning")
+    extraction_details: list[ExtractionDetail] = Field(default_factory=list)
 
 
 # =============================================================================
@@ -105,13 +110,14 @@ class GroundedSearchLLMResponse(BaseModel):
             return DrugExtractionResult(
                 drug_name=self.drug_name or drug,
                 drug_classes=["NA"],
-                source_type="grounded",
+                extraction_method="grounded",
                 reasoning=self.reasoning,
                 success=False,
             )
         
         # Extract class names and build extraction details
         class_names = [c.class_name for c in self.drug_classes if c.class_name]
+        sources = list(set(c.source_url for c in self.drug_classes if c.source_url))
         extraction_details = [
             ExtractionDetail(
                 extracted_text=c.class_name,
@@ -119,7 +125,6 @@ class GroundedSearchLLMResponse(BaseModel):
                 class_type=c.class_type,
                 evidence=c.evidence,
                 source=c.source_url,
-                confidence=c.confidence,
                 rules_applied=c.rules_applied,
             )
             for c in self.drug_classes
@@ -128,8 +133,9 @@ class GroundedSearchLLMResponse(BaseModel):
         return DrugExtractionResult(
             drug_name=self.drug_name or drug,
             drug_classes=class_names if class_names else ["NA"],
+            selected_sources=sources,
             extraction_details=extraction_details,
-            source_type="grounded",
+            extraction_method="grounded",
             reasoning=self.reasoning,
             success=bool(class_names),
         )
@@ -160,7 +166,6 @@ class ExplicitExtractionDetail(BaseModel):
             class_type=self.class_type,
             evidence=self.evidence,
             source="abstract_title",
-            confidence="high" if self.is_active_intervention else "medium",
             rules_applied=self.rules_applied,
         )
 

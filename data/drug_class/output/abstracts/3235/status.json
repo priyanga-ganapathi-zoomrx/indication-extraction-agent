@@ -1,0 +1,16 @@
+{
+  "abstract_id": "3235",
+  "abstract_title": "Autologous hematopoietic stem cell transplantation followed by CD19/CD22 dual-target CAR-T therapy for refractory or relapsed burkitt lymphoma",
+  "pipeline_status": "pending",
+  "last_completed_step": "step1_regimen",
+  "failed_step": null,
+  "error": null,
+  "steps": {
+    "step1_regimen": {
+      "status": "success",
+      "llm_calls": 2
+    }
+  },
+  "total_llm_calls": 0,
+  "last_updated": "2026-01-16T10:48:52.699863Z"
+}

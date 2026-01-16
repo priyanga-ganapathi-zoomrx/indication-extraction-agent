@@ -387,12 +387,12 @@ def run_drug_class_pipeline(
         else:
             step2_output = Step2Output()
             # Initialize all component drugs as pending
-            for drug in step1_output.all_components:
+            for drug in step1_output.get_all_components():
                 if drug and drug.strip():
                     step2_output.drug_status[drug.strip()] = "pending"
         
         # Check if Step 2 is already complete
-        component_drugs = step1_output.all_components
+        component_drugs = step1_output.get_all_components()
         firms = input_data.firms  # Firms for firm search
         
         if step2_output.is_complete(component_drugs):

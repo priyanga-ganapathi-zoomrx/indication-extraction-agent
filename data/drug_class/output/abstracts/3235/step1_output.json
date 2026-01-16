@@ -1,0 +1,14 @@
+{
+  "drug_status": {
+    "Autologous Hematopoietic Stem Cell": "success",
+    "CD19/CD22 Dual-Target CAR-T": "success"
+  },
+  "drug_to_components": {
+    "Autologous Hematopoietic Stem Cell": [
+      "Autologous Hematopoietic Stem Cell"
+    ],
+    "CD19/CD22 Dual-Target CAR-T": [
+      "CD19/CD22 Dual-Target CAR-T"
+    ]
+  }
+}

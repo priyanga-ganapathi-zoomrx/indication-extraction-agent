@@ -25,4 +25,3 @@ DrugStatus = Literal["pending", "success", "failed"]
 ClassType = Literal["MoA", "Chemical", "Mode", "Therapeutic"]
 
 ConfidenceLevel = Literal["high", "medium", "low"]
-

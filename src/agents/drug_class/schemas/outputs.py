@@ -8,7 +8,7 @@ from typing import Literal
 
 from pydantic import BaseModel, Field
 
-from src.agents.drug_class.schemas.base import ClassType, ConfidenceLevel, DrugStatus
+from src.agents.drug_class.schemas.base import DrugStatus
 from src.agents.drug_class.schemas.llm_responses import ExtractionDetail
 
 
@@ -34,12 +34,6 @@ class Step1Output(BaseModel):
         description="Maps drug name to its components (populated on success)"
     )
     
-    # Flattened list of all unique components (derived from succeeded drugs)
-    all_components: list[str] = Field(
-        default_factory=list,
-        description="Flattened list of all unique component drugs for Step 2"
-    )
-    
     def is_drug_done(self, drug: str) -> bool:
         """Check if a drug has already been successfully processed."""
         return self.drug_status.get(drug) == "success"
@@ -51,14 +45,25 @@ class Step1Output(BaseModel):
             if self.drug_status.get(drug) != "success"
         ]
     
+    def get_all_components(self) -> list[str]:
+        """Derive unique components from drug_to_components.
+        
+        Returns:
+            List of unique component drugs in order of first appearance.
+        """
+        seen = set()
+        result = []
+        for components in self.drug_to_components.values():
+            for comp in components:
+                if comp not in seen:
+                    seen.add(comp)
+                    result.append(comp)
+        return result
+    
     def mark_success(self, drug: str, components: list[str]) -> None:
         """Mark a drug as successfully processed."""
         self.drug_status[drug] = "success"
         self.drug_to_components[drug] = components
-        # Update all_components
-        for comp in components:
-            if comp not in self.all_components:
-                self.all_components.append(comp)
     
     def mark_failed(self, drug: str) -> None:
         """Mark a drug as failed."""
@@ -80,10 +85,23 @@ class DrugExtractionResult(BaseModel):
     """Extraction result for a single drug."""
     drug_name: str = Field(..., description="Drug being classified")
     drug_classes: list[str] = Field(default_factory=list, description="Extracted drug classes")
+    selected_sources: list[str] = Field(
+        default_factory=list,
+        description="Sources where classes were found: 'abstract_title' | 'abstract_text' | '<url>'"
+    )
+    confidence_score: float = Field(default=0.0, description="Confidence score 0.0-1.0")
     extraction_details: list[ExtractionDetail] = Field(default_factory=list)
-    source_type: Literal["tavily", "grounded"] = Field(default="tavily")
+    extraction_method: Literal["tavily", "grounded"] = Field(
+        default="tavily",
+        description="Search method used: 'tavily' (default) or 'grounded' (fallback)"
+    )
     reasoning: str = Field(default="", description="Extraction reasoning")
     success: bool = Field(default=True)
+    
+    @property
+    def requires_validation(self) -> bool:
+        """Flag for automatic validation when grounded search was used."""
+        return self.extraction_method == "grounded"
 
 
 class DrugSearchCache(BaseModel):
