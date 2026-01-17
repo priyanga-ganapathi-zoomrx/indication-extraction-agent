@@ -38,7 +38,7 @@ from src.agents.drug_class.step3_selection import (
 )
 from src.agents.drug_class.step4_explicit import extract_explicit_classes
 from src.agents.drug_class.step5_consolidation import consolidate_drug_classes
-from src.agents.drug_class.step_validation import validate_drug_class
+from src.agents.drug_class.validation import validate_drug_class
 
 # =============================================================================
 # SCHEMAS
