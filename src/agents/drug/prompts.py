@@ -15,13 +15,42 @@ VALIDATION_PROMPT_NAME = "DRUG_VALIDATION_SYSTEM_PROMPT"
 # Prompts directory
 PROMPTS_DIR = Path(__file__).parent / "prompts"
 
+# Prompt cache to avoid repeated fetching during bulk operations
+_prompt_cache: dict[str, tuple[str, str]] = {}
+
 
 def get_extraction_prompt(
     langfuse_client: Optional[Langfuse] = None,
     fallback_to_file: bool = True,
 ) -> tuple[str, str]:
-    """Load drug extraction prompt."""
-    return load_prompt(EXTRACTION_PROMPT_NAME, PROMPTS_DIR, langfuse_client, fallback_to_file)
+    """Load drug extraction prompt.
+    
+    Results are cached to avoid repeated fetching during bulk operations.
+    """
+    # Check cache first
+    if EXTRACTION_PROMPT_NAME in _prompt_cache:
+        return _prompt_cache[EXTRACTION_PROMPT_NAME]
+    
+    result = load_prompt(EXTRACTION_PROMPT_NAME, PROMPTS_DIR, langfuse_client, fallback_to_file)
+    _prompt_cache[EXTRACTION_PROMPT_NAME] = result
+    return result
+
+
+def get_validation_prompt(
+    langfuse_client: Optional[Langfuse] = None,
+    fallback_to_file: bool = True,
+) -> tuple[str, str]:
+    """Load drug validation prompt.
+    
+    Results are cached to avoid repeated fetching during bulk operations.
+    """
+    # Check cache first
+    if VALIDATION_PROMPT_NAME in _prompt_cache:
+        return _prompt_cache[VALIDATION_PROMPT_NAME]
+    
+    result = load_prompt(VALIDATION_PROMPT_NAME, PROMPTS_DIR, langfuse_client, fallback_to_file)
+    _prompt_cache[VALIDATION_PROMPT_NAME] = result
+    return result
 
 
 def get_validation_prompt_parts(
@@ -33,7 +62,7 @@ def get_validation_prompt_parts(
     Returns:
         Tuple of (instructions, rules, version)
     """
-    full_prompt, version = load_prompt(VALIDATION_PROMPT_NAME, PROMPTS_DIR, langfuse_client, fallback_to_file)
+    full_prompt, version = get_validation_prompt(langfuse_client, fallback_to_file)
     
     # Parse MESSAGE_1 (instructions) and MESSAGE_2 (rules)
     instructions = ""
@@ -56,3 +85,11 @@ def get_validation_prompt_parts(
         rules = full_prompt[start_idx:end_idx].strip()
     
     return instructions, rules, version
+
+
+def clear_prompt_cache() -> None:
+    """Clear the prompt cache.
+    
+    Useful for testing or when prompts have been updated in Langfuse.
+    """
+    _prompt_cache.clear()

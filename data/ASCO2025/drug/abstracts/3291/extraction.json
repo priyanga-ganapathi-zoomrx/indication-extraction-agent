@@ -1,0 +1,19 @@
+{
+  "Primary Drugs": [
+    "Zilovertamab Vedotin",
+    "Cyclophosphamide",
+    "Doxorubicin",
+    "Prednisone",
+    "Rituximab"
+  ],
+  "Secondary Drugs": [],
+  "Comparator Drugs": [],
+  "Reasoning": [
+    "Step 1: Identified all potential drug names in the title: zilovertamab vedotin, cyclophosphamide, doxorubicin, prednisone, and rituximab.",
+    "Step 2: Analyzed the keywords 'in combination with' and 'plus' connecting the drug names.",
+    "Step 3: The keywords indicate that all drugs are administered together as part of the primary treatment regimen being studied.",
+    "Step 4: Classified Zilovertamab Vedotin, Cyclophosphamide, Doxorubicin, Prednisone, and Rituximab as Primary Drugs.",
+    "Step 5: No keywords indicating secondary or comparator drugs were found.",
+    "Step 6: Formatted the output according to the specified rules, resulting in a single list of primary drugs."
+  ]
+}

@@ -1,0 +1,55 @@
+{
+  "validation_status": "FAIL",
+  "validation_confidence": 0.98,
+  "missed_drugs": [],
+  "grounded_search_performed": true,
+  "search_results": [
+    {
+      "drug_queried": "CD19/CD22 Dual-Target CAR-T",
+      "is_therapeutic_drug": true,
+      "source_url": "https://pubmed.ncbi.nlm.nih.gov/34153113/",
+      "source_title": "CD19/CD22 dual-target CAR-T cell therapy for relapsed/refractory B-cell malignancies",
+      "evidence": "CD19/CD22 dual-target CAR-T cell therapy is an investigational immunotherapy using chimeric antigen receptor T cells.",
+      "confidence": "high"
+    }
+  ],
+  "issues_found": [
+    {
+      "check_type": "rule_compliance",
+      "severity": "high",
+      "description": "The CAR-T term was incorrectly formatted. Rule 14 and 15 require the term 'Cell' to be included in the singular form.",
+      "evidence": "Extracted: 'CD19/CD22 Dual-Target CAR-T'. Rule 14: 'Standard CAR-T should be captured as \"CAR-T Cell\"'.",
+      "drug": "CD19/CD22 Dual-Target CAR-T",
+      "correct_category": "Primary",
+      "rule_reference": "Rule 14 and Rule 15"
+    },
+    {
+      "check_type": "rule_compliance",
+      "severity": "medium",
+      "description": "The term 'Dual-Target' is a descriptive mechanism/specification that should be normalized to the standard CAR-T naming convention defined in Rule 16.",
+      "evidence": "Rule 16: 'Directed or Targeted CAR-T therapies must capture the full specification: CD38-Directed CAR T-Cell...'",
+      "drug": "CD19/CD22 Dual-Target CAR-T",
+      "correct_category": "Primary",
+      "rule_reference": "Rule 16"
+    }
+  ],
+  "checks_performed": {
+    "hallucination_detection": {
+      "passed": true,
+      "note": "Both items are valid therapeutic agents used in the study context."
+    },
+    "omission_detection": {
+      "passed": true,
+      "note": "No other therapeutic drugs were identified in the title."
+    },
+    "rule_compliance": {
+      "passed": false,
+      "note": "Failed to include the mandatory 'Cell' suffix for CAR-T therapy as required by Rule 14."
+    },
+    "misclassification_detection": {
+      "passed": true,
+      "note": "Classification as Primary based on 'followed by' is correct per Rule 1."
+    }
+  },
+  "validation_reasoning": "1. Verified 'Autologous Hematopoietic Stem Cell' follows Rule 17 (removing 'transplantation').\n2. Verified 'CD19/CD22 Dual-Target CAR-T' is a valid therapeutic agent via grounded search.\n3. Identified a violation of Rule 14: CAR-T must be captured as 'CAR-T Cell'. The extraction omitted the word 'Cell'.\n4. Identified that while Rule 16 allows for directed/targeted prefixes, the formatting must still adhere to the 'Cell' suffix requirement.\n5. Conclusion: FAIL due to high-severity formatting violation of specific cell therapy rules."
+}

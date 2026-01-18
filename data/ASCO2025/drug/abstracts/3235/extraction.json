@@ -1,0 +1,16 @@
+{
+  "Primary Drugs": [
+    "Autologous Hematopoietic Stem Cell",
+    "CD19/CD22 Dual-Target CAR-T"
+  ],
+  "Secondary Drugs": [],
+  "Comparator Drugs": [],
+  "Reasoning": [
+    "Step 1: Identified potential therapeutic agents: 'Autologous hematopoietic stem cell transplantation' and 'CD19/CD22 dual-target CAR-T therapy'.",
+    "Step 2: Normalized 'Autologous hematopoietic stem cell transplantation' to 'Autologous Hematopoietic Stem Cell' according to cell therapy mapping rules, removing the procedural term 'transplantation'.",
+    "Step 3: Captured the specific CAR-T variant 'CD19/CD22 Dual-Target CAR-T' as per cell therapy rules, excluding the general term 'therapy'.",
+    "Step 4: The identifier 'followed by' indicates that both agents are part of the primary treatment regimen.",
+    "Step 5: Classified both 'Autologous Hematopoietic Stem Cell' and 'CD19/CD22 Dual-Target CAR-T' as Primary drugs.",
+    "Step 6: Formatted the final JSON output, ensuring no secondary or comparator drugs were present."
+  ]
+}

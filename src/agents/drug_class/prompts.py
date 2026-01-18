@@ -445,3 +445,11 @@ def get_validation_prompt_parts(
     
     return validation_prompt, extraction_rules, version
 
+
+def clear_prompt_cache() -> None:
+    """Clear the prompt cache.
+    
+    Useful for testing or when prompts have been updated in Langfuse.
+    """
+    _prompt_cache.clear()
+
