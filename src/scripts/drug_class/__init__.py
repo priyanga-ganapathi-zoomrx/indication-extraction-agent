@@ -19,16 +19,21 @@ Per-Abstract Status:
     which steps have completed. Rerunning the script will automatically
     skip completed steps and resume from where each abstract left off.
 
+Batch Status:
+    - extraction_batch_status.json: Tracks overall extraction progress
+    - validation_batch_status.json: Tracks overall validation progress
+    Both support duration accumulation across retries.
+
 Example usage:
     # Run full pipeline step-by-step
-    python -m src.scripts.drug_class.extraction_processor --input data/input.csv
+    python -m src.scripts.drug_class.extraction_processor --input ASCO2025/input/abstract_titles.csv --drug_output_dir ASCO2025/drug --output_dir ASCO2025/drug_class
     
     # Run individual steps for testing
     python -m src.scripts.drug_class.step1_processor --input data/input.csv
     python -m src.scripts.drug_class.step2_processor --input data/input.csv
     
     # Validate extractions
-    python -m src.scripts.drug_class.validation_processor --input data/extraction_results.csv
+    python -m src.scripts.drug_class.validation_processor --input ASCO2025/input/abstract_titles.csv --output_dir ASCO2025/drug_class
 """
 
 from src.scripts.drug_class.extraction_processor import (
@@ -37,6 +42,8 @@ from src.scripts.drug_class.extraction_processor import (
     get_step_from_status,
     get_abstracts_at_step,
     run_step_batch,
+    save_batch_status as save_extraction_batch_status,
+    save_results_csv as save_extraction_results_csv,
     main as batch_main,
 )
 
@@ -68,6 +75,13 @@ from src.scripts.drug_class.step5_processor import (
 from src.scripts.drug_class.validation_processor import (
     load_abstracts as load_validation_abstracts,
     process_single as validation_process_single,
+    get_validation_status,
+    should_process_validation,
+    save_validation_result,
+    save_batch_status as save_validation_batch_status,
+    run_validation_batch,
+    save_results_csv as save_validation_results_csv,
+    ProcessResult as ValidationProcessResult,
     main as validation_main,
 )
 
@@ -78,6 +92,8 @@ __all__ = [
     "get_step_from_status",
     "get_abstracts_at_step",
     "run_step_batch",
+    "save_extraction_batch_status",
+    "save_extraction_results_csv",
     "batch_main",
     # Step processors
     "step1_process_single",
@@ -93,6 +109,13 @@ __all__ = [
     # Validation processor
     "load_validation_abstracts",
     "validation_process_single",
+    "get_validation_status",
+    "should_process_validation",
+    "save_validation_result",
+    "save_validation_batch_status",
+    "run_validation_batch",
+    "save_validation_results_csv",
+    "ValidationProcessResult",
     "validation_main",
 ]
 

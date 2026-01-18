@@ -10,19 +10,25 @@ Key features:
 - Per-step parallelism: Configure different parallelism per step based on token usage
 - Per-abstract status tracking: Resume from where each abstract left off
 - Retry-friendly: Just rerun to retry failed abstracts
+- Batch-level status tracking (extraction_batch_status.json)
+- Real-time progress monitoring with tqdm
+- Execution time tracking (accumulates across retries)
 
 Usage:
-    python -m src.scripts.drug_class.extraction_processor --input data/input.csv --output_dir data/output
+    python -m src.scripts.drug_class.extraction_processor --input ASCO2025/input/abstract_titles.csv --output_dir ASCO2025/drug_class
 """
 
 import argparse
 import csv
 import json
+import time
 import concurrent.futures
 from dataclasses import dataclass, field
 from datetime import datetime
 from pathlib import Path
 from typing import Optional
+
+from tqdm import tqdm
 
 from src.agents.drug_class import (
     # Step functions
@@ -159,6 +165,122 @@ def _parse_list(value: str) -> list[str]:
     
     # Fall back to comma/semicolon separated
     return [d.strip() for d in value.replace(';', ',').split(',') if d.strip()]
+
+
+def save_batch_status(
+    storage: LocalStorageClient,
+    inputs: list[DrugClassInput],
+    total_duration: float,
+    started_at: str,
+) -> dict:
+    """Save or update extraction_batch_status.json with accumulated duration.
+    
+    Args:
+        storage: Storage client
+        inputs: List of all inputs
+        total_duration: Duration of this run in seconds
+        started_at: Timestamp when this run started
+        
+    Returns:
+        The batch status dictionary
+    """
+    # Count statuses
+    success_count = 0
+    failed_count = 0
+    not_processed_count = 0
+    failed_ids = []
+    
+    for inp in inputs:
+        status = get_abstract_status(inp.abstract_id, storage)
+        if status is None:
+            not_processed_count += 1
+        elif status.pipeline_status == "success":
+            success_count += 1
+        else:
+            failed_count += 1
+            failed_ids.append(inp.abstract_id)
+    
+    # Load existing batch status if available (for accumulation)
+    existing_duration = 0.0
+    original_started_at = started_at
+    try:
+        existing_status = storage.download_json("extraction_batch_status.json")
+        existing_duration = existing_status.get("total_duration_seconds", 0.0)
+        # Preserve original started_at from first run
+        original_started_at = existing_status.get("started_at", started_at)
+    except FileNotFoundError:
+        pass
+    
+    accumulated_duration = existing_duration + total_duration
+    
+    batch_status = {
+        "pipeline": "drug_class_extraction",
+        "total_abstracts": len(inputs),
+        "success": success_count,
+        "failed": failed_count,
+        "not_processed": not_processed_count,
+        "failed_ids": failed_ids,
+        "total_duration_seconds": round(accumulated_duration, 2),
+        "last_run_duration_seconds": round(total_duration, 2),
+        "started_at": original_started_at,
+        "modified_at": _get_timestamp(),
+    }
+    
+    storage.upload_json("extraction_batch_status.json", batch_status)
+    return batch_status
+
+
+def save_results_csv(
+    inputs: list[DrugClassInput],
+    original_rows: list[dict],
+    fieldnames: list[str],
+    storage: LocalStorageClient,
+    output_path: str,
+):
+    """Save extraction results to CSV with all input columns plus model_response.
+    
+    Reads step3_output.json (drug selections) and step5_output.json (explicit classes)
+    from storage to build the model response.
+    """
+    output_fieldnames = fieldnames + ["model_response"]
+    
+    with open(output_path, "w", newline="", encoding="utf-8-sig") as f:
+        writer = csv.DictWriter(f, fieldnames=output_fieldnames)
+        writer.writeheader()
+        
+        for i, inp in enumerate(inputs):
+            row = dict(original_rows[i]) if i < len(original_rows) else {}
+            
+            # Build model_response from step outputs
+            model_response = {}
+            
+            # Get step3 output (drug selections)
+            try:
+                step3_data = storage.download_json(f"abstracts/{inp.abstract_id}/step3_output.json")
+                model_response["drug_selections"] = step3_data.get("selections", {})
+            except FileNotFoundError:
+                model_response["drug_selections"] = {}
+            
+            # Get step5 output (explicit classes and consolidation)
+            try:
+                step5_data = storage.download_json(f"abstracts/{inp.abstract_id}/step5_output.json")
+                model_response["explicit_drug_classes"] = step5_data.get("explicit_drug_classes", [])
+                model_response["final_drug_classes"] = step5_data.get("final_drug_classes", [])
+            except FileNotFoundError:
+                model_response["explicit_drug_classes"] = []
+                model_response["final_drug_classes"] = []
+            
+            # Get status for metadata
+            try:
+                status_data = storage.download_json(f"abstracts/{inp.abstract_id}/status.json")
+                model_response["pipeline_status"] = status_data.get("pipeline_status", "unknown")
+                model_response["total_llm_calls"] = status_data.get("total_llm_calls", 0)
+            except FileNotFoundError:
+                model_response["pipeline_status"] = "not_processed"
+                model_response["total_llm_calls"] = 0
+            
+            row["model_response"] = json.dumps(model_response, indent=2)
+            writer.writerow(row)
 
 
 def get_abstract_status(abstract_id: str, storage: LocalStorageClient) -> Optional[PipelineStatus]:
@@ -573,20 +695,21 @@ def run_step_batch(
     inputs: list[DrugClassInput],
     storage: LocalStorageClient,
     parallelism: int,
-) -> tuple[int, int]:
+) -> tuple[int, int, float]:
     """Run a step for all pending abstracts.
     
     Returns:
-        tuple: (successful_count, failed_count)
+        tuple: (successful_count, failed_count, duration_seconds)
     """
     pending = get_abstracts_at_step(inputs, step_name, storage)
     
     if not pending:
         print(f"  No abstracts pending for {step_name}")
-        return 0, 0
+        return 0, 0, 0.0
     
     print(f"  Processing {len(pending)} abstracts (parallelism: {parallelism})")
     
+    step_start = time.time()
     successful = 0
     failed = 0
     
@@ -596,28 +719,37 @@ def run_step_batch(
             for inp in pending
         }
         
-        for future in concurrent.futures.as_completed(future_to_inp):
-            inp = future_to_inp[future]
-            try:
-                result = future.result()
-                if result.get("success"):
-                    successful += 1
-                    print(f"    ✓ {inp.abstract_id}")
-                else:
+        # Use tqdm for progress bar
+        with tqdm(
+            total=len(pending),
+            desc=f"  {step_name}",
+            unit="abstract",
+            leave=True,
+        ) as pbar:
+            for future in concurrent.futures.as_completed(future_to_inp):
+                inp = future_to_inp[future]
+                try:
+                    result = future.result()
+                    if result.get("success"):
+                        successful += 1
+                        pbar.set_postfix_str(f"✓ {inp.abstract_id}")
+                    else:
+                        failed += 1
+                        pbar.set_postfix_str(f"✗ {inp.abstract_id}")
+                except Exception as e:
                     failed += 1
-                    print(f"    ✗ {inp.abstract_id}: {result.get('error', 'unknown')}")
-            except Exception as e:
-                failed += 1
-                print(f"    ✗ {inp.abstract_id}: {e}")
+                    pbar.set_postfix_str(f"✗ {inp.abstract_id}: {str(e)[:30]}")
+                pbar.update(1)
     
-    return successful, failed
+    step_duration = time.time() - step_start
+    return successful, failed, step_duration
 
 
 def main():
     parser = argparse.ArgumentParser(description="Drug Class Extraction Processor (Step-Centric)")
-    parser.add_argument("--input", default="data/drug_class/input/abstract_titles.csv", help="Input CSV file with abstracts")
-    parser.add_argument("--drug_output_dir", default="data/drug/output", help="Directory containing drug extraction results")
-    parser.add_argument("--output_dir", default="data/drug_class/output", help="Output directory for results")
+    parser.add_argument("--input", default="data/ASCO2025/input/abstract_titles.csv", help="Input CSV file (e.g., ASCO2025/input/abstract_titles.csv)")
+    parser.add_argument("--drug_output_dir", default="data/ASCO2025/drug", help="Directory containing drug extraction results (e.g., ASCO2025/drug)")
+    parser.add_argument("--output_dir", default="data/ASCO2025/drug_class", help="Output directory for results (e.g., ASCO2025/drug_class)")
     parser.add_argument("--limit", type=int, default=None, help="Limit abstracts to process")
     
     # Per-step parallelism
@@ -632,6 +764,10 @@ def main():
     # Ensure output directory exists
     output_dir = Path(args.output_dir)
     output_dir.mkdir(parents=True, exist_ok=True)
+    
+    # Record batch start time
+    batch_started_at = _get_timestamp()
+    batch_start_time = time.time()
     
     print("🧬 Drug Class Extraction Processor (Step-Centric)")
     print("=" * 60)
@@ -669,32 +805,48 @@ def main():
     
     total_success = 0
     total_failed = 0
+    step_durations = {}
     
     for step_name, process_func, parallelism in steps:
         print(f"→ {step_name.upper()}")
-        success, failed = run_step_batch(step_name, process_func, inputs, storage, parallelism)
+        success, failed, duration = run_step_batch(step_name, process_func, inputs, storage, parallelism)
         total_success += success
         total_failed += failed
-        print(f"  Done: {success} success, {failed} failed")
+        step_durations[step_name] = duration
+        print(f"  Done: {success} success, {failed} failed ({duration:.2f}s)")
         print()
     
+    # Calculate total batch duration
+    batch_duration = time.time() - batch_start_time
+    
+    # Save batch status (with accumulation)
+    print("Saving batch status...")
+    batch_status = save_batch_status(storage, inputs, batch_duration, batch_started_at)
+    print(f"✓ Saved extraction_batch_status.json")
+    
+    # Save CSV output
+    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+    csv_output_path = str(output_dir / f"extraction_{timestamp}.csv")
+    print(f"Saving CSV output...")
+    save_results_csv(inputs, original_rows, fieldnames, storage, csv_output_path)
+    print(f"✓ Saved {csv_output_path}")
+    
     # Summary
+    print()
     print("=" * 60)
     print("📊 Summary:")
     
-    # Count final status
-    complete = 0
-    incomplete = 0
-    for inp in inputs:
-        status = get_abstract_status(inp.abstract_id, storage)
-        if status and status.pipeline_status == "success":
-            complete += 1
-        else:
-            incomplete += 1
-    
     print(f"   Total abstracts: {len(inputs)}")
-    print(f"   Complete:        {complete}")
-    print(f"   Incomplete:      {incomplete}")
+    print(f"   Complete:        {batch_status['success']}")
+    print(f"   Failed:          {batch_status['failed']}")
+    print(f"   Not processed:   {batch_status['not_processed']}")
+    print()
+    print("Per-step duration:")
+    for step_name, duration in step_durations.items():
+        print(f"   {step_name}: {duration:.2f}s")
+    print()
+    print(f"   This run:        {batch_duration:.2f}s")
+    print(f"   Total duration:  {batch_status['total_duration_seconds']:.2f}s")
     print(f"   Output:          {args.output_dir}")
 
 
