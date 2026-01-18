@@ -16,7 +16,7 @@
     },
     "step3_selection": {
       "status": "success",
-      "llm_calls": 1
+      "llm_calls": 0
     },
     "step4_explicit": {
       "status": "success",
@@ -27,6 +27,6 @@
       "llm_calls": 0
     }
   },
-  "total_llm_calls": 11,
-  "last_updated": "2026-01-16T14:54:48.525764Z"
+  "total_llm_calls": 3,
+  "last_updated": "2026-01-18T07:23:37.816375Z"
 }

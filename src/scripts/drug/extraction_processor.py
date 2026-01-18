@@ -4,6 +4,10 @@ Drug Extraction Processor
 
 Batch processor for drug extraction using extract_drugs() function.
 Uses DrugConfig for model settings.
+
+Outputs:
+- CSV with extraction results
+- Per-abstract JSON files at {output_dir}/abstracts/{abstract_id}/extraction.json
 """
 
 import argparse
@@ -16,6 +20,7 @@ from pathlib import Path
 from typing import Optional
 
 from src.agents.drug import extract_drugs, DrugInput, ExtractionResult, DrugExtractionError, config
+from src.agents.core.storage import LocalStorageClient
 
 
 @dataclass
@@ -68,13 +73,25 @@ def load_abstracts(
     return inputs, original_rows, fieldnames
 
 
-def process_single(input_data: DrugInput) -> ProcessResult:
-    """Process single abstract and return result."""
+def process_single(input_data: DrugInput, storage: Optional[LocalStorageClient] = None) -> ProcessResult:
+    """Process single abstract and return result.
+    
+    Args:
+        input_data: DrugInput with abstract info
+        storage: Optional storage client to save extraction.json per abstract
+    """
     try:
         result: ExtractionResult = extract_drugs(input_data)
         
         # Serialize to JSON with aliases (Primary Drugs, etc.)
         response_json = json.dumps(result.model_dump(by_alias=True), indent=2, ensure_ascii=False)
+        
+        # Save to storage if provided
+        if storage:
+            storage.upload_json(
+                f"abstracts/{input_data.abstract_id}/extraction.json",
+                result.model_dump(by_alias=True)
+            )
         
         return ProcessResult(
             abstract_id=input_data.abstract_id,
@@ -123,7 +140,8 @@ def save_results(
 def main():
     parser = argparse.ArgumentParser(description="Drug Extraction Processor")
     parser.add_argument("--input", default="data/drug/input/abstract_titles.csv")
-    parser.add_argument("--output", default=None)
+    parser.add_argument("--output", default=None, help="Output CSV path")
+    parser.add_argument("--output_dir", default="data/drug/output", help="Output directory for per-abstract JSON files")
     parser.add_argument("--limit", type=int, default=None, help="Limit abstracts to process")
     parser.add_argument("--model_name", default="extraction", help="Model name for column prefix")
     parser.add_argument("--parallel_workers", type=int, default=3, help="Number of parallel workers")
@@ -137,13 +155,17 @@ def main():
     # Ensure output directory exists
     Path(args.output).parent.mkdir(parents=True, exist_ok=True)
     
+    # Initialize storage for per-abstract JSON output
+    storage = LocalStorageClient(base_dir=args.output_dir)
+    
     print("🔬 Drug Extraction Processor")
     print("=" * 60)
-    print(f"Input:  {args.input}")
-    print(f"Output: {args.output}")
-    print(f"Model:  {config.EXTRACTION_MODEL}")
-    print(f"Limit:  {args.limit or 'all'}")
-    print(f"Workers: {args.parallel_workers}")
+    print(f"Input:      {args.input}")
+    print(f"Output CSV: {args.output}")
+    print(f"Output Dir: {args.output_dir}")
+    print(f"Model:      {config.EXTRACTION_MODEL}")
+    print(f"Limit:      {args.limit or 'all'}")
+    print(f"Workers:    {args.parallel_workers}")
     print()
     
     # Load abstracts
@@ -160,7 +182,7 @@ def main():
     
     with concurrent.futures.ThreadPoolExecutor(max_workers=args.parallel_workers) as executor:
         future_to_index = {
-            executor.submit(process_single, inp): i
+            executor.submit(process_single, inp, storage): i
             for i, inp in enumerate(inputs)
         }
         
@@ -190,6 +212,7 @@ def main():
     print()
     save_results(results, original_rows, input_fieldnames, args.output, args.model_name)
     print(f"✓ Results saved to {args.output}")
+    print(f"✓ Per-abstract JSONs saved to {args.output_dir}/abstracts/*/extraction.json")
     
     # Summary
     successful = sum(1 for _, r in results if r.success)

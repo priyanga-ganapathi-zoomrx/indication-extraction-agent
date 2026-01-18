@@ -2,7 +2,7 @@
 """Drug class processing scripts package.
 
 This package contains batch processors for drug class extraction:
-- batch_processor: Step-centric batch processing (all steps)
+- extraction_processor: Step-centric batch processing (all steps)
 - step1_processor: Regimen identification only
 - step2_processor: Drug class extraction only
 - step3_processor: Drug class selection only
@@ -21,7 +21,7 @@ Per-Abstract Status:
 
 Example usage:
     # Run full pipeline step-by-step
-    python -m src.scripts.drug_class.batch_processor --input data/input.csv
+    python -m src.scripts.drug_class.extraction_processor --input data/input.csv
     
     # Run individual steps for testing
     python -m src.scripts.drug_class.step1_processor --input data/input.csv
@@ -31,7 +31,7 @@ Example usage:
     python -m src.scripts.drug_class.validation_processor --input data/extraction_results.csv
 """
 
-from src.scripts.drug_class.batch_processor import (
+from src.scripts.drug_class.extraction_processor import (
     load_abstracts,
     get_abstract_status,
     get_step_from_status,

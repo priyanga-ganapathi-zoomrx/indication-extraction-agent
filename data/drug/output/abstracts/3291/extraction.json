@@ -1,0 +1,19 @@
+{
+  "Primary Drugs": [
+    "Zilovertamab Vedotin",
+    "Cyclophosphamide",
+    "Doxorubicin",
+    "Prednisone",
+    "Rituximab"
+  ],
+  "Secondary Drugs": [],
+  "Comparator Drugs": [],
+  "Reasoning": [
+    "1. Identified potential drug names in the title: zilovertamab vedotin, cyclophosphamide, doxorubicin, prednisone, and rituximab.",
+    "2. Analyzed the connecting phrases 'in combination with' and 'plus'.",
+    "3. The phrases 'in combination with' and 'plus' indicate that all identified drugs are part of the main therapeutic regimen being studied.",
+    "4. Classified Zilovertamab Vedotin, Cyclophosphamide, Doxorubicin, Prednisone, and Rituximab as Primary Drugs.",
+    "5. Confirmed that no secondary or comparator drugs are mentioned in the title.",
+    "6. Formatted the drug names with title casing and structured the final output as a valid JSON object."
+  ]
+}

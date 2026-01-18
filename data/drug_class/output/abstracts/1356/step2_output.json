@@ -17,19 +17,18 @@
           "extracted_text": "antagonism of C/EBPβ",
           "normalized_form": "C/EBPβ Antagonist",
           "class_type": "MoA",
-          "evidence": "Use of lucicebtide (ST101) in glioblastoma patients by antagonism of C/EBP?-dependent mesenchymal cell transition",
+          "evidence": "Use of lucicebtide (ST101) in glioblastoma patients by antagonism of C/EBPβ-dependent mesenchymal cell transition",
           "source": "abstract_title",
           "rules_applied": [
             "Rule 1: Prioritize abstract title",
-            "Rule 3: Apply Title Case",
+            "Rule 3: Maintain Title Case",
             "Rule 11: Include biological target",
-            "Rule 13: Format as TARGET-Antagonist/Inhibitor",
             "Rule 15: Capture Agonist/Antagonist with target"
           ]
         }
       ],
       "extraction_method": "tavily",
-      "reasoning": "The abstract title explicitly identifies lucicebtide as an antagonist of C/EBPβ. Following Rule 1, since the drug class is mentioned in the title, it is prioritized and extracted as the primary class. Rule 11 and Rule 13 are applied to format the target and modality as 'C/EBPβ Antagonist'. Rule 3 is applied for Title Case.",
+      "reasoning": "The abstract title explicitly identifies lucicebtide as an antagonist of C/EBPβ. Following Rule 1, since the drug class is mentioned in the abstract title, it is prioritized over all other sources. Following Rule 3, Rule 11, and Rule 13, the target and modality are formatted as 'C/EBPβ Antagonist' using Title Case and the specific target mentioned.",
       "success": true
     }
   }

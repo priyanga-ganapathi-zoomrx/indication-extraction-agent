@@ -1,0 +1,15 @@
+{
+  "Primary Drugs": [
+    "Lucicebtide"
+  ],
+  "Secondary Drugs": [],
+  "Comparator Drugs": [],
+  "Reasoning": [
+    "1. Identified potential drug names in the title: 'lucicebtide (ST101)'.",
+    "2. Applied the rule to capture only the generic name 'Lucicebtide' when a code name 'ST101' is also present.",
+    "3. Excluded terms describing mechanism of action ('antagonism of C/EBP?-dependent mesenchymal cell transition and immunosuppressive M2 macrophage polarization').",
+    "4. Classified 'Lucicebtide' as a Primary Drug as it is the sole therapeutic agent being studied.",
+    "5. Confirmed there are no secondary or comparator drugs mentioned.",
+    "6. Formatted the output into the final JSON structure."
+  ]
+}

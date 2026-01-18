@@ -34,6 +34,12 @@ class Step1Output(BaseModel):
         description="Maps drug name to its components (populated on success)"
     )
     
+    # Error messages for failed drugs
+    drug_errors: dict[str, str] = Field(
+        default_factory=dict,
+        description="Error messages for failed drugs"
+    )
+    
     def is_drug_done(self, drug: str) -> bool:
         """Check if a drug has already been successfully processed."""
         return self.drug_status.get(drug) == "success"
@@ -64,10 +70,15 @@ class Step1Output(BaseModel):
         """Mark a drug as successfully processed."""
         self.drug_status[drug] = "success"
         self.drug_to_components[drug] = components
+        # Clear any previous error
+        self.drug_errors.pop(drug, None)
     
-    def mark_failed(self, drug: str) -> None:
-        """Mark a drug as failed."""
+    def mark_failed(self, drug: str, error: str) -> None:
+        """Mark a drug as failed with error message."""
         self.drug_status[drug] = "failed"
+        self.drug_errors[drug] = error
+        # Set empty components for failed drug
+        self.drug_to_components[drug] = []
     
     def is_complete(self, all_drugs: list[str]) -> bool:
         """Check if all drugs have been successfully processed."""

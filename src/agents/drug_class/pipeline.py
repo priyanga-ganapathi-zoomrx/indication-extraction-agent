@@ -305,7 +305,7 @@ def run_drug_class_pipeline(
                     
                 except Exception as e:
                     print(f"      ✗ {drug} failed: {e}")
-                    step1_output.mark_failed(drug)
+                    step1_output.mark_failed(drug, str(e))
                     _save_step_output(abstract_id, "step1_regimen", step1_output.model_dump(), storage)
                     # Continue with other drugs instead of failing entire step
             

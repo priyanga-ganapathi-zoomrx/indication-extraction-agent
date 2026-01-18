@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-Drug Class Batch Processor (Step-Centric)
+Drug Class Extraction Processor (Step-Centric)
 
 Processes multiple abstracts through the drug class extraction pipeline
 using step-centric batching for optimal parallelism control.
@@ -12,7 +12,7 @@ Key features:
 - Retry-friendly: Just rerun to retry failed abstracts
 
 Usage:
-    python -m src.scripts.drug_class.batch_processor --input data/input.csv --output_dir data/output
+    python -m src.scripts.drug_class.extraction_processor --input data/input.csv --output_dir data/output
 """
 
 import argparse
@@ -45,11 +45,15 @@ from src.agents.drug_class import (
     Step2Output,
     Step3Output,
     Step4Output,
-    Step5Output,
     PipelineStatus,
-    config,
 )
+from src.agents.drug import ExtractionResult
 from src.agents.core.storage import LocalStorageClient
+
+
+def _get_timestamp() -> str:
+    """Get current UTC timestamp in ISO format."""
+    return datetime.utcnow().isoformat() + "Z"
 
 
 @dataclass
@@ -72,9 +76,13 @@ class BatchConfig:
 
 def load_abstracts(
     csv_path: str,
+    drug_storage: LocalStorageClient,
     limit: int = None
 ) -> tuple[list[DrugClassInput], list[dict], list[str]]:
-    """Load abstracts from CSV into DrugClassInput objects.
+    """Load abstracts from CSV and drug extraction results from storage.
+    
+    CSV provides: abstract_id, abstract_title, firm, full_abstract
+    Drug data comes from: drug_storage/abstracts/{abstract_id}/extraction.json
     
     Returns:
         tuple: (inputs, original_rows, fieldnames)
@@ -82,6 +90,7 @@ def load_abstracts(
     inputs = []
     original_rows = []
     fieldnames = []
+    skipped_no_drugs = []
     
     with open(csv_path, encoding="utf-8-sig") as f:
         reader = csv.DictReader(f)
@@ -91,12 +100,7 @@ def load_abstracts(
         header_map = {h.lower().strip(): h for h in fieldnames}
         id_col = header_map.get('abstract_id') or header_map.get('id')
         title_col = header_map.get('abstract_title') or header_map.get('title')
-        
-        # Optional columns
         abstract_col = header_map.get('full_abstract') or header_map.get('abstract')
-        primary_col = header_map.get('primary_drugs') or header_map.get('primary drugs')
-        secondary_col = header_map.get('secondary_drugs') or header_map.get('secondary drugs')
-        comparator_col = header_map.get('comparator_drugs') or header_map.get('comparator drugs')
         firms_col = header_map.get('firms') or header_map.get('firm') or header_map.get('sponsor')
         
         for row in reader:
@@ -107,30 +111,38 @@ def load_abstracts(
             if not abstract_id or not abstract_title:
                 continue
             
-            # Parse drug lists (JSON arrays or comma-separated)
-            primary_drugs = _parse_drug_list(row.get(primary_col, "") if primary_col else "")
-            secondary_drugs = _parse_drug_list(row.get(secondary_col, "") if secondary_col else "")
-            comparator_drugs = _parse_drug_list(row.get(comparator_col, "") if comparator_col else "")
-            firms = _parse_drug_list(row.get(firms_col, "") if firms_col else "")
+            # Read drug extraction from storage
+            try:
+                drug_data = drug_storage.download_json(f"abstracts/{abstract_id}/extraction.json")
+                extraction = ExtractionResult(**drug_data)
+            except FileNotFoundError:
+                skipped_no_drugs.append(abstract_id)
+                continue
+            
+            # Parse firms
+            firms = _parse_list(row.get(firms_col, "") if firms_col else "")
             
             inputs.append(DrugClassInput(
                 abstract_id=str(abstract_id),
                 abstract_title=str(abstract_title),
                 full_abstract=str(full_abstract),
-                primary_drugs=primary_drugs,
-                secondary_drugs=secondary_drugs,
-                comparator_drugs=comparator_drugs,
+                primary_drugs=extraction.primary_drugs,
+                secondary_drugs=extraction.secondary_drugs,
+                comparator_drugs=extraction.comparator_drugs,
                 firms=firms,
             ))
             original_rows.append(row)
+    
+    if skipped_no_drugs:
+        print(f"⚠ Skipped {len(skipped_no_drugs)} abstracts without drug extraction: {skipped_no_drugs[:5]}{'...' if len(skipped_no_drugs) > 5 else ''}")
     
     if limit:
         return inputs[:limit], original_rows[:limit], fieldnames
     return inputs, original_rows, fieldnames
 
 
-def _parse_drug_list(value: str) -> list[str]:
-    """Parse drug list from JSON array or comma-separated string."""
+def _parse_list(value: str) -> list[str]:
+    """Parse list from JSON array or comma-separated string."""
     if not value or not value.strip():
         return []
     
@@ -152,12 +164,12 @@ def _parse_drug_list(value: str) -> list[str]:
 def get_abstract_status(abstract_id: str, storage: LocalStorageClient) -> Optional[PipelineStatus]:
     """Load status for an abstract if it exists."""
     try:
-        status_data = storage.read(f"abstracts/{abstract_id}/status.json")
-        if status_data:
-            return PipelineStatus(**json.loads(status_data))
+        status_data = storage.download_json(f"abstracts/{abstract_id}/status.json")
+        return PipelineStatus(**status_data)
+    except FileNotFoundError:
+        return None
     except Exception:
-        pass
-    return None
+        return None
 
 
 def get_step_from_status(status: Optional[PipelineStatus]) -> str:
@@ -197,28 +209,37 @@ def get_abstracts_at_step(
 
 
 def process_step1_single(inp: DrugClassInput, storage: LocalStorageClient) -> dict:
-    """Process Step 1 for a single abstract."""
+    """Process Step 1 for a single abstract.
+    
+    Uses per-drug error handling to preserve partial progress.
+    """
     abstract_id = inp.abstract_id
     
     # Initialize or load status
     status = get_abstract_status(abstract_id, storage)
     if not status:
         status = PipelineStatus(abstract_id=abstract_id, abstract_title=inp.abstract_title)
+        status.last_updated = _get_timestamp()
     
     # Get all drugs
     all_drugs = inp.primary_drugs + inp.secondary_drugs + inp.comparator_drugs
     if not all_drugs:
         return {"abstract_id": abstract_id, "success": False, "error": "No drugs to process"}
     
-    # Initialize step1 output
-    step1_output = Step1Output()
+    # Load existing step1 output if available, or create new
+    try:
+        existing_data = storage.download_json(f"abstracts/{abstract_id}/step1_output.json")
+        step1_output = Step1Output(**existing_data)
+    except FileNotFoundError:
+        step1_output = Step1Output()
+    
     step1_llm_calls = 0
     
-    try:
-        for drug in all_drugs:
-            if step1_output.is_drug_done(drug):
-                continue
-            
+    for drug in all_drugs:
+        if step1_output.is_drug_done(drug):
+            continue
+        
+        try:
             components = identify_regimen(RegimenInput(
                 abstract_id=abstract_id,
                 abstract_title=inp.abstract_title,
@@ -226,32 +247,43 @@ def process_step1_single(inp: DrugClassInput, storage: LocalStorageClient) -> di
             ))
             step1_output.mark_success(drug, components)
             step1_llm_calls += 1
+        except Exception as e:
+            # Mark individual drug as failed, continue to others
+            step1_output.mark_failed(drug, str(e))
         
-        # Check completion
-        if step1_output.is_complete(all_drugs):
-            status.steps["step1_regimen"] = {
-                "status": "success",
-                "llm_calls": step1_llm_calls,
-                "output": step1_output.model_dump(),
-            }
-            status.last_completed_step = "step1_regimen"
-        else:
-            status.steps["step1_regimen"] = {"status": "failed", "error": "Some drugs failed"}
-        
-        # Save status
-        storage.write(f"abstracts/{abstract_id}/status.json", json.dumps(status.to_dict(), indent=2, ensure_ascii=False))
-        storage.write(f"abstracts/{abstract_id}/step1_output.json", step1_output.model_dump_json(indent=2))
-        
-        return {"abstract_id": abstract_id, "success": True, "llm_calls": step1_llm_calls}
-        
-    except Exception as e:
-        status.steps["step1_regimen"] = {"status": "failed", "error": str(e)}
-        storage.write(f"abstracts/{abstract_id}/status.json", json.dumps(status.to_dict(), indent=2, ensure_ascii=False))
-        return {"abstract_id": abstract_id, "success": False, "error": str(e)}
+        # Save progress after each drug (incremental checkpoint)
+        storage.upload_json(f"abstracts/{abstract_id}/step1_output.json", step1_output.model_dump())
+    
+    # Update status based on completion
+    if step1_output.is_complete(all_drugs):
+        status.steps["step1_regimen"] = {
+            "status": "success",
+            "llm_calls": step1_llm_calls,
+        }
+        status.last_completed_step = "step1_regimen"
+    else:
+        failed_drugs = [d for d in all_drugs if step1_output.drug_status.get(d) == "failed"]
+        status.steps["step1_regimen"] = {"status": "failed", "error": f"Failed drugs: {failed_drugs}"}
+    
+    status.total_llm_calls += step1_llm_calls
+    status.last_updated = _get_timestamp()
+    storage.upload_json(f"abstracts/{abstract_id}/status.json", status.to_dict())
+    
+    success_count = sum(1 for d in all_drugs if step1_output.drug_status.get(d) == "success")
+    return {
+        "abstract_id": abstract_id,
+        "success": step1_output.is_complete(all_drugs),
+        "llm_calls": step1_llm_calls,
+        "drugs_succeeded": success_count,
+        "drugs_failed": len(all_drugs) - success_count,
+    }
 
 
 def process_step2_single(inp: DrugClassInput, storage: LocalStorageClient) -> dict:
-    """Process Step 2 for a single abstract."""
+    """Process Step 2 for a single abstract.
+    
+    Uses per-drug error handling to preserve partial progress.
+    """
     abstract_id = inp.abstract_id
     
     # Load status and step1 output
@@ -259,25 +291,31 @@ def process_step2_single(inp: DrugClassInput, storage: LocalStorageClient) -> di
     if not status:
         return {"abstract_id": abstract_id, "success": False, "error": "No status found"}
     
-    step1_data = storage.read(f"abstracts/{abstract_id}/step1_output.json")
-    if not step1_data:
+    try:
+        step1_data = storage.download_json(f"abstracts/{abstract_id}/step1_output.json")
+        step1_output = Step1Output(**step1_data)
+    except FileNotFoundError:
         return {"abstract_id": abstract_id, "success": False, "error": "Step 1 output not found"}
     
-    step1_output = Step1Output(**json.loads(step1_data))
     all_components = step1_output.get_all_components()
     
     if not all_components:
         return {"abstract_id": abstract_id, "success": False, "error": "No components from Step 1"}
     
-    # Initialize step2 output
-    step2_output = Step2Output()
+    # Load existing step2 output if available, or create new
+    try:
+        existing_data = storage.download_json(f"abstracts/{abstract_id}/step2_output.json")
+        step2_output = Step2Output(**existing_data)
+    except FileNotFoundError:
+        step2_output = Step2Output()
+    
     step2_llm_calls = 0
     
-    try:
-        for drug in all_components:
-            if step2_output.is_drug_done(drug):
-                continue
-            
+    for drug in all_components:
+        if step2_output.is_drug_done(drug):
+            continue
+        
+        try:
             # Fetch search results (with caching)
             drug_results, firm_results = fetch_search_results(drug, inp.firms, storage)
             
@@ -307,51 +345,71 @@ def process_step2_single(inp: DrugClassInput, storage: LocalStorageClient) -> di
                 step2_llm_calls += 1
             
             step2_output.mark_success(drug, result)
+            
+        except Exception as e:
+            # Mark individual drug as failed, continue to others
+            step2_output.mark_failed(drug, str(e))
         
-        # Check completion
-        if step2_output.is_complete(all_components):
-            status.steps["step2_extraction"] = {
-                "status": "success",
-                "llm_calls": step2_llm_calls,
-            }
-            status.last_completed_step = "step2_extraction"
-        else:
-            status.steps["step2_extraction"] = {"status": "failed", "error": "Some drugs failed"}
-        
-        status.total_llm_calls += step2_llm_calls
-        storage.write(f"abstracts/{abstract_id}/status.json", json.dumps(status.to_dict(), indent=2, ensure_ascii=False))
-        storage.write(f"abstracts/{abstract_id}/step2_output.json", step2_output.model_dump_json(indent=2))
-        
-        return {"abstract_id": abstract_id, "success": True, "llm_calls": step2_llm_calls}
-        
-    except Exception as e:
-        status.steps["step2_extraction"] = {"status": "failed", "error": str(e)}
-        storage.write(f"abstracts/{abstract_id}/status.json", json.dumps(status.to_dict(), indent=2, ensure_ascii=False))
-        return {"abstract_id": abstract_id, "success": False, "error": str(e)}
+        # Save progress after each drug (incremental checkpoint)
+        storage.upload_json(f"abstracts/{abstract_id}/step2_output.json", step2_output.model_dump())
+    
+    # Update status based on completion
+    if step2_output.is_complete(all_components):
+        status.steps["step2_extraction"] = {
+            "status": "success",
+            "llm_calls": step2_llm_calls,
+        }
+        status.last_completed_step = "step2_extraction"
+    else:
+        failed_drugs = [d for d in all_components if step2_output.drug_status.get(d) == "failed"]
+        status.steps["step2_extraction"] = {"status": "failed", "error": f"Failed drugs: {failed_drugs}"}
+    
+    status.total_llm_calls += step2_llm_calls
+    status.last_updated = _get_timestamp()
+    storage.upload_json(f"abstracts/{abstract_id}/status.json", status.to_dict())
+    
+    success_count = sum(1 for d in all_components if step2_output.drug_status.get(d) == "success")
+    return {
+        "abstract_id": abstract_id,
+        "success": step2_output.is_complete(all_components),
+        "llm_calls": step2_llm_calls,
+        "drugs_succeeded": success_count,
+        "drugs_failed": len(all_components) - success_count,
+    }
 
 
 def process_step3_single(inp: DrugClassInput, storage: LocalStorageClient) -> dict:
-    """Process Step 3 for a single abstract."""
+    """Process Step 3 for a single abstract.
+    
+    Uses per-drug error handling to preserve partial progress.
+    """
     abstract_id = inp.abstract_id
     
     status = get_abstract_status(abstract_id, storage)
     if not status:
         return {"abstract_id": abstract_id, "success": False, "error": "No status found"}
     
-    step2_data = storage.read(f"abstracts/{abstract_id}/step2_output.json")
-    if not step2_data:
+    try:
+        step2_data = storage.download_json(f"abstracts/{abstract_id}/step2_output.json")
+        step2_output = Step2Output(**step2_data)
+    except FileNotFoundError:
         return {"abstract_id": abstract_id, "success": False, "error": "Step 2 output not found"}
     
-    step2_output = Step2Output(**json.loads(step2_data))
-    
-    step3_output = Step3Output()
-    step3_llm_calls = 0
-    
+    # Load existing step3 output if available, or create new
     try:
-        for drug_name, extraction_result in step2_output.extractions.items():
-            if step3_output.is_drug_done(drug_name):
-                continue
-            
+        existing_data = storage.download_json(f"abstracts/{abstract_id}/step3_output.json")
+        step3_output = Step3Output(**existing_data)
+    except FileNotFoundError:
+        step3_output = Step3Output()
+    
+    step3_llm_calls = 0
+    all_drugs = list(step2_output.extractions.keys())
+    
+    for drug_name, extraction_result in step2_output.extractions.items():
+        if step3_output.is_drug_done(drug_name):
+            continue
+        
+        try:
             # Check if LLM selection is needed
             if not needs_llm_selection(extraction_result.extraction_details):
                 # No LLM needed - just copy the single class
@@ -376,28 +434,37 @@ def process_step3_single(inp: DrugClassInput, storage: LocalStorageClient) -> di
                 step3_llm_calls += 1
             
             step3_output.mark_success(drug_name, result)
+            
+        except Exception as e:
+            # Mark individual drug as failed, continue to others
+            step3_output.mark_failed(drug_name, str(e))
         
-        # Check completion
-        all_drugs = list(step2_output.extractions.keys())
-        if step3_output.is_complete(all_drugs):
-            status.steps["step3_selection"] = {
-                "status": "success",
-                "llm_calls": step3_llm_calls,
-            }
-            status.last_completed_step = "step3_selection"
-        else:
-            status.steps["step3_selection"] = {"status": "failed", "error": "Some drugs failed"}
-        
-        status.total_llm_calls += step3_llm_calls
-        storage.write(f"abstracts/{abstract_id}/status.json", json.dumps(status.to_dict(), indent=2, ensure_ascii=False))
-        storage.write(f"abstracts/{abstract_id}/step3_output.json", step3_output.model_dump_json(indent=2))
-        
-        return {"abstract_id": abstract_id, "success": True, "llm_calls": step3_llm_calls}
-        
-    except Exception as e:
-        status.steps["step3_selection"] = {"status": "failed", "error": str(e)}
-        storage.write(f"abstracts/{abstract_id}/status.json", json.dumps(status.to_dict(), indent=2, ensure_ascii=False))
-        return {"abstract_id": abstract_id, "success": False, "error": str(e)}
+        # Save progress after each drug (incremental checkpoint)
+        storage.upload_json(f"abstracts/{abstract_id}/step3_output.json", step3_output.model_dump())
+    
+    # Update status based on completion
+    if step3_output.is_complete(all_drugs):
+        status.steps["step3_selection"] = {
+            "status": "success",
+            "llm_calls": step3_llm_calls,
+        }
+        status.last_completed_step = "step3_selection"
+    else:
+        failed_drugs = [d for d in all_drugs if step3_output.drug_status.get(d) == "failed"]
+        status.steps["step3_selection"] = {"status": "failed", "error": f"Failed drugs: {failed_drugs}"}
+    
+    status.total_llm_calls += step3_llm_calls
+    status.last_updated = _get_timestamp()
+    storage.upload_json(f"abstracts/{abstract_id}/status.json", status.to_dict())
+    
+    success_count = sum(1 for d in all_drugs if step3_output.drug_status.get(d) == "success")
+    return {
+        "abstract_id": abstract_id,
+        "success": step3_output.is_complete(all_drugs),
+        "llm_calls": step3_llm_calls,
+        "drugs_succeeded": success_count,
+        "drugs_failed": len(all_drugs) - success_count,
+    }
 
 
 def process_step4_single(inp: DrugClassInput, storage: LocalStorageClient) -> dict:
@@ -426,15 +493,17 @@ def process_step4_single(inp: DrugClassInput, storage: LocalStorageClient) -> di
         }
         status.last_completed_step = "step4_explicit"
         status.total_llm_calls += step4_llm_calls
+        status.last_updated = _get_timestamp()
         
-        storage.write(f"abstracts/{abstract_id}/status.json", json.dumps(status.to_dict(), indent=2, ensure_ascii=False))
-        storage.write(f"abstracts/{abstract_id}/step4_output.json", step4_output.model_dump_json(indent=2))
+        storage.upload_json(f"abstracts/{abstract_id}/status.json", status.to_dict())
+        storage.upload_json(f"abstracts/{abstract_id}/step4_output.json", step4_output.model_dump())
         
         return {"abstract_id": abstract_id, "success": True, "llm_calls": step4_llm_calls}
         
     except Exception as e:
         status.steps["step4_explicit"] = {"status": "failed", "error": str(e)}
-        storage.write(f"abstracts/{abstract_id}/status.json", json.dumps(status.to_dict(), indent=2, ensure_ascii=False))
+        status.last_updated = _get_timestamp()
+        storage.upload_json(f"abstracts/{abstract_id}/status.json", status.to_dict())
         return {"abstract_id": abstract_id, "success": False, "error": str(e)}
 
 
@@ -447,14 +516,13 @@ def process_step5_single(inp: DrugClassInput, storage: LocalStorageClient) -> di
         return {"abstract_id": abstract_id, "success": False, "error": "No status found"}
     
     # Load step3 and step4 outputs
-    step3_data = storage.read(f"abstracts/{abstract_id}/step3_output.json")
-    step4_data = storage.read(f"abstracts/{abstract_id}/step4_output.json")
-    
-    if not step3_data or not step4_data:
+    try:
+        step3_data = storage.download_json(f"abstracts/{abstract_id}/step3_output.json")
+        step4_data = storage.download_json(f"abstracts/{abstract_id}/step4_output.json")
+        step3_output = Step3Output(**step3_data)
+        step4_output = Step4Output(**step4_data)
+    except FileNotFoundError:
         return {"abstract_id": abstract_id, "success": False, "error": "Previous step outputs not found"}
-    
-    step3_output = Step3Output(**json.loads(step3_data))
-    step4_output = Step4Output(**json.loads(step4_data))
     
     step5_llm_calls = 0
     
@@ -485,15 +553,17 @@ def process_step5_single(inp: DrugClassInput, storage: LocalStorageClient) -> di
         status.last_completed_step = "step5_consolidation"
         status.pipeline_status = "success"
         status.total_llm_calls += step5_llm_calls
+        status.last_updated = _get_timestamp()
         
-        storage.write(f"abstracts/{abstract_id}/status.json", json.dumps(status.to_dict(), indent=2, ensure_ascii=False))
-        storage.write(f"abstracts/{abstract_id}/step5_output.json", step5_output.model_dump_json(indent=2))
+        storage.upload_json(f"abstracts/{abstract_id}/status.json", status.to_dict())
+        storage.upload_json(f"abstracts/{abstract_id}/step5_output.json", step5_output.model_dump())
         
         return {"abstract_id": abstract_id, "success": True, "llm_calls": step5_llm_calls}
         
     except Exception as e:
         status.steps["step5_consolidation"] = {"status": "failed", "error": str(e)}
-        storage.write(f"abstracts/{abstract_id}/status.json", json.dumps(status.to_dict(), indent=2, ensure_ascii=False))
+        status.last_updated = _get_timestamp()
+        storage.upload_json(f"abstracts/{abstract_id}/status.json", status.to_dict())
         return {"abstract_id": abstract_id, "success": False, "error": str(e)}
 
 
@@ -544,8 +614,9 @@ def run_step_batch(
 
 
 def main():
-    parser = argparse.ArgumentParser(description="Drug Class Batch Processor (Step-Centric)")
-    parser.add_argument("--input", required=True, help="Input CSV file with abstracts")
+    parser = argparse.ArgumentParser(description="Drug Class Extraction Processor (Step-Centric)")
+    parser.add_argument("--input", default="data/drug_class/input/abstract_titles.csv", help="Input CSV file with abstracts")
+    parser.add_argument("--drug_output_dir", default="data/drug/output", help="Directory containing drug extraction results")
     parser.add_argument("--output_dir", default="data/drug_class/output", help="Output directory for results")
     parser.add_argument("--limit", type=int, default=None, help="Limit abstracts to process")
     
@@ -562,11 +633,12 @@ def main():
     output_dir = Path(args.output_dir)
     output_dir.mkdir(parents=True, exist_ok=True)
     
-    print("🧬 Drug Class Batch Processor (Step-Centric)")
+    print("🧬 Drug Class Extraction Processor (Step-Centric)")
     print("=" * 60)
-    print(f"Input:      {args.input}")
-    print(f"Output dir: {args.output_dir}")
-    print(f"Limit:      {args.limit or 'all'}")
+    print(f"Input:          {args.input}")
+    print(f"Drug data from: {args.drug_output_dir}")
+    print(f"Output dir:     {args.output_dir}")
+    print(f"Limit:          {args.limit or 'all'}")
     print()
     print("Per-step parallelism:")
     print(f"  Step 1 (Regimen):      {args.step1_parallelism}")
@@ -576,13 +648,14 @@ def main():
     print(f"  Step 5 (Consolidation):{args.step5_parallelism}")
     print()
     
-    # Initialize storage
+    # Initialize storage clients
+    drug_storage = LocalStorageClient(base_dir=args.drug_output_dir)
     storage = LocalStorageClient(base_dir=args.output_dir)
     
-    # Load abstracts
+    # Load abstracts (reads drug data from storage)
     print("Loading abstracts...")
-    inputs, original_rows, fieldnames = load_abstracts(args.input, args.limit)
-    print(f"✓ Loaded {len(inputs)} abstracts")
+    inputs, original_rows, fieldnames = load_abstracts(args.input, drug_storage, args.limit)
+    print(f"✓ Loaded {len(inputs)} abstracts with drug extraction data")
     print()
     
     # Process step by step
@@ -627,4 +700,3 @@ def main():
 
 if __name__ == "__main__":
     main()
-
