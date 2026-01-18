@@ -1,0 +1,31 @@
+{
+  "validation_status": "PASS",
+  "issues_found": [],
+  "checks_performed": {
+    "source_selection": {
+      "passed": true,
+      "note": "Abstract title contains 'burkitt lymphoma', correctly selected as source. Session title properly ignored per Single-Source Extraction Principle."
+    },
+    "hallucination_check": {
+      "passed": true,
+      "note": "All components ('refractory or relapsed', 'burkitt lymphoma') found in abstract title. Normalized forms ('Relapsed/Refractory', 'Burkitt Lymphoma') are rule-based transformations, not hallucinations."
+    },
+    "omission_check": {
+      "passed": true,
+      "note": "All indication-relevant terms captured. 'Refractory or relapsed' and 'burkitt lymphoma' both included. CD19/CD22 correctly excluded as it describes therapy targets, not disease biomarker status (verified against Biomarker rules and Association Integrity Rule). Transplantation procedure correctly excluded per generic exclusion rules."
+    },
+    "rule_application": {
+      "passed": true,
+      "note": "Occurrence rules correctly applied: 'refractory or relapsed' normalized to 'Relapsed/Refractory' per Rule 11 (First-Relapse) which specifies this exact format when both terms appear. Treatment Set-up rules verified: transplantation correctly excluded per Post-Transplant exclusion rules. Disease formatting rules applied correctly."
+    },
+    "exclusion_compliance": {
+      "passed": true,
+      "note": "All exclusion rules properly followed. Procedural term 'Autologous hematopoietic stem cell transplantation' correctly excluded. Treatment description 'CD19/CD22 dual-target CAR-T therapy' correctly excluded as it describes treatment mechanism, not disease characteristic. No gender, ethnicity, geographic, or drug-induced terms present."
+    },
+    "formatting_compliance": {
+      "passed": true,
+      "note": "Title Case correctly applied to 'Relapsed/Refractory Burkitt Lymphoma'. Singular form maintained. Forward slash in 'Relapsed/Refractory' has no spaces per Occurrence Rule 11. Single spaces between words, no trailing spaces."
+    }
+  },
+  "validation_reasoning": "Systematic validation completed across all 6 checks. Source selection is correct as abstract title contains the disease term 'burkitt lymphoma', triggering the Single-Source Extraction Principle to use only the abstract title. All components in the generated indication are grounded in the source title with appropriate rule-based transformations. The critical decision to exclude CD19/CD22 was verified against Biomarker rules and the Association Integrity Rule—the title describes therapy targets, not patient biomarker status, making exclusion correct. The 'Relapsed/Refractory' format was verified against Occurrence Rule 11 (First-Relapse), which explicitly specifies this exact format with forward slash and no spaces when both terms appear together. Transplantation exclusion aligns with Treatment Set-up rules and generic procedural exclusions. All formatting rules (Title Case, singular form, spacing) correctly applied. No errors, omissions, or rule violations detected. The extraction demonstrates proper agentic workflow with correct rule retrieval and application."
+}

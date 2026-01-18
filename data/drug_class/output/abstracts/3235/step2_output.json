@@ -1,0 +1,65 @@
+{
+  "drug_status": {
+    "Autologous Hematopoietic Stem Cell": "success",
+    "CD19/CD22 Dual-Target CAR-T Cell": "success"
+  },
+  "extractions": {
+    "Autologous Hematopoietic Stem Cell": {
+      "drug_name": "Autologous Hematopoietic Stem Cell",
+      "drug_classes": [
+        "Autologous Hematopoietic Stem Cell Therapy"
+      ],
+      "selected_sources": [
+        "abstract_title"
+      ],
+      "confidence_score": 1.0,
+      "extraction_details": [
+        {
+          "extracted_text": "Autologous hematopoietic stem cell",
+          "normalized_form": "Autologous Hematopoietic Stem Cell Therapy",
+          "class_type": "Mode",
+          "evidence": "Autologous hematopoietic stem cell transplantation followed by CD19/CD22 dual-target CAR-T therapy",
+          "source": "abstract_title",
+          "rules_applied": [
+            "Rule 1: Prioritize abstract title",
+            "Rule 3: Apply Title Case",
+            "Rule 25: Append 'therapy' to cell types",
+            "Rule 32: Do not semantically alter modality"
+          ]
+        }
+      ],
+      "extraction_method": "tavily",
+      "reasoning": "The abstract title explicitly mentions 'Autologous hematopoietic stem cell transplantation'. Following Rule 1, the title is the highest priority source. Following Rule 25, the cell type 'Autologous hematopoietic stem cell' is converted to therapy format by appending 'therapy'. Rule 1 dictates that since a class was found in the title, other sources and classes (like CAR-T) are ignored for this specific drug extraction.",
+      "success": true
+    },
+    "CD19/CD22 Dual-Target CAR-T Cell": {
+      "drug_name": "CD19/CD22 Dual-Target CAR-T Cell",
+      "drug_classes": [
+        "CD19/CD22-Targeted CAR-T Cell Therapy"
+      ],
+      "selected_sources": [
+        "abstract_title"
+      ],
+      "confidence_score": 1.0,
+      "extraction_details": [
+        {
+          "extracted_text": "CD19/CD22 dual-target CAR-T therapy",
+          "normalized_form": "CD19/CD22-Targeted CAR-T Cell Therapy",
+          "class_type": "MoA",
+          "evidence": "Autologous hematopoietic stem cell transplantation followed by CD19/CD22 dual-target CAR-T therapy for refractory or relapsed burkitt lymphoma",
+          "source": "abstract_title",
+          "rules_applied": [
+            "Rule 1: Prioritize abstract title",
+            "Rule 3: Apply Title Case",
+            "Rule 8: Hyphenate target-modality",
+            "Rule 11: Include biological target",
+            "Rule 25: Append 'therapy' to cell type"
+          ]
+        }
+      ],
+      "extraction_method": "tavily",
+      "reasoning": "The abstract title explicitly identifies the drug as a 'CD19/CD22 dual-target CAR-T therapy'. Following Rule 1, the title-derived class is prioritized. Applying Rule 25, 'CAR-T cell' is converted to 'CAR-T Cell Therapy'. Applying Rule 11 and Rule 8, the targets are hyphenated and formatted as 'CD19/CD22-Targeted'. Rule 3 ensures Title Case.",
+      "success": true
+    }
+  }
+}

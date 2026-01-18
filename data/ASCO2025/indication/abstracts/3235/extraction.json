@@ -1,0 +1,56 @@
+{
+  "selected_source": "abstract_title",
+  "generated_indication": "Relapsed/Refractory Burkitt Lymphoma",
+  "reasoning": "Step-by-step extraction process:\n1. **Source Selection**: The abstract title contains the disease 'burkitt lymphoma', so it is selected as the primary source, and the session title is ignored, following the Single-Source Extraction Principle.\n2. **Component Identification**: I identified the following components in the abstract title: 'Autologous hematopoietic stem cell transplantation' (procedure), 'CD19/CD22 dual-target CAR-T therapy' (treatment description), 'refractory or relapsed' (occurrence/disease state), and 'burkitt lymphoma' (disease).\n3. **Rule Retrieval**: I retrieved rules for 'Occurrence' to handle 'refractory or relapsed' and for 'Treatment Set-up' to handle 'transplantation'. I also considered 'Biomarker' rules for CD19/CD22.\n4. **Rule Application & Component Refinement**:\n   - **Procedure Exclusion**: The generic exclusion rules and the retrieved 'Treatment Set-up' rules (e.g., for 'Post-Transplant') mandate the exclusion of procedural terms. Therefore, 'Autologous hematopoietic stem cell transplantation followed by...' is removed.\n   - **Treatment Description Exclusion**: The phrase 'CD19/CD22 dual-target CAR-T therapy' describes the treatment, not the disease itself. The Association Integrity Rule requires excluding components not directly modifying the disease. The title does not state the lymphoma is CD19/CD22 positive, only that the therapy targets them. Thus, this component is excluded.\n   - **Occurrence Standardization**: The retrieved 'Occurrence' rules for 'Refractory' and 'Relapsed' guide the standardization of 'refractory or relapsed'. This is combined and normalized to the standard clinical format 'Relapsed/Refractory'.\n   - **Disease Formatting**: The disease 'burkitt lymphoma' is converted to Title Case and singular form, resulting in 'Burkitt Lymphoma'.\n5. **Final Indication Construction**: The standardized components are assembled in the correct order: [Occurrence] [Disease]. This results in 'Relapsed/Refractory Burkitt Lymphoma'.",
+  "rules_retrieved": [
+    {
+      "category": "Occurrence",
+      "subcategories": [
+        "Recurrent/Refractory",
+        "Refractory",
+        "Relapse"
+      ],
+      "reason": "To correctly handle and format the terms 'refractory or relapsed'."
+    },
+    {
+      "category": "Biomarker",
+      "subcategories": [
+        "Biomarker"
+      ],
+      "reason": "To determine if 'CD19/CD22' should be included as a biomarker of the disease."
+    },
+    {
+      "category": "Treatment Set-up",
+      "subcategories": [
+        "Transplant Status"
+      ],
+      "reason": "To confirm the exclusion of 'Autologous hematopoietic stem cell transplantation'."
+    }
+  ],
+  "components_identified": [
+    {
+      "component": "refractory or relapsed",
+      "type": "Occurrence",
+      "normalized_form": "Relapsed/Refractory",
+      "rule_applied": "Standardization based on Occurrence rules for 'Refractory' and 'Relapsed'."
+    },
+    {
+      "component": "burkitt lymphoma",
+      "type": "Disease",
+      "normalized_form": "Burkitt Lymphoma",
+      "rule_applied": "Generic formatting rules (Title Case, Singular Form)."
+    },
+    {
+      "component": "Autologous hematopoietic stem cell transplantation followed by",
+      "type": "Procedure",
+      "normalized_form": "",
+      "rule_applied": "Generic exclusion rule for procedural qualifiers and specific 'Treatment Set-up' rules."
+    },
+    {
+      "component": "CD19/CD22 dual-target",
+      "type": "Treatment Description",
+      "normalized_form": "",
+      "rule_applied": "Association Integrity Rule: The component describes the therapy, not a characteristic of the disease itself, and is therefore excluded."
+    }
+  ]
+}

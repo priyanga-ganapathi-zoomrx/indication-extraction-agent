@@ -1,0 +1,291 @@
+{
+  "drug_status": {
+    "Zilovertamab Vedotin": "success",
+    "Cyclophosphamide": "success",
+    "Doxorubicin": "success",
+    "Prednisone": "success",
+    "Rituximab": "success"
+  },
+  "extractions": {
+    "Zilovertamab Vedotin": {
+      "drug_name": "Zilovertamab Vedotin",
+      "drug_classes": [
+        "ROR1-Targeted Antibody-Drug Conjugate"
+      ],
+      "selected_sources": [
+        "abstract_text",
+        "https://www.merck.com/news/mercks-investigational-zilovertamab-vedotin-at-1-75-mg-kg-dose-plus-standard-of-care-showed-promising-antitumor-activity-including-complete-response-rate-in-patients-with-relapsed-refractor/"
+      ],
+      "confidence_score": 1.0,
+      "extraction_details": [
+        {
+          "extracted_text": "ROR1-targeting antibody-drug conjugate",
+          "normalized_form": "ROR1-Targeted Antibody-Drug Conjugate",
+          "class_type": "MoA",
+          "evidence": "Zilovertamab vedotin (ZV) is a novel ROR1-targeting antibody-drug conjugate",
+          "source": "abstract_text",
+          "rules_applied": [
+            "Rule 3: Maintain Title Case",
+            "Rule 8: Hyphenate target and modality",
+            "Rule 11: Include biological target",
+            "Rule 26: Capture Antibody Drug Conjugate"
+          ]
+        }
+      ],
+      "extraction_method": "tavily",
+      "reasoning": "The abstract title does not contain a drug class. Scanning the abstract text and search results reveals the drug is an antibody-drug conjugate targeting ROR1. Following Rule 11 and Rule 8, the target and modality are hyphenated. Rule 3 is applied for Title Case.",
+      "success": true
+    },
+    "Cyclophosphamide": {
+      "drug_name": "Cyclophosphamide",
+      "drug_classes": [
+        "Alkylating Agent",
+        "Immunosuppressive Agent",
+        "Nitrogen Mustard"
+      ],
+      "selected_sources": [
+        "https://www.ncbi.nlm.nih.gov/books/NBK553087/",
+        "https://pubchem.ncbi.nlm.nih.gov/compound/Cyclophosphamide",
+        "https://www.accessdata.fda.gov/drugsatfda_docs/label/2020/212501s000lbl.pdf"
+      ],
+      "confidence_score": 1.0,
+      "extraction_details": [
+        {
+          "extracted_text": "alkylating agent",
+          "normalized_form": "Alkylating Agent",
+          "class_type": "MoA",
+          "evidence": "Cyclophosphamide is a phosphorodiamide... It has a role as a carcinogenic agent, an alkylating agent, an immunosuppressive agent",
+          "source": "https://pubchem.ncbi.nlm.nih.gov/compound/Cyclophosphamide",
+          "rules_applied": [
+            "Rule 3: Apply Title Case",
+            "Rule 21: Capture Agent as-is in singular form"
+          ]
+        },
+        {
+          "extracted_text": "immunosuppressive agent",
+          "normalized_form": "Immunosuppressive Agent",
+          "class_type": "Therapeutic",
+          "evidence": "As an effective immunosuppressive agent, cyclophosphamide multiple studies have found cyclophosphamide useful in the treatment of autoimmune diseases",
+          "source": "https://www.ncbi.nlm.nih.gov/books/NBK553087/",
+          "rules_applied": [
+            "Rule 3: Apply Title Case",
+            "Rule 21: Capture Agent as-is in singular form"
+          ]
+        },
+        {
+          "extracted_text": "nitrogen mustard",
+          "normalized_form": "Nitrogen Mustard",
+          "class_type": "Chemical",
+          "evidence": "Cyclophosphamide is a type of nitrogen mustard drug which exerts its effects through the alkylation of DNA.",
+          "source": "https://www.ncbi.nlm.nih.gov/books/NBK553087/",
+          "rules_applied": [
+            "Rule 3: Apply Title Case",
+            "Rule 5: Singular form"
+          ]
+        }
+      ],
+      "extraction_method": "tavily",
+      "reasoning": "The drug classes were extracted from multiple high-authority search results (StatPearls, PubChem, and FDA labels). The abstract title and text mention the drug as part of a combination regimen but do not define its class. Search results explicitly identify it as an alkylating agent, nitrogen mustard, and immunosuppressive agent. All terms were normalized to singular Title Case per the extraction rules.",
+      "success": true
+    },
+    "Doxorubicin": {
+      "drug_name": "Doxorubicin",
+      "drug_classes": [
+        "Anthracycline Antibiotic",
+        "Anthracycline Topoisomerase Inhibitor",
+        "Topoisomerase Inhibitor"
+      ],
+      "selected_sources": [
+        "https://pubchem.ncbi.nlm.nih.gov/compound/Doxorubicin"
+      ],
+      "confidence_score": 0.95,
+      "extraction_details": [
+        {
+          "extracted_text": "anthracycline antibiotic",
+          "normalized_form": "Anthracycline Antibiotic",
+          "class_type": "Chemical",
+          "evidence": "Doxorubicin is a deoxy hexoside, an anthracycline, an anthracycline antibiotic...",
+          "source": "https://pubchem.ncbi.nlm.nih.gov/compound/Doxorubicin",
+          "rules_applied": [
+            "Rule 3: Apply Title Case",
+            "Rule 7: Do not generalize subtype wording",
+            "Rule 32: Do not semantically alter modality"
+          ]
+        },
+        {
+          "extracted_text": "Anthracycline Topoisomerase Inhibitor",
+          "normalized_form": "Anthracycline Topoisomerase Inhibitor",
+          "class_type": "MoA",
+          "evidence": "Doxorubicin is an Anthracycline Topoisomerase Inhibitor.",
+          "source": "https://pubchem.ncbi.nlm.nih.gov/compound/Doxorubicin",
+          "rules_applied": [
+            "Rule 3: Apply Title Case",
+            "Rule 5: Singular form",
+            "Rule 11: Include biological target",
+            "Rule 13: Add Inhibitor as drug class"
+          ]
+        },
+        {
+          "extracted_text": "Topoisomerase Inhibitor",
+          "normalized_form": "Topoisomerase Inhibitor",
+          "class_type": "MoA",
+          "evidence": "The mechanism of action of doxorubicin is as a Topoisomerase Inhibitor.",
+          "source": "https://pubchem.ncbi.nlm.nih.gov/compound/Doxorubicin",
+          "rules_applied": [
+            "Rule 3: Apply Title Case",
+            "Rule 11: Include biological target",
+            "Rule 13: Add Inhibitor as drug class"
+          ]
+        }
+      ],
+      "extraction_method": "tavily",
+      "reasoning": "The abstract title and text mention Doxorubicin as part of a regimen but do not define its drug class. Search results from PubChem and StatPearls explicitly define Doxorubicin as an 'Anthracycline Antibiotic' and a 'Topoisomerase Inhibitor'. Following Rule 11 and Rule 13, the target-modality format is applied. Rule 7 and Rule 32 are followed to maintain specific subtype wording like 'Anthracycline'.",
+      "success": true
+    },
+    "Prednisone": {
+      "drug_name": "Prednisone",
+      "drug_classes": [
+        "Adrenergic Agent",
+        "Anti-inflammatory Drug",
+        "Antineoplastic Agent",
+        "Corticosteroid",
+        "Glucocorticoid",
+        "Immunosuppressive Agent"
+      ],
+      "selected_sources": [
+        "https://pubchem.ncbi.nlm.nih.gov/compound/Prednisone",
+        "https://www.ncbi.nlm.nih.gov/books/NBK534809/",
+        "https://www.nlm.nih.gov/medlineplus/druginfo/meds/a601102.html",
+        "https://www.drugs.com/tips/prednisone-patient-tips"
+      ],
+      "confidence_score": 1.0,
+      "extraction_details": [
+        {
+          "extracted_text": "glucocorticoid",
+          "normalized_form": "Glucocorticoid",
+          "class_type": "Chemical",
+          "evidence": "Prednisone is a synthetic glucocorticoid drug",
+          "source": "https://pubchem.ncbi.nlm.nih.gov/compound/Prednisone",
+          "rules_applied": [
+            "Rule 3: Apply Title Case",
+            "Rule 5: Singular form"
+          ]
+        },
+        {
+          "extracted_text": "anti-inflammatory drug",
+          "normalized_form": "Anti-inflammatory Drug",
+          "class_type": "Therapeutic",
+          "evidence": "It has a role as a prodrug, an anti-inflammatory drug, an antineoplastic agent",
+          "source": "https://pubchem.ncbi.nlm.nih.gov/compound/Prednisone",
+          "rules_applied": [
+            "Rule 3: Apply Title Case",
+            "Rule 7: Do not alter subtype wording"
+          ]
+        },
+        {
+          "extracted_text": "antineoplastic agent",
+          "normalized_form": "Antineoplastic Agent",
+          "class_type": "Therapeutic",
+          "evidence": "It has a role as a prodrug, an anti-inflammatory drug, an antineoplastic agent",
+          "source": "https://pubchem.ncbi.nlm.nih.gov/compound/Prednisone",
+          "rules_applied": [
+            "Rule 3: Apply Title Case",
+            "Rule 21: Capture Agent as-is"
+          ]
+        },
+        {
+          "extracted_text": "immunosuppressive agent",
+          "normalized_form": "Immunosuppressive Agent",
+          "class_type": "Therapeutic",
+          "evidence": "It has a role as a prodrug, an anti-inflammatory drug, an antineoplastic agent, an immunosuppressive agent",
+          "source": "https://pubchem.ncbi.nlm.nih.gov/compound/Prednisone",
+          "rules_applied": [
+            "Rule 3: Apply Title Case",
+            "Rule 21: Capture Agent as-is"
+          ]
+        },
+        {
+          "extracted_text": "adrenergic agent",
+          "normalized_form": "Adrenergic Agent",
+          "class_type": "Mode",
+          "evidence": "It has a role as a prodrug, an anti-inflammatory drug, an antineoplastic agent, an immunosuppressive agent and an adrenergic agent.",
+          "source": "https://pubchem.ncbi.nlm.nih.gov/compound/Prednisone",
+          "rules_applied": [
+            "Rule 3: Apply Title Case",
+            "Rule 21: Capture Agent as-is"
+          ]
+        },
+        {
+          "extracted_text": "corticosteroids",
+          "normalized_form": "Corticosteroid",
+          "class_type": "Chemical",
+          "evidence": "Prednisone is in a class of medications called corticosteroids.",
+          "source": "https://www.nlm.nih.gov/medlineplus/druginfo/meds/a601102.html",
+          "rules_applied": [
+            "Rule 3: Apply Title Case",
+            "Rule 5: Singular form"
+          ]
+        }
+      ],
+      "extraction_method": "tavily",
+      "reasoning": "The abstract title mentions Prednisone as part of a regimen but does not provide a drug class. Therefore, I proceeded to Stage 2 extraction using the abstract text and search results. Multiple drug classes were identified across the sources, including therapeutic classes (Anti-inflammatory Drug, Antineoplastic Agent, Immunosuppressive Agent), chemical/hormonal classes (Corticosteroid, Glucocorticoid), and a mode of action (Adrenergic Agent). All classes were normalized to Title Case and singular form per the rules.",
+      "success": true
+    },
+    "Rituximab": {
+      "drug_name": "Rituximab",
+      "drug_classes": [
+        "CD20-Directed Antibody Interaction",
+        "CD20-Directed Cytolytic Antibody",
+        "CD20-Targeted Antibody"
+      ],
+      "selected_sources": [
+        "https://pubchem.ncbi.nlm.nih.gov/compound/Rituximab",
+        "https://www.ncbi.nlm.nih.gov/books/NBK564374/"
+      ],
+      "confidence_score": 0.98,
+      "extraction_details": [
+        {
+          "extracted_text": "CD20-directed Cytolytic Antibody",
+          "normalized_form": "CD20-Directed Cytolytic Antibody",
+          "class_type": "MoA",
+          "evidence": "Rituximab is a CD20-directed Cytolytic Antibody.",
+          "source": "https://pubchem.ncbi.nlm.nih.gov/compound/Rituximab",
+          "rules_applied": [
+            "Rule 3: Apply Title Case",
+            "Rule 5: Singular form",
+            "Rule 7: Do not generalize subtype (Cytolytic Antibody)",
+            "Rule 8: Hyphenate target-modality",
+            "Rule 11: Include biological target"
+          ]
+        },
+        {
+          "extracted_text": "CD20-directed Antibody Interaction",
+          "normalized_form": "CD20-Directed Antibody Interaction",
+          "class_type": "MoA",
+          "evidence": "The mechanism of action of rituximab is as a CD20-directed Antibody Interaction.",
+          "source": "https://pubchem.ncbi.nlm.nih.gov/compound/Rituximab",
+          "rules_applied": [
+            "Rule 3: Apply Title Case",
+            "Rule 8: Hyphenate target-modality",
+            "Rule 11: Include biological target"
+          ]
+        },
+        {
+          "extracted_text": "anti-CD20 monoclonal antibody",
+          "normalized_form": "CD20-Targeted Antibody",
+          "class_type": "MoA",
+          "evidence": "rituximab, an anti-CD20 monoclonal antibody pivotal in treating various lymphoproliferative and autoimmune disorders.",
+          "source": "https://www.ncbi.nlm.nih.gov/books/NBK564374/",
+          "rules_applied": [
+            "Rule 3: Apply Title Case",
+            "Rule 9: Convert anti-X to X-Targeted Antibody",
+            "Rule 11: Include biological target"
+          ]
+        }
+      ],
+      "extraction_method": "tavily",
+      "reasoning": "The abstract title did not contain a drug class for Rituximab, so the full abstract and search results were scanned. Multiple specific drug classes were identified in the search results. 'CD20-Directed Cytolytic Antibody' and 'CD20-Directed Antibody Interaction' were extracted from PubChem. 'CD20-Targeted Antibody' was derived from the 'anti-CD20 monoclonal antibody' description in StatPearls and the 'CD20 Antibody' mention in PubChem, following rules for target-modality hyphenation and conversion of 'anti-X' terminology.",
+      "success": true
+    }
+  }
+}

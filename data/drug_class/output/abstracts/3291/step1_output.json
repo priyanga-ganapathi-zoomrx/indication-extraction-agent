@@ -1,0 +1,27 @@
+{
+  "drug_status": {
+    "Zilovertamab Vedotin": "success",
+    "Cyclophosphamide": "success",
+    "Doxorubicin": "success",
+    "Prednisone": "success",
+    "Rituximab": "success"
+  },
+  "drug_to_components": {
+    "Zilovertamab Vedotin": [
+      "Zilovertamab Vedotin"
+    ],
+    "Cyclophosphamide": [
+      "Cyclophosphamide"
+    ],
+    "Doxorubicin": [
+      "Doxorubicin"
+    ],
+    "Prednisone": [
+      "Prednisone"
+    ],
+    "Rituximab": [
+      "Rituximab"
+    ]
+  },
+  "drug_errors": {}
+}

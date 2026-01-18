@@ -1,0 +1,36 @@
+{
+  "validation_status": "PASS",
+  "validation_confidence": 0.98,
+  "missed_drugs": [],
+  "grounded_search_performed": true,
+  "search_results": [
+    {
+      "drug_queried": "Zilovertamab Vedotin",
+      "is_therapeutic_drug": true,
+      "source_url": "https://www.cancer.gov/publications/dictionaries/cancer-drug/def/zilovertamab-vedotin",
+      "source_title": "Zilovertamab Vedotin - NCI Drug Dictionary",
+      "evidence": "An antibody-drug conjugate (ADC) consisting of a humanized monoclonal antibody directed against the receptor tyrosine kinase-like orphan receptor 1 (ROR1) conjugated to the microtubule-disrupting agent monomethyl auristatin E (MMAE).",
+      "confidence": "high"
+    }
+  ],
+  "issues_found": [],
+  "checks_performed": {
+    "hallucination_detection": {
+      "passed": true,
+      "note": "All extracted items (Zilovertamab Vedotin, Cyclophosphamide, Doxorubicin, Prednisone, Rituximab) are valid therapeutic drugs confirmed via search and medical knowledge."
+    },
+    "omission_detection": {
+      "passed": true,
+      "note": "No other therapeutic drugs were identified in the title. 'Waveline-007' is correctly identified as a trial name and excluded."
+    },
+    "rule_compliance": {
+      "passed": true,
+      "note": "Title casing is maintained, and generic names are used correctly."
+    },
+    "misclassification_detection": {
+      "passed": true,
+      "note": "Keywords 'in combination with' and 'plus' correctly indicate a co-primary administration of all listed agents."
+    }
+  },
+  "validation_reasoning": "1. Verified Zilovertamab Vedotin as a valid therapeutic ADC via grounded search.\n2. Confirmed Cyclophosphamide, Doxorubicin, Prednisone, and Rituximab are standard therapeutic agents (R-CHP components).\n3. Analyzed title structure: 'Zilovertamab Vedotin in combination with [regimen] plus Rituximab' indicates all are part of the primary experimental arm.\n4. Checked for omissions: 'Waveline-007' is a study identifier and correctly excluded per Rule 32.\n5. All extraction and classification rules were followed accurately."
+}

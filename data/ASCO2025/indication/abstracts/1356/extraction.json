@@ -1,0 +1,34 @@
+{
+  "selected_source": "abstract_title",
+  "generated_indication": "Glioblastoma",
+  "reasoning": "Step-by-step extraction process:\n1. **Analyze Input Titles**: The abstract title is 'Use of lucicebtide (ST101) in glioblastoma patients by antagonism of C/EBP?-dependent mesenchymal cell transition and immunosuppressive M2 macrophage polarization.' The session title is empty.\n2. **Select Source**: The abstract title contains the disease term 'glioblastoma'. Therefore, the abstract title is selected as the source based on the Single-Source Extraction Principle.\n3. **Identify Components**: The primary disease component identified is 'glioblastoma'. Other phrases like 'mesenchymal cell transition' and 'immunosuppressive M2 macrophage polarization' are identified as biological processes, not diagnosable diseases.\n4. **Retrieve Rules**: I retrieved rules for 'Disease Characterisation' to check if any specific qualifiers apply, but no keywords from the rules were present in the title.\n5. **Apply Rules & Construct Indication**: \n   - The generic rule for 'Non-Diagnostic Items' is applied to exclude the biological processes ('mesenchymal cell transition', 'immunosuppressive M2 macrophage polarization').\n   - The generic formatting rule for singularization is applied, but 'glioblastoma' is already singular.\n   - The generic formatting rule for casing is applied, converting 'glioblastoma' to 'Glioblastoma'.\n6. **Quality Check**: The final indication 'Glioblastoma' is a single, correctly formatted disease term derived solely from the abstract title, with non-disease components appropriately excluded. The process adheres to all generic and specific rules.",
+  "rules_retrieved": [
+    {
+      "category": "Patient Sub-Group",
+      "subcategories": [
+        "Disease Characterisation"
+      ],
+      "reason": "To check for any specific disease characterization keywords that might need to be included or excluded from the indication."
+    }
+  ],
+  "components_identified": [
+    {
+      "component": "glioblastoma",
+      "type": "Disease",
+      "normalized_form": "Glioblastoma",
+      "rule_applied": "Generic rule: Title Case and singular form."
+    },
+    {
+      "component": "mesenchymal cell transition",
+      "type": "Biological Process",
+      "normalized_form": "",
+      "rule_applied": "Generic exclusion rule: Exclude Non-Diagnostic Items (Biological/Pathophysiologic Processes)."
+    },
+    {
+      "component": "immunosuppressive M2 macrophage polarization",
+      "type": "Biological Process",
+      "normalized_form": "",
+      "rule_applied": "Generic exclusion rule: Exclude Non-Diagnostic Items (Biological/Pathophysiologic Processes)."
+    }
+  ]
+}
