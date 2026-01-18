@@ -1,0 +1,31 @@
+{
+  "validation_status": "PASS",
+  "issues_found": [],
+  "checks_performed": {
+    "source_selection": {
+      "passed": true,
+      "note": "Abstract title contains 'glioblastoma', correctly selected as source. Session title is empty."
+    },
+    "hallucination_check": {
+      "passed": true,
+      "note": "Component 'glioblastoma' found verbatim in abstract title. No biomarkers, mutations, or stage descriptors added. Normalized to 'Glioblastoma' per Title Case rule."
+    },
+    "omission_check": {
+      "passed": true,
+      "note": "All clinically relevant indication components captured. C/EBP? correctly omitted as it describes mechanism of action (modifies 'mesenchymal cell transition'), not a disease qualifier. Per Association Integrity Rule and Gene Mention Without Alteration Rule, no gene alteration status specified for patient population."
+    },
+    "rule_application": {
+      "passed": true,
+      "note": "Disease Characterisation rules retrieved for verification; no matching keywords found in title. Generic formatting rules (Title Case, singular form) correctly applied. Generic exclusion rule for Non-Diagnostic Items correctly applied to biological processes."
+    },
+    "exclusion_compliance": {
+      "passed": true,
+      "note": "Biological processes ('mesenchymal cell transition', 'immunosuppressive M2 macrophage polarization') correctly excluded per Non-Diagnostic Items rule. No gender, ethnicity, geographic, procedural, or drug-induced terms present."
+    },
+    "formatting_compliance": {
+      "passed": true,
+      "note": "Title Case correctly applied ('Glioblastoma'). Term already singular. No separator needed (single disease). No spacing errors."
+    }
+  },
+  "validation_reasoning": "All 6 validation checks passed successfully. The extractor correctly identified the abstract title as the source (contains disease term 'glioblastoma'). The single disease component 'glioblastoma' was properly extracted and normalized to 'Glioblastoma' following Title Case formatting. The extractor appropriately excluded biological processes ('mesenchymal cell transition' and 'immunosuppressive M2 macrophage polarization') per the Non-Diagnostic Items exclusion rule. Critically, C/EBP? was correctly omitted because it appears in a mechanism-of-action context ('C/EBP?-dependent mesenchymal cell transition') rather than as a disease qualifier or patient selection criterion, consistent with the Association Integrity Rule. No components were hallucinated, no relevant terms were omitted, and all formatting rules were properly applied. The extraction is clinically accurate and compliant with all reference rules."
+}

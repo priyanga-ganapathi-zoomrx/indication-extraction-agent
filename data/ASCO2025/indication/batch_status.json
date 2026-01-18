@@ -1,0 +1,24 @@
+{
+  "pipeline": "indication",
+  "total_abstracts": 2,
+  "extraction": {
+    "success": 2,
+    "failed": 0,
+    "not_processed": 0,
+    "failed_ids": [],
+    "total_duration_seconds": 42.97,
+    "started_at": "2026-01-18T10:13:14.371490Z",
+    "modified_at": "2026-01-18T10:16:35.733830Z",
+    "last_run_duration_seconds": 15.17
+  },
+  "validation": {
+    "success": 2,
+    "failed": 0,
+    "not_processed": 0,
+    "failed_ids": [],
+    "total_duration_seconds": 121.2,
+    "started_at": "2026-01-18T10:22:20.007326Z",
+    "modified_at": "2026-01-18T10:25:26.693465Z",
+    "last_run_duration_seconds": 46.92
+  }
+}

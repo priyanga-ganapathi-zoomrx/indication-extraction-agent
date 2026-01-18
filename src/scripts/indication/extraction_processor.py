@@ -1,16 +1,16 @@
 #!/usr/bin/env python3
 """
-Validation Processor for Indication Extraction
+Extraction Processor for Indication Extraction
 
-Validates previously extracted indications with:
+Processes abstracts through the indication extraction pipeline with:
 - Parallel processing for improved throughput
-- Per-abstract status tracking (updates status.json)
-- Batch-level status summary (updates batch_status.json)
-- Retry logic for failed validations
+- Per-abstract status tracking (status.json)
+- Batch-level status summary (batch_status.json)
+- Retry logic for failed extractions
 - Real-time progress monitoring with tqdm
 
 Usage:
-    python -m src.scripts.indication.validation_processor --input ASCO2025/input/abstract_titles.csv --output_dir ASCO2025/indication
+    python -m src.scripts.indication.extraction_processor --input ASCO2025/input/abstract_titles.csv --output_dir ASCO2025/indication
 """
 
 import argparse
@@ -26,7 +26,7 @@ from typing import Optional
 
 from tqdm import tqdm
 
-from src.agents.indication import IndicationValidationAgent
+from src.agents.indication import IndicationAgent, IndicationInput
 from src.agents.core.storage import LocalStorageClient
 
 
@@ -37,7 +37,7 @@ def _get_timestamp() -> str:
 
 @dataclass
 class ProcessResult:
-    """Result of validating a single extraction."""
+    """Result of processing a single abstract."""
     abstract_id: str
     abstract_title: str = ""
     response_json: str = ""
@@ -50,29 +50,63 @@ class ProcessResult:
 
 
 @dataclass
-class ValidationInput:
-    """Input for validation processor."""
+class StatusEntry:
+    """Per-abstract status tracking."""
     abstract_id: str
     abstract_title: str
-    session_title: str
-    extraction_result: dict
-
-
-def load_abstracts_for_validation(
-    csv_path: str,
-    storage: LocalStorageClient,
-    limit: int = None,
-) -> tuple[list[ValidationInput], list[dict], list[str]]:
-    """Load abstracts from CSV and their extraction results from storage.
+    extraction_status: str = "pending"  # pending, success, failed
+    extraction_error: Optional[str] = None
+    extraction_duration: float = 0.0
+    extraction_completed_at: Optional[str] = None
+    validation_status: str = "pending"
+    validation_error: Optional[str] = None
+    validation_duration: float = 0.0
+    validation_completed_at: Optional[str] = None
     
-    Only returns abstracts that have successful extraction results.
+    def to_dict(self) -> dict:
+        return {
+            "abstract_id": self.abstract_id,
+            "abstract_title": self.abstract_title,
+            "extraction": {
+                "status": self.extraction_status,
+                "error": self.extraction_error,
+                "duration_seconds": round(self.extraction_duration, 2),
+                "completed_at": self.extraction_completed_at,
+            },
+            "validation": {
+                "status": self.validation_status,
+                "error": self.validation_error,
+                "duration_seconds": round(self.validation_duration, 2),
+                "completed_at": self.validation_completed_at,
+            },
+        }
+    
+    @classmethod
+    def from_dict(cls, data: dict) -> "StatusEntry":
+        extraction = data.get("extraction", {})
+        validation = data.get("validation", {})
+        return cls(
+            abstract_id=data.get("abstract_id", ""),
+            abstract_title=data.get("abstract_title", ""),
+            extraction_status=extraction.get("status", "pending"),
+            extraction_error=extraction.get("error"),
+            extraction_duration=extraction.get("duration_seconds", 0.0),
+            extraction_completed_at=extraction.get("completed_at"),
+            validation_status=validation.get("status", "pending"),
+            validation_error=validation.get("error"),
+            validation_duration=validation.get("duration_seconds", 0.0),
+            validation_completed_at=validation.get("completed_at"),
+        )
+
+
+def load_abstracts(csv_path: str, limit: int = None) -> tuple[list[IndicationInput], list[dict], list[str]]:
+    """Load abstracts from CSV into IndicationInput objects.
     
     Returns:
-        tuple: (ValidationInput objects, original_rows, fieldnames)
+        tuple: (inputs, original_rows, fieldnames)
     """
     inputs = []
     original_rows = []
-    skipped_no_extraction = []
     fieldnames = []
     
     with open(csv_path, encoding="utf-8-sig") as f:
@@ -90,58 +124,17 @@ def load_abstracts_for_validation(
             abstract_title = row.get(title_col, "") if title_col else ""
             session_title = row.get(session_col, "") if session_col else ""
             
-            if not abstract_id:
-                continue
-            
-            # Try to load extraction result from storage
-            try:
-                extraction_result = storage.download_json(f"abstracts/{abstract_id}/extraction.json")
-            except FileNotFoundError:
-                skipped_no_extraction.append(abstract_id)
-                continue
-            
-            # Skip if extraction had error
-            if extraction_result.get("error"):
-                skipped_no_extraction.append(abstract_id)
-                continue
-            
-            inputs.append(ValidationInput(
-                abstract_id=str(abstract_id),
-                abstract_title=str(abstract_title),
-                session_title=str(session_title),
-                extraction_result=extraction_result,
-            ))
-            original_rows.append(row)
-    
-    if skipped_no_extraction:
-        print(f"⚠ Skipped {len(skipped_no_extraction)} abstracts without extraction: {skipped_no_extraction[:5]}{'...' if len(skipped_no_extraction) > 5 else ''}")
+            if abstract_id or abstract_title:
+                inputs.append(IndicationInput(
+                    abstract_id=str(abstract_id),
+                    abstract_title=str(abstract_title),
+                    session_title=str(session_title),
+                ))
+                original_rows.append(row)
     
     if limit:
         return inputs[:limit], original_rows[:limit], fieldnames
     return inputs, original_rows, fieldnames
-
-
-def get_abstract_status(abstract_id: str, storage: LocalStorageClient) -> Optional[dict]:
-    """Load status for an abstract if it exists."""
-    try:
-        return storage.download_json(f"abstracts/{abstract_id}/status.json")
-    except FileNotFoundError:
-        return None
-    except Exception:
-        return None
-
-
-def should_process_validation(abstract_id: str, storage: LocalStorageClient) -> bool:
-    """Check if abstract needs validation (extraction successful but validation not done)."""
-    status = get_abstract_status(abstract_id, storage)
-    if not status:
-        return False  # No status means extraction wasn't done
-    
-    extraction = status.get("extraction", {})
-    validation = status.get("validation", {})
-    
-    # Only validate if extraction was successful and validation not already successful
-    return extraction.get("status") == "success" and validation.get("status") != "success"
 
 
 def extract_json_block(content: str) -> str:
@@ -159,21 +152,35 @@ def pretty_print_json(json_str: str) -> str:
         return json_str
 
 
+def get_abstract_status(abstract_id: str, storage: LocalStorageClient) -> Optional[StatusEntry]:
+    """Load status for an abstract if it exists."""
+    try:
+        status_data = storage.download_json(f"abstracts/{abstract_id}/status.json")
+        return StatusEntry.from_dict(status_data)
+    except FileNotFoundError:
+        return None
+    except Exception:
+        return None
+
+
+def should_process_extraction(abstract_id: str, storage: LocalStorageClient) -> bool:
+    """Check if abstract needs extraction (not already successful)."""
+    status = get_abstract_status(abstract_id, storage)
+    if not status:
+        return True
+    return status.extraction_status != "success"
+
+
 def process_single(
-    validator: IndicationValidationAgent,
-    input_data: ValidationInput,
+    agent: IndicationAgent,
+    input_data: IndicationInput,
     storage: LocalStorageClient,
 ) -> ProcessResult:
-    """Validate single extraction and return result with timing."""
+    """Process single abstract and return result with timing."""
     start_time = time.time()
     
     try:
-        raw = validator.invoke(
-            session_title=input_data.session_title,
-            abstract_title=input_data.abstract_title,
-            extraction_result=input_data.extraction_result,
-            abstract_id=input_data.abstract_id,
-        )
+        raw = agent.invoke(input_data.abstract_title, input_data.session_title, input_data.abstract_id)
         
         messages = raw.get("messages", [])
         if not messages:
@@ -217,58 +224,53 @@ def process_single(
         )
 
 
-def save_validation_result(
+def save_extraction_result(
     result: ProcessResult,
     storage: LocalStorageClient,
 ) -> None:
-    """Save validation result and update status for a single abstract."""
+    """Save extraction result and update status for a single abstract."""
     abstract_id = result.abstract_id
     timestamp = _get_timestamp()
     
-    # Load existing status
+    # Load existing status or create new
     status = get_abstract_status(abstract_id, storage)
     if not status:
-        # This shouldn't happen, but handle it
-        status = {
-            "abstract_id": abstract_id,
-            "abstract_title": result.abstract_title,
-            "extraction": {"status": "pending", "error": None, "duration_seconds": 0, "completed_at": None},
-            "validation": {"status": "pending", "error": None, "duration_seconds": 0, "completed_at": None},
-        }
+        status = StatusEntry(
+            abstract_id=abstract_id,
+            abstract_title=result.abstract_title,
+        )
     
-    # Update validation status
-    status["validation"] = {
-        "status": "success" if result.success else "failed",
-        "error": result.error,
-        "duration_seconds": round(result.duration_seconds, 2),
-        "completed_at": timestamp,
-    }
+    # Update extraction status
+    status.extraction_status = "success" if result.success else "failed"
+    status.extraction_error = result.error
+    status.extraction_duration = result.duration_seconds
+    status.extraction_completed_at = timestamp
     
     # Save status.json
-    storage.upload_json(f"abstracts/{abstract_id}/status.json", status)
+    storage.upload_json(f"abstracts/{abstract_id}/status.json", status.to_dict())
     
-    # Save validation.json if successful
+    # Save extraction.json if successful
     if result.success:
         try:
-            validation_data = json.loads(result.response_json)
-            storage.upload_json(f"abstracts/{abstract_id}/validation.json", validation_data)
+            extraction_data = json.loads(result.response_json)
+            storage.upload_json(f"abstracts/{abstract_id}/extraction.json", extraction_data)
         except json.JSONDecodeError:
             # If JSON parsing fails, save as raw
-            storage.upload_json(f"abstracts/{abstract_id}/validation.json", {"raw_response": result.response_json})
+            storage.upload_json(f"abstracts/{abstract_id}/extraction.json", {"raw_response": result.response_json})
 
 
 def save_results_csv(
-    inputs: list[ValidationInput],
+    inputs: list[IndicationInput],
     original_rows: list[dict],
     input_fieldnames: list[str],
     storage: LocalStorageClient,
     output_path: str,
 ) -> None:
-    """Save all validation results to CSV with input columns plus model_response column.
+    """Save all results to CSV with input columns plus model_response column.
     
-    Reads validation.json from storage for each abstract to build the CSV.
+    Reads extraction.json from storage for each abstract to build the CSV.
     """
-    response_column = "validation_response"
+    response_column = "model_response"
     fieldnames = input_fieldnames + [response_column]
     
     with open(output_path, "w", newline="", encoding="utf-8-sig") as f:
@@ -278,21 +280,17 @@ def save_results_csv(
         for inp, original_row in zip(inputs, original_rows):
             row = dict(original_row)
             
-            # Try to load validation result from storage
+            # Try to load extraction result from storage
             try:
-                validation_data = storage.download_json(f"abstracts/{inp.abstract_id}/validation.json")
-                row[response_column] = json.dumps(validation_data, indent=2, ensure_ascii=False)
+                extraction_data = storage.download_json(f"abstracts/{inp.abstract_id}/extraction.json")
+                row[response_column] = json.dumps(extraction_data, indent=2, ensure_ascii=False)
             except FileNotFoundError:
                 # Check if there was an error in status
                 status = get_abstract_status(inp.abstract_id, storage)
-                if status:
-                    validation = status.get("validation", {})
-                    if validation.get("error"):
-                        row[response_column] = json.dumps({"error": validation.get("error")}, indent=2)
-                    else:
-                        row[response_column] = json.dumps({"error": "Validation not completed"}, indent=2)
+                if status and status.extraction_error:
+                    row[response_column] = json.dumps({"error": status.extraction_error}, indent=2)
                 else:
-                    row[response_column] = json.dumps({"error": "Validation not completed"}, indent=2)
+                    row[response_column] = json.dumps({"error": "Extraction not completed"}, indent=2)
             
             writer.writerow(row)
     
@@ -308,7 +306,7 @@ def save_batch_status(
     total_duration: float,
     started_at: str,
     storage: LocalStorageClient,
-    phase: str = "validation",
+    phase: str = "extraction",
 ) -> None:
     """Save or update batch_status.json.
     
@@ -346,39 +344,37 @@ def save_batch_status(
     storage.upload_json("batch_status.json", batch_status)
 
 
-def run_validation_batch(
-    inputs: list[ValidationInput],
+def run_extraction_batch(
+    inputs: list[IndicationInput],
     storage: LocalStorageClient,
     parallelism: int,
 ) -> tuple[int, int, list[str]]:
-    """Run validation for all abstracts with parallel processing.
+    """Run extraction for all abstracts with parallel processing.
     
     Returns:
         tuple: (success_count, failed_count, failed_ids)
     """
-    # Filter to only process abstracts that need validation
-    pending_inputs = [inp for inp in inputs if should_process_validation(inp.abstract_id, storage)]
+    # Filter to only process abstracts that need extraction
+    pending_inputs = [inp for inp in inputs if should_process_extraction(inp.abstract_id, storage)]
     
     if not pending_inputs:
-        print("  All abstracts already validated successfully.")
+        print("  All abstracts already processed successfully.")
         # Count existing results
         success_count = 0
         for inp in inputs:
             status = get_abstract_status(inp.abstract_id, storage)
-            if status:
-                validation = status.get("validation", {})
-                if validation.get("status") == "success":
-                    success_count += 1
+            if status and status.extraction_status == "success":
+                success_count += 1
         return success_count, 0, []
     
     already_done = len(inputs) - len(pending_inputs)
     if already_done > 0:
-        print(f"  Skipping {already_done} already successful validations")
+        print(f"  Skipping {already_done} already successful extractions")
     
     print(f"  Processing {len(pending_inputs)} abstracts (parallelism: {parallelism})")
     
-    # Initialize validator once (shared across workers)
-    validator = IndicationValidationAgent()
+    # Initialize agent once (shared across workers)
+    agent = IndicationAgent()
     
     success_count = 0
     failed_count = 0
@@ -386,11 +382,11 @@ def run_validation_batch(
     
     with concurrent.futures.ThreadPoolExecutor(max_workers=parallelism) as executor:
         futures = {
-            executor.submit(process_single, validator, inp, storage): inp
+            executor.submit(process_single, agent, inp, storage): inp
             for inp in pending_inputs
         }
         
-        with tqdm(total=len(pending_inputs), desc="Validating", unit="abstract") as pbar:
+        with tqdm(total=len(pending_inputs), desc="Extracting", unit="abstract") as pbar:
             for future in concurrent.futures.as_completed(futures):
                 inp = futures[future]
                 
@@ -398,7 +394,7 @@ def run_validation_batch(
                     result = future.result()
                     
                     # Save result immediately
-                    save_validation_result(result, storage)
+                    save_extraction_result(result, storage)
                     
                     if result.success:
                         success_count += 1
@@ -422,26 +418,26 @@ def run_validation_batch(
 
 
 def main():
-    parser = argparse.ArgumentParser(description="Validate Indication Extractions with Status Tracking")
+    parser = argparse.ArgumentParser(description="Batch Indication Extraction with Status Tracking")
     parser.add_argument("--input", default="data/ASCO2025/input/abstract_titles.csv", help="Input CSV path (e.g., ASCO2025/input/abstract_titles.csv)")
-    parser.add_argument("--output_dir", default="data/ASCO2025/indication", help="Output directory (e.g., ASCO2025/indication) - same as extraction")
+    parser.add_argument("--output_dir", default="data/ASCO2025/indication", help="Output directory (e.g., ASCO2025/indication)")
     parser.add_argument("--output_csv", default=None, help="Output CSV path (auto-generated if not provided)")
-    parser.add_argument("--limit", type=int, default=None, help="Limit abstracts to validate")
+    parser.add_argument("--limit", type=int, default=None, help="Limit abstracts to process")
     parser.add_argument("--parallel_workers", type=int, default=5, help="Number of parallel workers")
     args = parser.parse_args()
     
     # Auto-generate output CSV path if not provided
     if not args.output_csv:
         timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-        args.output_csv = f"{args.output_dir}/validation_{timestamp}.csv"
+        args.output_csv = f"{args.output_dir}/extraction_{timestamp}.csv"
     
     # Ensure output directory exists
     Path(args.output_dir).mkdir(parents=True, exist_ok=True)
     
-    # Initialize storage (same directory as extraction)
+    # Initialize storage
     storage = LocalStorageClient(base_dir=args.output_dir)
     
-    print("🔍 Indication Validation Processor")
+    print("🏭 Indication Extraction Batch Processor")
     print("=" * 60)
     print(f"Input:      {args.input}")
     print(f"Output Dir: {args.output_dir}")
@@ -450,23 +446,19 @@ def main():
     print(f"Workers:    {args.parallel_workers}")
     print()
     
-    # Load abstracts with their extraction results
-    print("Loading abstracts with extraction results...")
-    inputs, original_rows, input_fieldnames = load_abstracts_for_validation(args.input, storage, args.limit)
-    print(f"✓ Loaded {len(inputs)} abstracts with extraction results")
+    # Load abstracts
+    print("Loading abstracts...")
+    inputs, original_rows, input_fieldnames = load_abstracts(args.input, args.limit)
+    print(f"✓ Loaded {len(inputs)} abstracts")
     print()
-    
-    if not inputs:
-        print("⚠ No abstracts to validate. Run extraction first.")
-        return
     
     # Track batch timing
     batch_start = time.time()
     batch_started_at = _get_timestamp()
     
-    # Run validation
-    print("Running validations...")
-    success_count, failed_count, failed_ids = run_validation_batch(
+    # Run extraction
+    print("Running extractions...")
+    success_count, failed_count, failed_ids = run_extraction_batch(
         inputs, storage, args.parallel_workers
     )
     
@@ -482,7 +474,7 @@ def main():
         total_duration=batch_duration,
         started_at=batch_started_at,
         storage=storage,
-        phase="validation",
+        phase="extraction",
     )
     
     # Save results to CSV
@@ -491,7 +483,7 @@ def main():
     # Summary
     print()
     print("=" * 60)
-    print("📊 Validation Complete:")
+    print("📊 Extraction Complete:")
     print(f"   Total:    {len(inputs)}")
     print(f"   Success:  {success_count}")
     print(f"   Failed:   {failed_count}")
@@ -500,8 +492,8 @@ def main():
     print(f"   Duration: {batch_duration:.1f}s")
     print(f"   Output:   {args.output_dir}")
     print()
-    print(f"✓ Status updated in {args.output_dir}/batch_status.json")
-    print(f"✓ Per-abstract results saved to {args.output_dir}/abstracts/*/validation.json")
+    print(f"✓ Status saved to {args.output_dir}/batch_status.json")
+    print(f"✓ Per-abstract results saved to {args.output_dir}/abstracts/*/")
     print(f"✓ CSV saved to {args.output_csv}")
 
 
