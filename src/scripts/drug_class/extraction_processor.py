@@ -312,7 +312,10 @@ def get_abstract_status(abstract_id: str, storage: Union[LocalStorageClient, GCS
 
 
 def get_step_from_status(status: Optional[PipelineStatus]) -> str:
-    """Determine which step an abstract needs based on its status."""
+    """Determine which step an abstract needs based on its status.
+    
+    Note: "skipped" status is treated as complete (used when no drugs to process).
+    """
     if not status:
         return "step1_regimen"
     
@@ -322,6 +325,7 @@ def get_step_from_status(status: Optional[PipelineStatus]) -> str:
         step_data = status.steps.get(step, {})
         step_status = step_data.get("status", "pending")
         
+        # "skipped" is treated as complete (e.g., when no drugs to process)
         if step_status in ["pending", "running", "failed"]:
             return step
     
@@ -363,7 +367,21 @@ def process_step1_single(inp: DrugClassInput, storage: Union[LocalStorageClient,
     # Get primary drugs only (drug class extraction is limited to primary drugs)
     all_drugs = inp.primary_drugs
     if not all_drugs:
-        return {"abstract_id": abstract_id, "success": False, "error": "No drugs to process"}
+        # No drugs - skip steps 1-3 but allow step 4 (explicit extraction) to run
+        # Step 4 can extract drug classes mentioned directly in the abstract title
+        status.steps["step1_regimen"] = {"status": "skipped", "llm_calls": 0, "reason": "No drugs to process"}
+        status.steps["step2_extraction"] = {"status": "skipped", "llm_calls": 0, "reason": "No drugs to process"}
+        status.steps["step3_selection"] = {"status": "skipped", "llm_calls": 0, "reason": "No drugs to process"}
+        status.last_completed_step = "step3_selection"  # Advance to step 4
+        status.last_updated = _get_timestamp()
+        
+        # Save empty outputs for steps 1-3 so downstream steps can load them
+        storage.upload_json(f"abstracts/{abstract_id}/step1_output.json", Step1Output().model_dump())
+        storage.upload_json(f"abstracts/{abstract_id}/step2_output.json", Step2Output().model_dump())
+        storage.upload_json(f"abstracts/{abstract_id}/step3_output.json", Step3Output().model_dump())
+        storage.upload_json(f"abstracts/{abstract_id}/status.json", status.to_dict())
+        
+        return {"abstract_id": abstract_id, "success": True, "llm_calls": 0, "skipped": True, "reason": "No drugs - skipping to step 4"}
     
     # Load existing step1 output if available, or create new
     try:
@@ -647,21 +665,31 @@ def process_step4_single(inp: DrugClassInput, storage: Union[LocalStorageClient,
 
 
 def process_step5_single(inp: DrugClassInput, storage: Union[LocalStorageClient, GCSStorageClient]) -> dict:
-    """Process Step 5 for a single abstract."""
+    """Process Step 5 for a single abstract.
+    
+    Handles the case where steps 1-3 were skipped (no drugs) - in that case,
+    only explicit drug classes from step 4 are used.
+    """
     abstract_id = inp.abstract_id
     
     status = get_abstract_status(abstract_id, storage)
     if not status:
         return {"abstract_id": abstract_id, "success": False, "error": "No status found"}
     
-    # Load step3 and step4 outputs
+    # Load step4 output (required)
     try:
-        step3_data = storage.download_json(f"abstracts/{abstract_id}/step3_output.json")
         step4_data = storage.download_json(f"abstracts/{abstract_id}/step4_output.json")
-        step3_output = Step3Output(**step3_data)
         step4_output = Step4Output(**step4_data)
     except FileNotFoundError:
-        return {"abstract_id": abstract_id, "success": False, "error": "Previous step outputs not found"}
+        return {"abstract_id": abstract_id, "success": False, "error": "Step 4 output not found"}
+    
+    # Load step3 output (may be empty if no drugs / steps 1-3 were skipped)
+    try:
+        step3_data = storage.download_json(f"abstracts/{abstract_id}/step3_output.json")
+        step3_output = Step3Output(**step3_data)
+    except FileNotFoundError:
+        # If step3 output doesn't exist, use empty output
+        step3_output = Step3Output()
     
     step5_llm_calls = 0
     
