@@ -238,12 +238,8 @@ def run_drug_class_pipeline(
     status.pipeline_status = "running"
     _save_status(status, storage)
     
-    # Combine all drugs
-    all_drugs = (
-        input_data.primary_drugs +
-        input_data.secondary_drugs +
-        input_data.comparator_drugs
-    )
+    # Get primary drugs only (drug class extraction is limited to primary drugs)
+    all_drugs = input_data.primary_drugs
     
     if not all_drugs:
         print("⚠ No drugs provided, skipping pipeline")

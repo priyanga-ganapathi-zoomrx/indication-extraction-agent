@@ -147,8 +147,6 @@ def load_abstracts(
             abstract_title=str(abstract_title),
             full_abstract=str(full_abstract),
             primary_drugs=extraction.primary_drugs,
-            secondary_drugs=extraction.secondary_drugs,
-            comparator_drugs=extraction.comparator_drugs,
             firms=firms,
         ))
         original_rows.append(row)
@@ -362,8 +360,8 @@ def process_step1_single(inp: DrugClassInput, storage: Union[LocalStorageClient,
         status = PipelineStatus(abstract_id=abstract_id, abstract_title=inp.abstract_title)
         status.last_updated = _get_timestamp()
     
-    # Get all drugs
-    all_drugs = inp.primary_drugs + inp.secondary_drugs + inp.comparator_drugs
+    # Get primary drugs only (drug class extraction is limited to primary drugs)
+    all_drugs = inp.primary_drugs
     if not all_drugs:
         return {"abstract_id": abstract_id, "success": False, "error": "No drugs to process"}
     

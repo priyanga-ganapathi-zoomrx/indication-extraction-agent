@@ -156,7 +156,9 @@ class GCSStorageClient:
         """Download text content from GCS."""
         blob = self.bucket.blob(self._get_blob_path(path))
         try:
-            return blob.download_as_text()
+            content = blob.download_as_text()
+            # Strip UTF-8 BOM if present (for consistency with LocalStorageClient which uses utf-8-sig)
+            return content.lstrip('\ufeff')
         except NotFound:
             raise FileNotFoundError(f"GCS object not found: {path}")
     

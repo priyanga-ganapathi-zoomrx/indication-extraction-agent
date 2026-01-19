@@ -137,7 +137,7 @@ def load_abstracts(
         abstract_id = row.get(id_col, "") if id_col else ""
         abstract_title = row.get(title_col, "") if title_col else ""
         
-        if abstract_id or abstract_title:
+        if abstract_id:
             inputs.append(DrugInput(
                 abstract_id=str(abstract_id),
                 abstract_title=str(abstract_title),

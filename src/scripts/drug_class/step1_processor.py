@@ -81,24 +81,16 @@ def load_abstracts(
                     # If JSON parsing fails, try to handle it gracefully
                     pass
             
-            # Extract drug lists from extraction_response
+            # Extract primary drugs from extraction_response
             # Handle both "Primary Drugs" and "primary_drugs" key variations
             primary_drugs = extraction.get('Primary Drugs', extraction.get('primary_drugs', []))
-            secondary_drugs = extraction.get('Secondary Drugs', extraction.get('secondary_drugs', []))
-            comparator_drugs = extraction.get('Comparator Drugs', extraction.get('comparator_drugs', []))
             
-            # Ensure they are lists and convert to strings
+            # Ensure it's a list and convert to strings
             if not isinstance(primary_drugs, list):
                 primary_drugs = [primary_drugs] if primary_drugs else []
-            if not isinstance(secondary_drugs, list):
-                secondary_drugs = [secondary_drugs] if secondary_drugs else []
-            if not isinstance(comparator_drugs, list):
-                comparator_drugs = [comparator_drugs] if comparator_drugs else []
             
             # Normalize drug names (strip whitespace, filter empty)
             primary_drugs = [str(d).strip() for d in primary_drugs if d and str(d).strip()]
-            secondary_drugs = [str(d).strip() for d in secondary_drugs if d and str(d).strip()]
-            comparator_drugs = [str(d).strip() for d in comparator_drugs if d and str(d).strip()]
             
             # Parse firms from comma-separated string to list
             firms = [f.strip() for f in firm.split(',') if f.strip()] if firm else []
@@ -108,8 +100,6 @@ def load_abstracts(
                 abstract_title=abstract_title,
                 full_abstract=full_abstract,
                 primary_drugs=primary_drugs,
-                secondary_drugs=secondary_drugs,
-                comparator_drugs=comparator_drugs,
                 firms=firms,
             ))
             original_rows.append(row)
@@ -122,7 +112,7 @@ def load_abstracts(
 def process_single(inp: DrugClassInput, storage: LocalStorageClient) -> ProcessResult:
     """Process Step 1 for a single abstract."""
     abstract_id = inp.abstract_id
-    all_drugs = inp.primary_drugs + inp.secondary_drugs + inp.comparator_drugs
+    all_drugs = inp.primary_drugs  # Drug class extraction is limited to primary drugs
     
     if not all_drugs:
         return ProcessResult(abstract_id=abstract_id, error="No drugs to process")

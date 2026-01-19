@@ -140,7 +140,7 @@ def load_abstracts(
         abstract_title = row.get(title_col, "") if title_col else ""
         session_title = row.get(session_col, "") if session_col else ""
         
-        if abstract_id or abstract_title:
+        if abstract_id:
             inputs.append(IndicationInput(
                 abstract_id=str(abstract_id),
                 abstract_title=str(abstract_title),

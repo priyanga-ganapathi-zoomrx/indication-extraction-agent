@@ -21,8 +21,6 @@ class DrugClassInput:
     abstract_title: str
     full_abstract: str = ""
     primary_drugs: list[str] = field(default_factory=list)
-    secondary_drugs: list[str] = field(default_factory=list)
-    comparator_drugs: list[str] = field(default_factory=list)
     firms: list[str] = field(default_factory=list)  # For firm search in Step 2
 
 
