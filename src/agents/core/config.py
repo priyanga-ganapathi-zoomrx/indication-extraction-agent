@@ -50,6 +50,16 @@ class TavilySettings(BaseSettings):
     TAVILY_MAX_RESULTS: int = Field(default=5, description="Maximum search results to return")
 
 
+class GCSSettings(BaseSettings):
+    """Google Cloud Storage configuration settings."""
+
+    model_config = SettingsConfigDict(env_file=".env", extra="ignore")
+
+    GCS_BUCKET_NAME: str = Field(default="", description="GCS bucket name for storage")
+    GCS_PROJECT_ID: str = Field(default="", description="GCS project ID (required if not using service account)")
+    GOOGLE_APPLICATION_CREDENTIALS: str = Field(default="", description="Path to service account JSON file")
+
+
 class AppSettings(BaseSettings):
     """Application configuration settings."""
 
@@ -59,6 +69,7 @@ class AppSettings(BaseSettings):
     langfuse: LangfuseSettings = LangfuseSettings()
     llm: LLMSettings = LLMSettings()
     tavily: TavilySettings = TavilySettings()
+    gcs: GCSSettings = GCSSettings()
 
 
 # Global settings instance

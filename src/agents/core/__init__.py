@@ -11,7 +11,13 @@ from src.agents.core.langfuse_config import (
 )
 from src.agents.core.llm_handler import LLMConfig, create_llm
 from src.agents.core.prompts import load_prompt
-from src.agents.core.storage import StorageClient, LocalStorageClient
+from src.agents.core.storage import (
+    StorageClient,
+    LocalStorageClient,
+    GCSStorageClient,
+    get_storage_client,
+    parse_gcs_path,
+)
 
 __all__ = [
     "settings",
@@ -28,4 +34,7 @@ __all__ = [
     # Storage
     "StorageClient",
     "LocalStorageClient",
+    "GCSStorageClient",
+    "get_storage_client",
+    "parse_gcs_path",
 ]

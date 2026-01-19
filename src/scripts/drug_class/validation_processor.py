@@ -12,20 +12,26 @@ Key features:
 - Retry logic for failed validations
 - Real-time progress monitoring with tqdm
 - Execution time tracking (accumulates across retries)
+- Support for both local and GCS storage
 
 Usage:
-    python -m src.scripts.drug_class.validation_processor --input ASCO2025/input/abstract_titles.csv --output_dir ASCO2025/drug_class
+    # Local storage
+    python -m src.scripts.drug_class.validation_processor --input data/ASCO2025/input/abstract_titles.csv --output_dir data/ASCO2025/drug_class
+    
+    # GCS storage
+    python -m src.scripts.drug_class.validation_processor --input gs://bucket/ASCO2025/input/abstract_titles.csv --output_dir gs://bucket/ASCO2025/drug_class
 """
 
 import argparse
 import csv
+import io
 import json
 import time
 import concurrent.futures
 from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
-from typing import Optional
+from typing import Optional, Union
 
 from tqdm import tqdm
 
@@ -37,7 +43,7 @@ from src.agents.drug_class import (
     Step2Output,
     config,
 )
-from src.agents.core.storage import LocalStorageClient
+from src.agents.core.storage import LocalStorageClient, GCSStorageClient, get_storage_client
 
 
 def _get_timestamp() -> str:
@@ -75,8 +81,9 @@ class ProcessResult:
 
 
 def load_abstracts(
-    csv_path: str,
-    storage: LocalStorageClient,
+    csv_filename: str,
+    input_storage: Union[LocalStorageClient, GCSStorageClient],
+    output_storage: Union[LocalStorageClient, GCSStorageClient],
     limit: int = None,
 ) -> tuple[list[DrugClassInput], list[dict], list[str]]:
     """Load abstracts from CSV that have extraction results.
@@ -84,8 +91,9 @@ def load_abstracts(
     Only returns abstracts that have step2_output.json (extraction completed).
     
     Args:
-        csv_path: Path to input CSV
-        storage: Storage client for drug_class output directory
+        csv_filename: Filename of the CSV within input_storage
+        input_storage: Storage client for reading input CSV
+        output_storage: Storage client for drug_class output directory
         limit: Optional limit on rows
         
     Returns:
@@ -96,36 +104,37 @@ def load_abstracts(
     fieldnames = []
     skipped_no_extraction = []
     
-    with open(csv_path, encoding="utf-8-sig") as f:
-        reader = csv.DictReader(f)
-        fieldnames = list(reader.fieldnames or [])
+    # Read CSV content via storage client
+    csv_content = input_storage.download_text(csv_filename)
+    reader = csv.DictReader(io.StringIO(csv_content))
+    fieldnames = list(reader.fieldnames or [])
+    
+    header_map = {h.lower().strip(): h for h in fieldnames}
+    id_col = header_map.get('abstract_id') or header_map.get('id')
+    title_col = header_map.get('abstract_title') or header_map.get('title')
+    abstract_col = header_map.get('full_abstract') or header_map.get('abstract')
+    
+    for row in reader:
+        abstract_id = row.get(id_col, "") if id_col else ""
+        abstract_title = row.get(title_col, "") if title_col else ""
+        full_abstract = row.get(abstract_col, "") if abstract_col else ""
         
-        header_map = {h.lower().strip(): h for h in fieldnames}
-        id_col = header_map.get('abstract_id') or header_map.get('id')
-        title_col = header_map.get('abstract_title') or header_map.get('title')
-        abstract_col = header_map.get('full_abstract') or header_map.get('abstract')
+        if not abstract_id:
+            continue
         
-        for row in reader:
-            abstract_id = row.get(id_col, "") if id_col else ""
-            abstract_title = row.get(title_col, "") if title_col else ""
-            full_abstract = row.get(abstract_col, "") if abstract_col else ""
-            
-            if not abstract_id:
-                continue
-            
-            # Check if extraction exists (step2_output.json)
-            try:
-                storage.download_json(f"abstracts/{abstract_id}/step2_output.json")
-            except FileNotFoundError:
-                skipped_no_extraction.append(abstract_id)
-                continue
-            
-            inputs.append(DrugClassInput(
-                abstract_id=str(abstract_id),
-                abstract_title=str(abstract_title),
-                full_abstract=str(full_abstract),
-            ))
-            original_rows.append(row)
+        # Check if extraction exists (step2_output.json)
+        try:
+            output_storage.download_json(f"abstracts/{abstract_id}/step2_output.json")
+        except FileNotFoundError:
+            skipped_no_extraction.append(abstract_id)
+            continue
+        
+        inputs.append(DrugClassInput(
+            abstract_id=str(abstract_id),
+            abstract_title=str(abstract_title),
+            full_abstract=str(full_abstract),
+        ))
+        original_rows.append(row)
     
     if skipped_no_extraction:
         print(f"⚠ Skipped {len(skipped_no_extraction)} abstracts without extraction: {skipped_no_extraction[:5]}{'...' if len(skipped_no_extraction) > 5 else ''}")
@@ -135,7 +144,7 @@ def load_abstracts(
     return inputs, original_rows, fieldnames
 
 
-def get_validation_status(abstract_id: str, storage: LocalStorageClient) -> Optional[dict]:
+def get_validation_status(abstract_id: str, storage: Union[LocalStorageClient, GCSStorageClient]) -> Optional[dict]:
     """Load validation status for an abstract if it exists."""
     try:
         return storage.download_json(f"abstracts/{abstract_id}/validation.json")
@@ -143,7 +152,7 @@ def get_validation_status(abstract_id: str, storage: LocalStorageClient) -> Opti
         return None
 
 
-def should_process_validation(abstract_id: str, storage: LocalStorageClient) -> bool:
+def should_process_validation(abstract_id: str, storage: Union[LocalStorageClient, GCSStorageClient]) -> bool:
     """Check if validation should be run for this abstract.
     
     Returns True if:
@@ -161,7 +170,7 @@ def save_validation_result(
     abstract_title: str,
     drug_results: list[dict],
     duration: float,
-    storage: LocalStorageClient,
+    storage: Union[LocalStorageClient, GCSStorageClient],
     error: Optional[str] = None,
 ):
     """Save consolidated validation.json for an abstract.
@@ -210,7 +219,7 @@ def save_validation_result(
 
 
 def save_batch_status(
-    storage: LocalStorageClient,
+    storage: Union[LocalStorageClient, GCSStorageClient],
     inputs: list[DrugClassInput],
     total_duration: float,
     started_at: str,
@@ -272,7 +281,7 @@ def save_batch_status(
     return batch_status
 
 
-def process_single(inp: DrugClassInput, storage: LocalStorageClient) -> ProcessResult:
+def process_single(inp: DrugClassInput, storage: Union[LocalStorageClient, GCSStorageClient]) -> ProcessResult:
     """Validate all drug extractions for a single abstract.
     
     Loads step2_output.json from storage and validates each drug extraction.
@@ -383,7 +392,7 @@ def process_single(inp: DrugClassInput, storage: LocalStorageClient) -> ProcessR
 
 def run_validation_batch(
     inputs: list[DrugClassInput],
-    storage: LocalStorageClient,
+    storage: Union[LocalStorageClient, GCSStorageClient],
     parallel_workers: int,
 ) -> tuple[list[ProcessResult], float]:
     """Run validation for all abstracts that need it.
@@ -453,47 +462,82 @@ def save_results_csv(
     inputs: list[DrugClassInput],
     original_rows: list[dict],
     fieldnames: list[str],
-    storage: LocalStorageClient,
+    storage: Union[LocalStorageClient, GCSStorageClient],
     output_path: str,
 ):
     """Save validation results to CSV with all input columns plus model_response.
     
     Reads validation.json from storage for each abstract to build the model response.
+    Writes CSV to storage (local or GCS).
     """
     output_fieldnames = fieldnames + ["model_response"]
     
-    with open(output_path, "w", newline="", encoding="utf-8-sig") as f:
-        writer = csv.DictWriter(f, fieldnames=output_fieldnames)
-        writer.writeheader()
+    # Write to string buffer first
+    output = io.StringIO()
+    writer = csv.DictWriter(output, fieldnames=output_fieldnames)
+    writer.writeheader()
+    
+    for i, inp in enumerate(inputs):
+        row = dict(original_rows[i]) if i < len(original_rows) else {}
         
-        for i, inp in enumerate(inputs):
-            row = dict(original_rows[i]) if i < len(original_rows) else {}
-            
-            # Get validation.json for this abstract
-            try:
-                validation_data = storage.download_json(f"abstracts/{inp.abstract_id}/validation.json")
-                model_response = validation_data
-            except FileNotFoundError:
-                model_response = {
-                    "abstract_id": inp.abstract_id,
-                    "overall_status": "not_processed",
-                    "error": "Validation not found",
-                }
-            
-            row["model_response"] = json.dumps(model_response, indent=2)
-            writer.writerow(row)
+        # Get validation.json for this abstract
+        try:
+            validation_data = storage.download_json(f"abstracts/{inp.abstract_id}/validation.json")
+            model_response = validation_data
+        except FileNotFoundError:
+            model_response = {
+                "abstract_id": inp.abstract_id,
+                "overall_status": "not_processed",
+                "error": "Validation not found",
+            }
+        
+        row["model_response"] = json.dumps(model_response, indent=2)
+        writer.writerow(row)
+    
+    # Upload CSV content to storage
+    storage.upload_text(output_path, output.getvalue())
 
 
 def main():
     parser = argparse.ArgumentParser(description="Drug Class Validation Processor")
-    parser.add_argument("--input", default="data/ASCO2025/input/abstract_titles.csv", help="Input CSV file (e.g., ASCO2025/input/abstract_titles.csv)")
-    parser.add_argument("--output_dir", default="data/ASCO2025/drug_class", help="Output directory (e.g., ASCO2025/drug_class)")
+    parser.add_argument("--input", default="gs://entity-extraction-agent-data-dev/Conference/abstract_titles.csv", 
+                        help="Input CSV file (local or gs://bucket/path)")
+    parser.add_argument("--output_dir", default="gs://entity-extraction-agent-data-dev/Conference/drug_class", 
+                        help="Output directory (local or gs://bucket/path)")
     parser.add_argument("--limit", type=int, default=None, help="Limit abstracts to validate")
     parser.add_argument("--parallel_workers", type=int, default=10, help="Number of parallel workers")
     args = parser.parse_args()
     
-    output_dir = Path(args.output_dir)
-    output_dir.mkdir(parents=True, exist_ok=True)
+    # Determine if using GCS or local storage based on output_dir
+    is_gcs = args.output_dir.startswith("gs://")
+    
+    # Initialize storage client for output
+    storage = get_storage_client(args.output_dir)
+    
+    # For input, we need to handle path differently
+    if args.input.startswith("gs://"):
+        # Parse GCS input path
+        from src.agents.core.storage import parse_gcs_path
+        bucket, input_prefix = parse_gcs_path(args.input)
+        # Split prefix into directory and filename
+        if "/" in input_prefix:
+            input_dir = input_prefix.rsplit("/", 1)[0]
+            input_filename = input_prefix.rsplit("/", 1)[1]
+        else:
+            input_dir = ""
+            input_filename = input_prefix
+        input_storage = get_storage_client(f"gs://{bucket}/{input_dir}" if input_dir else f"gs://{bucket}")
+    else:
+        # Local input - use parent directory as base
+        input_path = Path(args.input)
+        input_dir = str(input_path.parent)
+        input_filename = input_path.name
+        input_storage = get_storage_client(input_dir)
+    
+    # For local storage, ensure output directory exists
+    if not is_gcs:
+        output_dir = Path(args.output_dir)
+        output_dir.mkdir(parents=True, exist_ok=True)
     
     # Record batch start time
     batch_started_at = _get_timestamp()
@@ -503,15 +547,14 @@ def main():
     print("=" * 60)
     print(f"Input:      {args.input}")
     print(f"Output dir: {args.output_dir}")
+    print(f"Storage:    {'GCS' if is_gcs else 'Local'}")
     print(f"Model:      {config.VALIDATION_MODEL}")
     print(f"Limit:      {args.limit or 'all'}")
     print(f"Workers:    {args.parallel_workers}")
     print()
     
-    storage = LocalStorageClient(base_dir=args.output_dir)
-    
     print("Loading abstracts...")
-    inputs, original_rows, fieldnames = load_abstracts(args.input, storage, args.limit)
+    inputs, original_rows, fieldnames = load_abstracts(input_filename, input_storage, storage, args.limit)
     print(f"✓ Loaded {len(inputs)} abstracts with extraction data")
     print()
     
@@ -530,10 +573,10 @@ def main():
     
     # Save CSV output
     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-    csv_output_path = str(output_dir / f"validation_{timestamp}.csv")
+    csv_output_filename = f"validation_{timestamp}.csv"
     print(f"Saving CSV output...")
-    save_results_csv(inputs, original_rows, fieldnames, storage, csv_output_path)
-    print(f"✓ Saved {csv_output_path}")
+    save_results_csv(inputs, original_rows, fieldnames, storage, csv_output_filename)
+    print(f"✓ Saved {csv_output_filename}")
     
     # Summary
     print()
