@@ -28,24 +28,24 @@ class DrugClassConfig(BaseSettings):
         default="gemini/gemini-3-pro-preview",
         description="Model for regimen identification (fast, simple task)"
     )
-    REGIMEN_TEMPERATURE: float = Field(default=0)
+    REGIMEN_TEMPERATURE: float = Field(default=1)
     REGIMEN_MAX_TOKENS: int = Field(default=50000)
     
     # ==========================================================================
     # Step 2: Drug Class Extraction (Tavily + Grounded)
     # ==========================================================================
     EXTRACTION_MODEL: str = Field(
-        default="gemini/gemini-2.5-pro",
+        default="gemini/gemini-3-pro-preview",
         description="Model for drug class extraction (complex reasoning)"
     )
-    EXTRACTION_TEMPERATURE: float = Field(default=0)
+    EXTRACTION_TEMPERATURE: float = Field(default=1)
     EXTRACTION_MAX_TOKENS: int = Field(default=50000)
     
     GROUNDED_MODEL: str = Field(
         default="gemini/gemini-3-flash-preview",
         description="Model for grounded search fallback (OpenAI with web search)"
     )
-    GROUNDED_TEMPERATURE: float = Field(default=0)
+    GROUNDED_TEMPERATURE: float = Field(default=1)
     GROUNDED_MAX_TOKENS: int = Field(default=50000)
     
     # ==========================================================================
@@ -55,7 +55,7 @@ class DrugClassConfig(BaseSettings):
         default="gemini/gemini-3-flash-preview",
         description="Model for drug class selection"
     )
-    SELECTION_TEMPERATURE: float = Field(default=0)
+    SELECTION_TEMPERATURE: float = Field(default=1)
     SELECTION_MAX_TOKENS: int = Field(default=50000)
     
     # ==========================================================================
@@ -65,7 +65,7 @@ class DrugClassConfig(BaseSettings):
         default="gemini/gemini-3-flash-preview",
         description="Model for explicit drug class extraction from title"
     )
-    EXPLICIT_TEMPERATURE: float = Field(default=0)
+    EXPLICIT_TEMPERATURE: float = Field(default=1)
     EXPLICIT_MAX_TOKENS: int = Field(default=50000)
     
     # ==========================================================================
@@ -75,7 +75,7 @@ class DrugClassConfig(BaseSettings):
         default="gemini/gemini-3-flash-preview",
         description="Model for consolidation"
     )
-    CONSOLIDATION_TEMPERATURE: float = Field(default=0)
+    CONSOLIDATION_TEMPERATURE: float = Field(default=1)
     CONSOLIDATION_MAX_TOKENS: int = Field(default=50000)
     
     # ==========================================================================
@@ -85,7 +85,7 @@ class DrugClassConfig(BaseSettings):
         default="gemini/gemini-3-flash-preview",
         description="Model for validation (requires strong reasoning)"
     )
-    VALIDATION_TEMPERATURE: float = Field(default=0)
+    VALIDATION_TEMPERATURE: float = Field(default=1)
     VALIDATION_MAX_TOKENS: int = Field(default=50000)
     
     # ==========================================================================

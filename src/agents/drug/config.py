@@ -45,7 +45,7 @@ class DrugConfig(BaseSettings):
         description="LLM model for drug validation"
     )
     VALIDATION_TEMPERATURE: float = Field(
-        default=0,
+        default=1,
         description="Temperature for validation LLM"
     )
     VALIDATION_MAX_TOKENS: int = Field(

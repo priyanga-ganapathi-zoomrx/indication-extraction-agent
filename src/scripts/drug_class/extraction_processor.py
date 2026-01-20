@@ -815,11 +815,11 @@ def main():
     parser.add_argument("--limit", type=int, default=None, help="Limit abstracts to process")
     
     # Per-step parallelism
-    parser.add_argument("--step1_parallelism", type=int, default=50, help="Parallelism for Step 1")
-    parser.add_argument("--step2_parallelism", type=int, default=10, help="Parallelism for Step 2 (expensive)")
-    parser.add_argument("--step3_parallelism", type=int, default=30, help="Parallelism for Step 3")
-    parser.add_argument("--step4_parallelism", type=int, default=25, help="Parallelism for Step 4")
-    parser.add_argument("--step5_parallelism", type=int, default=30, help="Parallelism for Step 5")
+    parser.add_argument("--step1_parallelism", type=int, default=40, help="Parallelism for Step 1")
+    parser.add_argument("--step2_parallelism", type=int, default=40, help="Parallelism for Step 2 (expensive)")
+    parser.add_argument("--step3_parallelism", type=int, default=40, help="Parallelism for Step 3")
+    parser.add_argument("--step4_parallelism", type=int, default=40, help="Parallelism for Step 4")
+    parser.add_argument("--step5_parallelism", type=int, default=40, help="Parallelism for Step 5")
     
     args = parser.parse_args()
     
