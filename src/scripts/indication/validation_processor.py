@@ -284,40 +284,71 @@ def save_results_csv(
     storage: Union[LocalStorageClient, GCSStorageClient],
     output_path: str,
 ) -> None:
-    """Save all validation results to CSV with input columns plus model_response column.
-    
-    Reads validation.json from storage for each abstract to build the CSV.
+    """Save all validation results to CSV with input columns plus individual extraction and validation properties.
+
+    Flattens extraction and validation results into separate columns for easier analysis.
     Writes CSV to storage (local or GCS).
     """
-    response_column = "validation_response"
-    fieldnames = input_fieldnames + [response_column]
-    
+    # Define columns for extraction properties
+    extraction_columns = [
+        "extraction_selected_source",
+        "extraction_generated_indication",
+        "extraction_reasoning",
+        "extraction_rules_retrieved"  # JSON array
+    ]
+
+    # Define columns for validation properties
+    validation_columns = [
+        "validation_status",
+        "validation_issues_found",  # JSON array
+        "validation_checks_performed",  # JSON object
+        "validation_reasoning"
+    ]
+
+    fieldnames = input_fieldnames + extraction_columns + validation_columns
+
     # Write to string buffer first
     output = io.StringIO()
     writer = csv.DictWriter(output, fieldnames=fieldnames)
     writer.writeheader()
-    
+
     for inp, original_row in zip(inputs, original_rows):
         row = dict(original_row)
-        
-        # Try to load validation result from storage
+
+        # Add extraction properties as separate columns
+        extraction_result = inp.extraction_result
+        row["extraction_selected_source"] = extraction_result.get("selected_source", "")
+        row["extraction_generated_indication"] = extraction_result.get("generated_indication", "")
+        row["extraction_reasoning"] = extraction_result.get("reasoning", "")
+        row["extraction_rules_retrieved"] = json.dumps(extraction_result.get("rules_retrieved", []), indent=2, ensure_ascii=False)
+
+        # Add validation properties as separate columns
         try:
             validation_data = storage.download_json(f"abstracts/{inp.abstract_id}/validation.json")
-            row[response_column] = json.dumps(validation_data, indent=2, ensure_ascii=False)
+
+            row["validation_status"] = validation_data.get("validation_status", "")
+            row["validation_issues_found"] = json.dumps(validation_data.get("issues_found", []), indent=2, ensure_ascii=False)
+            row["validation_checks_performed"] = json.dumps(validation_data.get("checks_performed", {}), indent=2, ensure_ascii=False)
+            row["validation_reasoning"] = validation_data.get("validation_reasoning", "")
+
         except FileNotFoundError:
             # Check if there was an error in status
             status = get_abstract_status(inp.abstract_id, storage)
             if status:
                 validation = status.get("validation", {})
                 if validation.get("error"):
-                    row[response_column] = json.dumps({"error": validation.get("error")}, indent=2)
+                    row["validation_status"] = f"ERROR: {validation.get('error')}"
                 else:
-                    row[response_column] = json.dumps({"error": "Validation not completed"}, indent=2)
+                    row["validation_status"] = "Validation not completed"
             else:
-                row[response_column] = json.dumps({"error": "Validation not completed"}, indent=2)
-        
+                row["validation_status"] = "Validation not completed"
+
+            # Set other validation columns to empty
+            for col in validation_columns[1:]:  # Skip validation_status
+                row[col] = ""
+
         writer.writerow(row)
-    
+
     # Upload CSV content to storage
     storage.upload_text(output_path, output.getvalue())
     print(f"✓ CSV saved to {output_path}")

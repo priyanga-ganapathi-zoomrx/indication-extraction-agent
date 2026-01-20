@@ -85,6 +85,25 @@ python -m src.scripts.drug_class.validation_processor \
   --output_dir gs://bucket/Conference/drug_class
 ```
 
+### Combined QA Export
+
+Export drug extraction/validation and drug class pipeline results to a single CSV for QA review:
+
+```bash
+python -m src.scripts.drug_drug_class_exporter \
+  --input gs://bucket/Conference/abstract_titles.csv \
+  --drug_output_dir gs://bucket/Conference/drug \
+  --drug_class_output_dir gs://bucket/Conference/drug_class \
+  --output qa_export.csv
+```
+
+**Output columns include:**
+- All input CSV columns
+- Drug extraction: `drug_extraction_primary_drugs`, `drug_extraction_secondary_drugs`, `drug_extraction_comparator_drugs`, `drug_extraction_reasoning`
+- Drug validation: `drug_validation_status`, `drug_validation_grounded_search_performed`, `drug_validation_search_results`, `drug_validation_missed_drugs`, `drug_validation_issues_found`, `drug_validation_reasoning`
+- Drug class Step 1-5: `drug_class_step1_drug_to_components`, `drug_class_step2_drug_classes`, `drug_class_step2_extraction_details`, `drug_class_step3_selected_drug_classes`, `drug_class_step3_reasoning`, `drug_class_step4_explicit_drug_classes`, `drug_class_step4_extraction_details`, `drug_class_step5_refined_explicit_classes`, `drug_class_step5_removed_classes`, `drug_class_step5_reasoning`
+- Drug class validation: `drug_class_validation_missed_drug_classes`
+
 ## Storage
 
 ### Local Storage
