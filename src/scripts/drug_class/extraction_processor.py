@@ -160,7 +160,13 @@ def load_abstracts(
 
 
 def _parse_list(value: str) -> list[str]:
-    """Parse list from JSON array or comma-separated string."""
+    """Parse list from JSON array or ;; separated string.
+    
+    Handles:
+    - JSON arrays: ["item1", "item2"]
+    - Double semicolon separated: "item1;;item2"
+    - Falls back to comma separated for backward compatibility
+    """
     if not value or not value.strip():
         return []
     
@@ -175,8 +181,16 @@ def _parse_list(value: str) -> list[str]:
         except json.JSONDecodeError:
             pass
     
-    # Fall back to comma/semicolon separated
-    return [d.strip() for d in value.replace(';', ',').split(',') if d.strip()]
+    # Use double semicolon as primary separator (for firms column)
+    if ';;' in value:
+        return [d.strip() for d in value.split(';;') if d.strip()]
+    
+    # Fall back to comma separated for backward compatibility
+    if ',' in value:
+        return [d.strip() for d in value.split(',') if d.strip()]
+    
+    # Single value
+    return [value.strip()] if value.strip() else []
 
 
 def save_batch_status(

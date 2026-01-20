@@ -85,10 +85,19 @@ def load_abstracts(csv_path: str, limit: int = None) -> tuple[list[DrugClassInpu
 
 
 def _parse_list(value: str) -> list[str]:
-    """Parse list from JSON array or comma-separated string."""
+    """Parse list from JSON array or ;; separated string.
+    
+    Handles:
+    - JSON arrays: ["item1", "item2"]
+    - Double semicolon separated: "item1;;item2"
+    - Falls back to comma separated for backward compatibility
+    """
     if not value or not value.strip():
         return []
+    
     value = value.strip()
+    
+    # Try JSON array first
     if value.startswith('['):
         try:
             parsed = json.loads(value)
@@ -96,7 +105,17 @@ def _parse_list(value: str) -> list[str]:
                 return [str(d).strip() for d in parsed if d and str(d).strip()]
         except json.JSONDecodeError:
             pass
-    return [d.strip() for d in value.replace(';', ',').split(',') if d.strip()]
+    
+    # Use double semicolon as primary separator (for firms column)
+    if ';;' in value:
+        return [d.strip() for d in value.split(';;') if d.strip()]
+    
+    # Fall back to comma separated for backward compatibility
+    if ',' in value:
+        return [d.strip() for d in value.split(',') if d.strip()]
+    
+    # Single value
+    return [value.strip()] if value.strip() else []
 
 
 def process_single(inp: DrugClassInput, storage: LocalStorageClient) -> ProcessResult:
