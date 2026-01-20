@@ -56,6 +56,68 @@ def _to_json_string(data: Any) -> str:
         return str(data)
 
 
+def _format_list_as_semicolon_string(data: list) -> str:
+    """Format Type A: Convert list to double-semicolon separated string.
+    
+    Example:
+        ["Drug A", "Drug B"] → "Drug A;;Drug B"
+        [] → ""
+    """
+    if not data:
+        return ""
+    # Filter out empty/None values and convert to strings
+    items = [str(item).strip() for item in data if item]
+    return ";;".join(items) if items else ""
+
+
+def _format_dict_as_key_value(data: dict) -> str:
+    """Format Type B: Convert dict with arrays to key-value lines.
+    
+    Example:
+        {"Drug A": ["Class 1", "Class 2"], "Drug B": ["Class 3"]}
+        →
+        "Drug A": Class 1;;Class 2
+        "Drug B": Class 3
+    """
+    if not data:
+        return ""
+    
+    lines = []
+    for key, values in data.items():
+        if isinstance(values, list):
+            values_str = ";;".join(str(v).strip() for v in values if v)
+        else:
+            values_str = str(values).strip() if values else ""
+        lines.append(f'"{key}": {values_str}')
+    
+    return "\n".join(lines) if lines else ""
+
+
+def _format_dict_as_key_value_skip_empty(data: dict) -> str:
+    """Format Type C: Convert dict with arrays to key-value lines, skip empty arrays.
+    
+    Example:
+        {"Drug A": [], "Drug B": ["Missed Class"]}
+        →
+        "Drug B": Missed Class
+        
+        {"Drug A": [], "Drug B": []} → ""
+    """
+    if not data:
+        return ""
+    
+    lines = []
+    for key, values in data.items():
+        if isinstance(values, list) and values:  # Only include non-empty arrays
+            values_str = ";;".join(str(v).strip() for v in values if v)
+            if values_str:
+                lines.append(f'"{key}": {values_str}')
+        elif not isinstance(values, list) and values:  # Handle non-list values
+            lines.append(f'"{key}": {str(values).strip()}')
+    
+    return "\n".join(lines) if lines else ""
+
+
 def _sanitize_filename(name: str) -> str:
     """Sanitize a string for use in filenames.
     
@@ -129,10 +191,10 @@ def transform_drug_extraction(
     Reads: drug_output_dir/abstracts/{abstract_id}/extraction.json
     
     Output columns:
-    - drug_extraction_primary_drugs
-    - drug_extraction_secondary_drugs
-    - drug_extraction_comparator_drugs
-    - drug_extraction_reasoning
+    - drug_extraction_primary_drugs (Type A: double-semicolon separated)
+    - drug_extraction_secondary_drugs (Type A: double-semicolon separated)
+    - drug_extraction_comparator_drugs (Type A: double-semicolon separated)
+    - drug_extraction_reasoning (JSON)
     """
     extraction_data = read_json_file(drug_storage, f"abstracts/{abstract_id}/extraction.json")
     
@@ -145,9 +207,9 @@ def transform_drug_extraction(
         }
     
     return {
-        "drug_extraction_primary_drugs": _to_json_string(extraction_data.get("Primary Drugs", [])),
-        "drug_extraction_secondary_drugs": _to_json_string(extraction_data.get("Secondary Drugs", [])),
-        "drug_extraction_comparator_drugs": _to_json_string(extraction_data.get("Comparator Drugs", [])),
+        "drug_extraction_primary_drugs": _format_list_as_semicolon_string(extraction_data.get("Primary Drugs", [])),
+        "drug_extraction_secondary_drugs": _format_list_as_semicolon_string(extraction_data.get("Secondary Drugs", [])),
+        "drug_extraction_comparator_drugs": _format_list_as_semicolon_string(extraction_data.get("Comparator Drugs", [])),
         "drug_extraction_reasoning": _to_json_string(extraction_data.get("Reasoning", [])),
     }
 
@@ -168,7 +230,7 @@ def transform_drug_validation(
     - drug_validation_status
     - drug_validation_grounded_search_performed
     - drug_validation_search_results
-    - drug_validation_missed_drugs
+    - drug_validation_missed_drugs (Type A: double-semicolon separated)
     - drug_validation_issues_found
     - drug_validation_reasoning
     """
@@ -188,7 +250,7 @@ def transform_drug_validation(
         "drug_validation_status": validation_data.get("validation_status", ""),
         "drug_validation_grounded_search_performed": _to_json_string(validation_data.get("grounded_search_performed", "")),
         "drug_validation_search_results": _to_json_string(validation_data.get("search_results", [])),
-        "drug_validation_missed_drugs": _to_json_string(validation_data.get("missed_drugs", [])),
+        "drug_validation_missed_drugs": _format_list_as_semicolon_string(validation_data.get("missed_drugs", [])),
         "drug_validation_issues_found": _to_json_string(validation_data.get("issues_found", [])),
         "drug_validation_reasoning": validation_data.get("validation_reasoning", ""),
     }
@@ -207,7 +269,7 @@ def transform_drug_class_step1(
     Reads: drug_class_output_dir/abstracts/{abstract_id}/step1_output.json
     
     Output columns:
-    - drug_class_step1_drug_to_components: JSON object {drug: [components]}
+    - drug_class_step1_drug_to_components (Type B: key-value format)
     """
     step1_data = read_json_file(drug_class_storage, f"abstracts/{abstract_id}/step1_output.json")
     
@@ -215,7 +277,7 @@ def transform_drug_class_step1(
         return {"drug_class_step1_drug_to_components": ""}
     
     return {
-        "drug_class_step1_drug_to_components": _to_json_string(step1_data.get("drug_to_components", {})),
+        "drug_class_step1_drug_to_components": _format_dict_as_key_value(step1_data.get("drug_to_components", {})),
     }
 
 
@@ -232,7 +294,7 @@ def transform_drug_class_step2(
     Reads: drug_class_output_dir/abstracts/{abstract_id}/step2_output.json
     
     Output columns (grouped by drug name):
-    - drug_class_step2_drug_classes: JSON object {drug: [classes]}
+    - drug_class_step2_drug_classes (Type B: key-value format)
     - drug_class_step2_extraction_details: JSON object {drug: [details]}
     """
     step2_data = read_json_file(drug_class_storage, f"abstracts/{abstract_id}/step2_output.json")
@@ -254,7 +316,7 @@ def transform_drug_class_step2(
             extraction_details[drug_name] = result.get("extraction_details", [])
     
     return {
-        "drug_class_step2_drug_classes": _to_json_string(drug_classes),
+        "drug_class_step2_drug_classes": _format_dict_as_key_value(drug_classes),
         "drug_class_step2_extraction_details": _to_json_string(extraction_details),
     }
 
@@ -272,7 +334,7 @@ def transform_drug_class_step3(
     Reads: drug_class_output_dir/abstracts/{abstract_id}/step3_output.json
     
     Output columns (grouped by drug name):
-    - drug_class_step3_selected_drug_classes: JSON object {drug: [classes]}
+    - drug_class_step3_selected_drug_classes (Type B: key-value format)
     - drug_class_step3_reasoning: JSON object {drug: reasoning}
     """
     step3_data = read_json_file(drug_class_storage, f"abstracts/{abstract_id}/step3_output.json")
@@ -294,7 +356,7 @@ def transform_drug_class_step3(
             reasoning[drug_name] = result.get("reasoning", "")
     
     return {
-        "drug_class_step3_selected_drug_classes": _to_json_string(selected_drug_classes),
+        "drug_class_step3_selected_drug_classes": _format_dict_as_key_value(selected_drug_classes),
         "drug_class_step3_reasoning": _to_json_string(reasoning),
     }
 
@@ -312,7 +374,7 @@ def transform_drug_class_step4(
     Reads: drug_class_output_dir/abstracts/{abstract_id}/step4_output.json
     
     Output columns:
-    - drug_class_step4_explicit_drug_classes: JSON array
+    - drug_class_step4_explicit_drug_classes (Type A: double-semicolon separated)
     - drug_class_step4_extraction_details: JSON array
     """
     step4_data = read_json_file(drug_class_storage, f"abstracts/{abstract_id}/step4_output.json")
@@ -324,7 +386,7 @@ def transform_drug_class_step4(
         }
     
     return {
-        "drug_class_step4_explicit_drug_classes": _to_json_string(step4_data.get("explicit_drug_classes", [])),
+        "drug_class_step4_explicit_drug_classes": _format_list_as_semicolon_string(step4_data.get("explicit_drug_classes", [])),
         "drug_class_step4_extraction_details": _to_json_string(step4_data.get("extraction_details", [])),
     }
 
@@ -342,8 +404,8 @@ def transform_drug_class_step5(
     Reads: drug_class_output_dir/abstracts/{abstract_id}/step5_output.json
     
     Output columns:
-    - drug_class_step5_refined_explicit_classes: JSON array
-    - drug_class_step5_removed_classes: JSON array
+    - drug_class_step5_refined_explicit_classes (Type A: double-semicolon separated)
+    - drug_class_step5_removed_classes (Type A: double-semicolon separated)
     - drug_class_step5_reasoning: String
     """
     step5_data = read_json_file(drug_class_storage, f"abstracts/{abstract_id}/step5_output.json")
@@ -356,8 +418,8 @@ def transform_drug_class_step5(
         }
     
     return {
-        "drug_class_step5_refined_explicit_classes": _to_json_string(step5_data.get("refined_explicit_classes", [])),
-        "drug_class_step5_removed_classes": _to_json_string(step5_data.get("removed_classes", [])),
+        "drug_class_step5_refined_explicit_classes": _format_list_as_semicolon_string(step5_data.get("refined_explicit_classes", [])),
+        "drug_class_step5_removed_classes": _format_list_as_semicolon_string(step5_data.get("removed_classes", [])),
         "drug_class_step5_reasoning": step5_data.get("reasoning", ""),
     }
 
@@ -370,25 +432,29 @@ def transform_drug_class_validation(
     drug_class_storage: Union[LocalStorageClient, GCSStorageClient],
     abstract_id: str,
     step2_data: Optional[dict],
-) -> dict:
+) -> tuple[dict, bool]:
     """Transform drug class validation output to CSV columns.
     
     Reads per-drug validation files: validation_{sanitized_drug}.json
     
     Output columns:
-    - drug_class_validation_missed_drug_classes: JSON object {drug: [missed_classes]}
+    - drug_class_validation_missed_drug_classes (Type C: key-value format, skip empty)
+    
+    Returns:
+        tuple: (column_dict, validation_files_found)
     """
     if not step2_data:
-        return {"drug_class_validation_missed_drug_classes": ""}
+        return {"drug_class_validation_missed_drug_classes": ""}, False
     
     # Get drug names from step2 extractions
     extractions = step2_data.get("extractions", {})
     drug_names = list(extractions.keys())
     
     if not drug_names:
-        return {"drug_class_validation_missed_drug_classes": ""}
+        return {"drug_class_validation_missed_drug_classes": ""}, False
     
     missed_drug_classes = {}
+    validation_files_found = False
     
     # Read each per-drug validation file
     for drug_name in drug_names:
@@ -398,11 +464,12 @@ def transform_drug_class_validation(
             f"abstracts/{abstract_id}/validation_{safe_drug_name}.json"
         )
         if val_data:
+            validation_files_found = True
             missed_drug_classes[drug_name] = val_data.get("missed_drug_classes", [])
     
     return {
-        "drug_class_validation_missed_drug_classes": _to_json_string(missed_drug_classes) if missed_drug_classes else "",
-    }
+        "drug_class_validation_missed_drug_classes": _format_dict_as_key_value_skip_empty(missed_drug_classes),
+    }, validation_files_found
 
 
 # =============================================================================
@@ -495,8 +562,8 @@ def process_abstracts(
         # --- Drug Class Validation ---
         # Need step2 data to know which drugs to look up validation for
         step2_data = read_json_file(drug_class_storage, f"abstracts/{abstract_id}/step2_output.json")
-        validation_cols = transform_drug_class_validation(drug_class_storage, abstract_id, step2_data)
-        if validation_cols.get("drug_class_validation_missed_drug_classes"):
+        validation_cols, validation_found = transform_drug_class_validation(drug_class_storage, abstract_id, step2_data)
+        if validation_found:
             stats["drug_class_validation_found"] += 1
         output_row.update(validation_cols)
         
@@ -504,7 +571,7 @@ def process_abstracts(
     
     # Print stats
     total = len(rows)
-    print(f"\nData availability:")
+    print("\nData availability:")
     print(f"  Drug extraction:        {stats['drug_extraction_found']}/{total}")
     print(f"  Drug validation:        {stats['drug_validation_found']}/{total}")
     print(f"  Drug class Step 1:      {stats['drug_class_step1_found']}/{total}")
