@@ -28,6 +28,8 @@ def load_prompt(
     Raises:
         Exception: If both Langfuse and file loading fail
     """
+    # TODO: Remove this after ASCO GI
+    return _load_from_file(prompt_name, prompts_dir)
     # Skip Langfuse if not configured
     if not langfuse_client and not settings.langfuse.LANGFUSE_PUBLIC_KEY:
         return _load_from_file(prompt_name, prompts_dir)
