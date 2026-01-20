@@ -36,6 +36,41 @@ cp .env.example .env
 
 All pipelines expect a CSV with columns: `abstract_id`, `abstract_title`, `firm`, `full_abstract`
 
+### Data Preprocessing
+
+#### Clean Firms Column
+
+If your input CSV has malformed `firms` data (e.g., prefixed with `<0>` or other artifacts), use the cleaning script:
+
+```bash
+python -m src.scripts.drug_class.clean_firms [input_path] [output_path]
+```
+
+**Default paths (if no arguments provided):**
+- Input: `data/drug/input/abstract_titles(in).csv`
+- Output: `data/drug/input/abstract_titles_cleaned.csv`
+
+**What it cleans:**
+- Removes `<0>` (or any `<digit>`) prefix from firms values
+- Preserves `;;` as the separator for multiple firms
+
+**Example:**
+```
+Before: <0>Astellas Pharma;;Pfizer
+After:  Astellas Pharma;;Pfizer
+```
+
+**Output statistics:**
+```
+Results:
+  Total rows:        1006
+  Rows with firms:   277
+  Rows cleaned:      277
+  Multi-firm rows:   73
+```
+
+**Note:** The `firms` column uses `;;` (double semicolon) as the separator for multiple firms.
+
 ### Indication Pipeline
 
 **Extraction:**
