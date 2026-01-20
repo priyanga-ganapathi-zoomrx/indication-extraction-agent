@@ -6,8 +6,6 @@ from typing import Optional
 
 from langfuse import Langfuse
 
-from src.agents.core.langfuse_config import langfuse as langfuse_singleton
-
 
 # Available prompt names
 EXTRACTION_TITLE_PROMPT_NAME = "DRUG_CLASS_EXTRACTION_FROM_TITLE"
@@ -59,19 +57,16 @@ def get_system_prompt(
     fallback_to_file: bool = True,
     prompt_dir: Optional[Path] = None,
 ) -> tuple[str, str]:
-    """Load the system prompt from Langfuse or fallback to local file.
+    """Load the system prompt from local file.
 
     Args:
-        langfuse_client: Optional Langfuse client instance. If not provided, uses the singleton.
-        prompt_name: Name of the prompt in Langfuse (default: EXTRACTION_TITLE_PROMPT_NAME)
-        fallback_to_file: If True, fallback to reading from local file (prompt_name.md) if Langfuse fetch fails
+        langfuse_client: Optional Langfuse client instance (ignored - loading from local file)
+        prompt_name: Name of the prompt (used as filename without extension)
+        fallback_to_file: Ignored - always loads from file
         prompt_dir: Optional directory to look for prompt files (default: prompts/ in same folder)
 
     Returns:
         tuple[str, str]: A tuple of (prompt_content, prompt_version)
-
-    Raises:
-        Exception: If Langfuse fetch fails and fallback_to_file is False
     """
     # Check cache first
     if prompt_name in _prompt_cache:
@@ -79,45 +74,10 @@ def get_system_prompt(
     
     prompts_directory = prompt_dir or PROMPTS_DIR
     
-    # Use provided client, singleton, or skip Langfuse if not enabled
-    client = langfuse_client or langfuse_singleton
-    
-    # If no Langfuse client available, go straight to file
-    if client is None:
-        result = _load_prompt_from_file(prompt_name, prompts_directory)
-        _prompt_cache[prompt_name] = result
-        return result
-    
-    # Try to fetch from Langfuse
-    try:
-        print(f"ℹ Fetching prompt '{prompt_name}' from Langfuse...")
-        langfuse_prompt = client.get_prompt(prompt_name)
-        
-        # Get the prompt content
-        if hasattr(langfuse_prompt, 'prompt'):
-            content = langfuse_prompt.prompt
-        elif hasattr(langfuse_prompt, 'get_langchain_prompt'):
-            content = langfuse_prompt.get_langchain_prompt()
-        else:
-            content = str(langfuse_prompt)
-        
-        # Get the version
-        version = str(langfuse_prompt.version) if hasattr(langfuse_prompt, 'version') else "unknown"
-        
-        print(f"✓ Successfully fetched prompt from Langfuse (version: {version})")
-        result = (content.strip(), version)
-        _prompt_cache[prompt_name] = result
-        return result
-        
-    except Exception as e:
-        print(f"✗ Error fetching prompt from Langfuse: {e}")
-        
-        if not fallback_to_file:
-            raise
-        
-        result = _load_prompt_from_file(prompt_name, prompts_directory)
-        _prompt_cache[prompt_name] = result
-        return result
+    # TODO: Remove this after ASCO GI - load directly from local file
+    result = _load_prompt_from_file(prompt_name, prompts_directory)
+    _prompt_cache[prompt_name] = result
+    return result
 
 
 def _load_prompt_from_file(prompt_name: str, prompts_directory: Path) -> tuple[str, str]:

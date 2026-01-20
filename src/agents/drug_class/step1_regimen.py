@@ -1,6 +1,7 @@
 from langfuse import observe, get_client
 from langfuse.langchain import CallbackHandler
 from langchain_core.messages import HumanMessage, SystemMessage
+from tenacity import retry, stop_after_attempt, retry_if_exception_type, wait_fixed
 
 from src.agents.core import settings, create_llm, LLMConfig
 from src.agents.core.langfuse_config import is_langfuse_enabled
@@ -13,6 +14,12 @@ from src.agents.drug_class.schemas import (
 )
 
 
+@retry(
+    stop=stop_after_attempt(2),  # 1 initial + 1 retry
+    wait=wait_fixed(1),  # 1 second between retries
+    retry=retry_if_exception_type((TimeoutError, ConnectionError, Exception)),
+    reraise=True,
+)
 @observe(as_type="generation", name="drug-class-step1-regimen")
 def identify_regimen(input_data: RegimenInput) -> list[str]:
     """Identify if a drug is a regimen and extract its components.
@@ -28,13 +35,14 @@ def identify_regimen(input_data: RegimenInput) -> list[str]:
     # Load prompt
     system_prompt, prompt_version = get_regimen_identification_prompt()
     
-    # Create LLM with structured output
+    # Create LLM with structured output (120s timeout for long-running requests)
     base_llm = create_llm(LLMConfig(
         api_key=settings.llm.LLM_API_KEY,
         base_url=settings.llm.LLM_BASE_URL,
         model=config.REGIMEN_MODEL,
         temperature=config.REGIMEN_TEMPERATURE,
         max_tokens=config.REGIMEN_MAX_TOKENS,
+        timeout=120,  # 2 minute timeout
     ))
     llm = base_llm.with_structured_output(RegimenLLMResponse)
     

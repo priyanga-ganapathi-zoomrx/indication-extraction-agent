@@ -1,7 +1,7 @@
 """Indication Validation Agent using LangGraph.
 
 Minimal agent that validates indication extractions against rules.
-Includes Langfuse tracing and prompt caching.
+Includes Langfuse tracing, prompt caching, timeout (120s) and retry (1 retry) handling.
 """
 
 import operator
@@ -12,6 +12,7 @@ from langchain_core.runnables.config import RunnableConfig
 from langfuse.langchain import CallbackHandler
 from langgraph.graph import END, START, StateGraph
 from langgraph.prebuilt import ToolNode
+from tenacity import retry, stop_after_attempt, retry_if_exception_type, wait_fixed
 from typing_extensions import TypedDict
 
 from src.agents.core import settings, create_llm, LLMConfig
@@ -38,6 +39,7 @@ class IndicationValidationAgent:
             model=config.VALIDATION_LLM_MODEL,
             temperature=config.VALIDATION_LLM_TEMPERATURE,
             max_tokens=config.VALIDATION_LLM_MAX_TOKENS,
+            timeout=120,  # 2 minute timeout
         ))
         self.llm_with_tools = self.llm.bind_tools(self.tools)
         
@@ -174,6 +176,12 @@ IMPORTANT:
 
 Please perform all 6 validation checks and return your validation result in the specified JSON format.{empty_notice}"""
 
+    @retry(
+        stop=stop_after_attempt(2),  # 1 initial + 1 retry
+        wait=wait_fixed(1),  # 1 second between retries
+        retry=retry_if_exception_type((TimeoutError, ConnectionError, Exception)),
+        reraise=True,
+    )
     def invoke(
         self,
         session_title: str,

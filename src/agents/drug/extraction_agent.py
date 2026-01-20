@@ -2,11 +2,13 @@
 
 Simple function that extracts drugs from abstract titles.
 Uses structured output - raises errors on failure for Temporal retry.
+Includes timeout (120s) and retry (1 retry) handling.
 """
 
 from langfuse import observe, get_client
 from langfuse.langchain import CallbackHandler
 from langchain_core.messages import HumanMessage, SystemMessage
+from tenacity import retry, stop_after_attempt, retry_if_exception_type, wait_fixed
 
 from src.agents.core import settings, create_llm, LLMConfig
 from src.agents.core.langfuse_config import is_langfuse_enabled
@@ -20,6 +22,12 @@ class DrugExtractionError(Exception):
     pass
 
 
+@retry(
+    stop=stop_after_attempt(2),  # 1 initial + 1 retry
+    wait=wait_fixed(1),  # 1 second between retries
+    retry=retry_if_exception_type((TimeoutError, ConnectionError, Exception)),
+    reraise=True,
+)
 @observe(as_type="generation", name="drug-extraction")
 def extract_drugs(input_data: DrugInput) -> ExtractionResult:
     """Extract drugs from an abstract title.
@@ -58,13 +66,14 @@ def extract_drugs(input_data: DrugInput) -> ExtractionResult:
         # Create LangChain callback handler linked to current trace
         langfuse_handler = CallbackHandler()
     
-    # Create LLM with structured output
+    # Create LLM with structured output (120s timeout for long-running requests)
     base_llm = create_llm(LLMConfig(
         api_key=settings.llm.LLM_API_KEY,
         base_url=settings.llm.LLM_BASE_URL,
         model=config.EXTRACTION_MODEL,
         temperature=config.EXTRACTION_TEMPERATURE,
         max_tokens=config.EXTRACTION_MAX_TOKENS,
+        timeout=120,  # 2 minute timeout
     ))
     llm = base_llm.with_structured_output(ExtractionResult)
     

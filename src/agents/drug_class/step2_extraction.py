@@ -6,11 +6,13 @@ b) Grounded search - fallback using LLM's web_search_preview
 
 This module exports SINGLE-DRUG functions. Loop/checkpointing is in pipeline.py.
 Uses with_structured_output for reliable JSON parsing.
+Includes timeout (120s) and retry (1 retry) handling.
 """
 
 from langfuse import observe, get_client
 from langfuse.langchain import CallbackHandler
 from langchain_core.messages import HumanMessage, SystemMessage
+from tenacity import retry, stop_after_attempt, retry_if_exception_type, wait_fixed
 
 from src.agents.core import settings, create_llm, LLMConfig
 from src.agents.core.langfuse_config import is_langfuse_enabled
@@ -79,6 +81,12 @@ def _format_search_results(
 # EXTRACTION FUNCTIONS
 # =============================================================================
 
+@retry(
+    stop=stop_after_attempt(2),  # 1 initial + 1 retry
+    wait=wait_fixed(1),  # 1 second between retries
+    retry=retry_if_exception_type((TimeoutError, ConnectionError, Exception)),
+    reraise=True,
+)
 @observe(as_type="generation", name="drug-class-step2-tavily")
 def extract_with_tavily(input_data: DrugClassExtractionInput) -> DrugExtractionResult:
     """Extract drug classes using Tavily search results.
@@ -122,13 +130,14 @@ def extract_with_tavily(input_data: DrugClassExtractionInput) -> DrugExtractionR
 
 {formatted_results}"""
     
-    # Create LLM with structured output
+    # Create LLM with structured output (120s timeout for long-running requests)
     base_llm = create_llm(LLMConfig(
         api_key=settings.llm.LLM_API_KEY,
         base_url=settings.llm.LLM_BASE_URL,
         model=config.EXTRACTION_MODEL,
         temperature=config.EXTRACTION_TEMPERATURE,
         max_tokens=config.EXTRACTION_MAX_TOKENS,
+        timeout=120,  # 2 minute timeout
     ))
     llm = base_llm.with_structured_output(DrugClassLLMResponse)
     
@@ -199,6 +208,12 @@ def extract_with_tavily(input_data: DrugClassExtractionInput) -> DrugExtractionR
         raise DrugClassExtractionError(f"Tavily extraction failed for {input_data.drug}: {e}") from e
 
 
+@retry(
+    stop=stop_after_attempt(2),  # 1 initial + 1 retry
+    wait=wait_fixed(1),  # 1 second between retries
+    retry=retry_if_exception_type((TimeoutError, ConnectionError, Exception)),
+    reraise=True,
+)
 @observe(as_type="generation", name="drug-class-step2-grounded")
 def extract_with_grounded(input_data: DrugClassExtractionInput) -> DrugExtractionResult:
     """Extract drug classes using LLM's grounded search (web_search_preview).
@@ -229,7 +244,7 @@ def extract_with_grounded(input_data: DrugClassExtractionInput) -> DrugExtractio
 ## Full Abstract
 {input_data.full_abstract or "Not provided"}"""
     
-    # Create LLM with web search enabled and structured output
+    # Create LLM with web search enabled and structured output (120s timeout)
     # Note: Uses GroundedSearchLLMResponse which has different format than Tavily
     base_llm = create_llm(
         LLMConfig(
@@ -238,6 +253,7 @@ def extract_with_grounded(input_data: DrugClassExtractionInput) -> DrugExtractio
             model=config.GROUNDED_MODEL,
             temperature=config.GROUNDED_TEMPERATURE,
             max_tokens=config.GROUNDED_MAX_TOKENS,
+            timeout=120,  # 2 minute timeout
         ),
         model_kwargs={"tools": [{"type": "web_search_preview"}]}
     )

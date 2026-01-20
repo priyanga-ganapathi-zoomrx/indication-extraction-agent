@@ -7,6 +7,7 @@ Performs three checks:
 3. Rule Compliance - Were extraction rules applied correctly?
 
 This module exports a single function. Uses with_structured_output for reliable parsing.
+Includes timeout (120s) and retry (1 retry) handling.
 """
 
 import json
@@ -14,6 +15,7 @@ import json
 from langfuse import observe, get_client
 from langfuse.langchain import CallbackHandler
 from langchain_core.messages import HumanMessage, SystemMessage
+from tenacity import retry, stop_after_attempt, retry_if_exception_type, wait_fixed
 
 from src.agents.core import settings, create_llm, LLMConfig
 from src.agents.core.langfuse_config import is_langfuse_enabled
@@ -112,6 +114,12 @@ Please perform all 3 validation checks (Hallucination Detection, Omission Detect
     return input_content
 
 
+@retry(
+    stop=stop_after_attempt(2),  # 1 initial + 1 retry
+    wait=wait_fixed(1),  # 1 second between retries
+    retry=retry_if_exception_type((TimeoutError, ConnectionError, Exception)),
+    reraise=True,
+)
 @observe(as_type="generation", name="drug-class-validation")
 def validate_drug_class(input_data: ValidationInput) -> ValidationOutput:
     """Validate a drug class extraction result.
@@ -148,13 +156,14 @@ END OF REFERENCE RULES DOCUMENT"""
     # Format the validation input message
     input_content = _format_validation_input(input_data)
     
-    # Create LLM with structured output
+    # Create LLM with structured output (120s timeout for long-running requests)
     base_llm = create_llm(LLMConfig(
         api_key=settings.llm.LLM_API_KEY,
         base_url=settings.llm.LLM_BASE_URL,
         model=config.VALIDATION_MODEL,
         temperature=config.VALIDATION_TEMPERATURE,
         max_tokens=config.VALIDATION_MAX_TOKENS,
+        timeout=120,  # 2 minute timeout
     ))
     llm = base_llm.with_structured_output(ValidationLLMResponse)
     

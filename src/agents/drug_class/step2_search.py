@@ -8,10 +8,14 @@ This module exports:
 - fetch_search_results(): Main entry point (cache-aware)
 - search_drug_class(): Direct Tavily search for drug class info
 - search_drug_firm(): Direct Tavily search for drug + firm info
+
+Includes timeout (120s) and retry (1 retry) handling for Tavily API calls.
 """
 
 import json
 from datetime import datetime, timezone
+
+from tenacity import retry, stop_after_attempt, retry_if_exception_type, wait_fixed
 
 from src.agents.core import settings
 from src.agents.core.storage import StorageClient
@@ -84,6 +88,12 @@ def save_search_cache(drug: str, cache: DrugSearchCache, storage: StorageClient)
 # TAVILY SEARCH FUNCTIONS
 # =============================================================================
 
+@retry(
+    stop=stop_after_attempt(2),  # 1 initial + 1 retry
+    wait=wait_fixed(1),  # 1 second between retries
+    retry=retry_if_exception_type((TimeoutError, ConnectionError, Exception)),
+    reraise=True,
+)
 def search_drug_class(drug: str) -> list[dict]:
     """Search for drug class information via Tavily.
     
@@ -142,6 +152,12 @@ def search_drug_class(drug: str) -> list[dict]:
         return []
 
 
+@retry(
+    stop=stop_after_attempt(2),  # 1 initial + 1 retry
+    wait=wait_fixed(1),  # 1 second between retries
+    retry=retry_if_exception_type((TimeoutError, ConnectionError, Exception)),
+    reraise=True,
+)
 def search_drug_firm(drug: str, firms: list[str]) -> list[dict]:
     """Search for drug + firm information via Tavily.
     
