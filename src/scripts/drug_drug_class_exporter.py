@@ -93,6 +93,43 @@ def _format_dict_as_key_value(data: dict) -> str:
     return "\n".join(lines) if lines else ""
 
 
+def _extract_combined_drug_classes(step3_selections: dict, step5_classes: list) -> str:
+    """Combine drug classes from step3 and step5, removing duplicates.
+    
+    Args:
+        step3_selections: Dict of {drug_name: {"selected_drug_classes": [...], ...}}
+        step5_classes: List of refined explicit classes from step5
+        
+    Returns:
+        Double-semicolon separated string of unique drug classes (sorted)
+        
+    Example:
+        step3_selections = {"Drug A": {"selected_drug_classes": ["Class 1", "Class 2"]}}
+        step5_classes = ["Class 2", "Class 3"]
+        → "Class 1;;Class 2;;Class 3"
+    """
+    all_classes = set()
+    
+    # From step3: extract selected_drug_classes values (ignoring drug keys)
+    if step3_selections:
+        for drug_name, result in step3_selections.items():
+            if isinstance(result, dict):
+                classes = result.get("selected_drug_classes", [])
+                if isinstance(classes, list):
+                    for c in classes:
+                        if c and c != "NA":
+                            all_classes.add(c.strip())
+    
+    # From step5: add refined explicit classes
+    if step5_classes:
+        for c in step5_classes:
+            if c and c != "NA":
+                all_classes.add(c.strip())
+    
+    # Return sorted, deduplicated list as semicolon-separated string
+    return ";;".join(sorted(all_classes)) if all_classes else ""
+
+
 def _format_dict_as_key_value_skip_empty(data: dict) -> str:
     """Format Type C: Convert dict with arrays to key-value lines, skip empty arrays.
     
@@ -559,6 +596,15 @@ def process_abstracts(
             stats["drug_class_step5_found"] += 1
         output_row.update(step5_cols)
         
+        # --- Combined Drug Classes (Step 3 + Step 5) ---
+        # Read raw JSON data for combining
+        step3_data = read_json_file(drug_class_storage, f"abstracts/{abstract_id}/step3_output.json")
+        step5_data = read_json_file(drug_class_storage, f"abstracts/{abstract_id}/step5_output.json")
+        step3_selections = step3_data.get("selections", {}) if step3_data else {}
+        step5_classes = step5_data.get("refined_explicit_classes", []) if step5_data else []
+        combined_classes = _extract_combined_drug_classes(step3_selections, step5_classes)
+        output_row["drug_class_combined_all_classes"] = combined_classes
+        
         # --- Drug Class Validation ---
         # Need step2 data to know which drugs to look up validation for
         step2_data = read_json_file(drug_class_storage, f"abstracts/{abstract_id}/step2_output.json")
@@ -614,6 +660,8 @@ def get_output_fieldnames(input_fieldnames: list[str]) -> list[str]:
         "drug_class_step5_refined_explicit_classes",
         "drug_class_step5_removed_classes",
         "drug_class_step5_reasoning",
+        # Combined drug classes (step 3 + step 5)
+        "drug_class_combined_all_classes",
         # Drug class validation
         "drug_class_validation_missed_drug_classes",
     ]
