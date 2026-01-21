@@ -626,24 +626,43 @@ def export_to_csv(
     fieldnames: list[str],
     output_path: str,
 ) -> None:
-    """Export data to CSV file.
+    """Export data to CSV file (supports both local and GCS paths).
     
     Args:
         output_rows: List of row dicts to write
         fieldnames: Column names in order
-        output_path: Path to output CSV file
+        output_path: Path to output CSV file (local path or gs://bucket/path)
     """
-    # Ensure output directory exists
-    output_dir = Path(output_path).parent
-    if output_dir and not output_dir.exists():
-        output_dir.mkdir(parents=True, exist_ok=True)
+    # Write CSV content to string buffer first
+    output_buffer = io.StringIO()
+    writer = csv.DictWriter(output_buffer, fieldnames=fieldnames)
+    writer.writeheader()
+    writer.writerows(output_rows)
+    csv_content = output_buffer.getvalue()
     
-    with open(output_path, 'w', newline='', encoding='utf-8') as f:
-        writer = csv.DictWriter(f, fieldnames=fieldnames)
-        writer.writeheader()
-        writer.writerows(output_rows)
-    
-    print(f"\nCSV file saved: {output_path}")
+    # Handle GCS or local path
+    if output_path.startswith("gs://"):
+        from src.agents.core.storage import parse_gcs_path
+        bucket, full_prefix = parse_gcs_path(output_path)
+        if "/" in full_prefix:
+            base_prefix = "/".join(full_prefix.split("/")[:-1])
+            csv_filename = full_prefix.split("/")[-1]
+        else:
+            base_prefix = ""
+            csv_filename = full_prefix
+        output_storage = GCSStorageClient(bucket, base_prefix)
+        output_storage.upload_text(csv_filename, csv_content)
+        print(f"\nCSV file saved to GCS: {output_path}")
+    else:
+        # Local file
+        output_dir = Path(output_path).parent
+        if output_dir and str(output_dir) != "." and not output_dir.exists():
+            output_dir.mkdir(parents=True, exist_ok=True)
+        
+        with open(output_path, 'w', newline='', encoding='utf-8') as f:
+            f.write(csv_content)
+        
+        print(f"\nCSV file saved: {output_path}")
 
 
 def main():
@@ -678,17 +697,17 @@ Examples:
     
     parser.add_argument(
         "--input",
-        default="gs://entity-extraction-agent-data-dev/Conference/abstract_titles.csv",
+        default="gs://entity-extraction-agent-data-zeus/ASCO_GI_2026/abstract_titles.csv",
         help="Input CSV file path with abstract metadata"
     )
     parser.add_argument(
         "--drug_output_dir",
-        default="gs://entity-extraction-agent-data-dev/Conference/drug",
+        default="gs://entity-extraction-agent-data-zeus/ASCO_GI_2026/drug",
         help="Drug pipeline output directory"
     )
     parser.add_argument(
         "--drug_class_output_dir",
-        default="gs://entity-extraction-agent-data-dev/Conference/drug_class",
+        default="gs://entity-extraction-agent-data-zeus/ASCO_GI_2026/drug_class",
         help="Drug class pipeline output directory"
     )
     parser.add_argument(
