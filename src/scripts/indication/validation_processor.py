@@ -152,7 +152,12 @@ def should_process_validation(
     abstract_id: str,
     storage: Union[LocalStorageClient, GCSStorageClient],
 ) -> bool:
-    """Check if abstract needs validation (extraction successful but validation not done)."""
+    """Check if abstract needs validation (extraction successful but validation not done).
+    
+    Checks both:
+    1. Status in status.json (validation.status != "success")
+    2. Existence of validation.json file (even if status says success)
+    """
     status = get_abstract_status(abstract_id, storage)
     if not status:
         return False  # No status means extraction wasn't done
@@ -160,8 +165,20 @@ def should_process_validation(
     extraction = status.get("extraction", {})
     validation = status.get("validation", {})
     
-    # Only validate if extraction was successful and validation not already successful
-    return extraction.get("status") == "success" and validation.get("status") != "success"
+    # Must have successful extraction
+    if extraction.get("status") != "success":
+        return False
+    
+    # If validation status is not success, needs processing
+    if validation.get("status") != "success":
+        return True
+    
+    # Even if status says success, verify validation.json actually exists
+    try:
+        storage.download_json(f"abstracts/{abstract_id}/validation.json")
+        return False  # File exists, no need to reprocess
+    except FileNotFoundError:
+        return True  # Status says success but file missing, needs reprocessing
 
 
 def extract_json_block(content: str) -> str:
