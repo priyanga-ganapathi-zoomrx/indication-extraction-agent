@@ -5,13 +5,12 @@ These are explicit class mentions, not inferred from drug names.
 
 This module exports a single function. Orchestration is in pipeline.py.
 Uses with_structured_output for reliable JSON parsing.
-Includes timeout (120s) and retry (1 retry) handling.
+Per-request timeout is 120s. Retries are handled by Temporal at the activity level.
 """
 
 from langfuse import observe, get_client
 from langfuse.langchain import CallbackHandler
 from langchain_core.messages import HumanMessage, SystemMessage
-from tenacity import retry, stop_after_attempt, retry_if_exception_type, wait_fixed
 
 from src.agents.core import settings, create_llm, LLMConfig
 from src.agents.core.langfuse_config import is_langfuse_enabled
@@ -28,12 +27,6 @@ from src.agents.drug_class.schemas import (
 )
 
 
-@retry(
-    stop=stop_after_attempt(2),  # 1 initial + 1 retry
-    wait=wait_fixed(1),  # 1 second between retries
-    retry=retry_if_exception_type((TimeoutError, ConnectionError, Exception)),
-    reraise=True,
-)
 @observe(as_type="generation", name="drug-class-step4-explicit")
 def extract_explicit_classes(input_data: ExplicitExtractionInput) -> Step4Output:
     """Extract explicit drug classes from abstract title.
@@ -41,7 +34,8 @@ def extract_explicit_classes(input_data: ExplicitExtractionInput) -> Step4Output
     This is an atomic function for extracting drug classes directly mentioned
     in the abstract title (not inferred from drug names).
     
-    Uses with_structured_output for reliable parsing.
+    Uses LangChain's with_structured_output for reliable JSON parsing.
+    Per-request timeout is 120s. Retries are handled by Temporal at the activity level.
     
     Args:
         input_data: ExplicitExtractionInput with abstract_id and abstract_title
@@ -50,7 +44,7 @@ def extract_explicit_classes(input_data: ExplicitExtractionInput) -> Step4Output
         Step4Output with extracted explicit drug classes
         
     Raises:
-        DrugClassExtractionError: If extraction fails
+        DrugClassExtractionError: If extraction fails (triggers Temporal retry)
     """
     # Handle empty title
     if not input_data.abstract_title or not input_data.abstract_title.strip():

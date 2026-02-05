@@ -1,7 +1,6 @@
 from langfuse import observe, get_client
 from langfuse.langchain import CallbackHandler
 from langchain_core.messages import HumanMessage, SystemMessage
-from tenacity import retry, stop_after_attempt, retry_if_exception_type, wait_fixed
 
 from src.agents.core import settings, create_llm, LLMConfig
 from src.agents.core.langfuse_config import is_langfuse_enabled
@@ -14,15 +13,13 @@ from src.agents.drug_class.schemas import (
 )
 
 
-@retry(
-    stop=stop_after_attempt(2),  # 1 initial + 1 retry
-    wait=wait_fixed(1),  # 1 second between retries
-    retry=retry_if_exception_type((TimeoutError, ConnectionError, Exception)),
-    reraise=True,
-)
 @observe(as_type="generation", name="drug-class-step1-regimen")
 def identify_regimen(input_data: RegimenInput) -> list[str]:
     """Identify if a drug is a regimen and extract its components.
+    
+    Uses LangChain's with_structured_output for reliable JSON parsing.
+    Per-request timeout is 120s. Retries are handled by Temporal at the activity level.
+    
     Args:
         input_data: RegimenInput with abstract_id, abstract_title, drug
         
@@ -30,7 +27,7 @@ def identify_regimen(input_data: RegimenInput) -> list[str]:
         List of component drugs. If not a regimen, returns [drug].
         
     Raises:
-        DrugClassExtractionError: If LLM call fails
+        DrugClassExtractionError: If LLM call fails (triggers Temporal retry)
     """
     # Load prompt
     system_prompt, prompt_version = get_regimen_identification_prompt()

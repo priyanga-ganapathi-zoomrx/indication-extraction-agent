@@ -1,7 +1,8 @@
 """Core indication extraction agent using LangGraph.
 
 Minimal agent with tool calling for rules retrieval.
-Includes Langfuse tracing, prompt caching, timeout (120s) and retry (1 retry) handling.
+Includes Langfuse tracing, prompt caching, and per-request timeout (120s).
+Retries are handled by Temporal.
 """
 
 import operator
@@ -12,7 +13,6 @@ from langchain_core.runnables.config import RunnableConfig
 from langfuse.langchain import CallbackHandler
 from langgraph.graph import END, START, StateGraph
 from langgraph.prebuilt import ToolNode
-from tenacity import retry, stop_after_attempt, retry_if_exception_type, wait_fixed
 from typing_extensions import TypedDict
 
 from src.agents.core import settings, create_llm, LLMConfig
@@ -108,12 +108,6 @@ class IndicationAgent:
             metadata={"langfuse_tags": tags},
         )
     
-    @retry(
-        stop=stop_after_attempt(2),  # 1 initial + 1 retry
-        wait=wait_fixed(1),  # 1 second between retries
-        retry=retry_if_exception_type((TimeoutError, ConnectionError, Exception)),
-        reraise=True,
-    )
     def invoke(self, abstract_title: str, session_title: str = "", abstract_id: str = None) -> dict:
         """Invoke agent and return raw result.
         

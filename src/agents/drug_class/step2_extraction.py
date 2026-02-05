@@ -6,13 +6,12 @@ b) Grounded search - fallback using LLM's web_search_preview
 
 This module exports SINGLE-DRUG functions. Loop/checkpointing is in pipeline.py.
 Uses with_structured_output for reliable JSON parsing.
-Includes timeout (120s) and retry (1 retry) handling.
+Per-request timeout is 120s. Retries are handled by Temporal at the activity level.
 """
 
 from langfuse import observe, get_client
 from langfuse.langchain import CallbackHandler
 from langchain_core.messages import HumanMessage, SystemMessage
-from tenacity import retry, stop_after_attempt, retry_if_exception_type, wait_fixed
 
 from src.agents.core import settings, create_llm, LLMConfig
 from src.agents.core.langfuse_config import is_langfuse_enabled
@@ -81,17 +80,12 @@ def _format_search_results(
 # EXTRACTION FUNCTIONS
 # =============================================================================
 
-@retry(
-    stop=stop_after_attempt(2),  # 1 initial + 1 retry
-    wait=wait_fixed(1),  # 1 second between retries
-    retry=retry_if_exception_type((TimeoutError, ConnectionError, Exception)),
-    reraise=True,
-)
 @observe(as_type="generation", name="drug-class-step2-tavily")
 def extract_with_tavily(input_data: DrugClassExtractionInput) -> DrugExtractionResult:
     """Extract drug classes using Tavily search results.
     
-    Uses with_structured_output for reliable parsing.
+    Uses LangChain's with_structured_output for reliable JSON parsing.
+    Per-request timeout is 120s. Retries are handled by Temporal at the activity level.
     
     Args:
         input_data: DrugClassExtractionInput with drug and search results
@@ -100,7 +94,7 @@ def extract_with_tavily(input_data: DrugClassExtractionInput) -> DrugExtractionR
         DrugExtractionResult with extracted classes
         
     Raises:
-        DrugClassExtractionError: If extraction fails
+        DrugClassExtractionError: If extraction fails (triggers Temporal retry)
     """
     # Load and parse prompt
     system_prompt, rules_message, prompt_version = get_extraction_rules_prompt_parts()
@@ -208,17 +202,13 @@ def extract_with_tavily(input_data: DrugClassExtractionInput) -> DrugExtractionR
         raise DrugClassExtractionError(f"Tavily extraction failed for {input_data.drug}: {e}") from e
 
 
-@retry(
-    stop=stop_after_attempt(2),  # 1 initial + 1 retry
-    wait=wait_fixed(1),  # 1 second between retries
-    retry=retry_if_exception_type((TimeoutError, ConnectionError, Exception)),
-    reraise=True,
-)
 @observe(as_type="generation", name="drug-class-step2-grounded")
 def extract_with_grounded(input_data: DrugClassExtractionInput) -> DrugExtractionResult:
     """Extract drug classes using LLM's grounded search (web_search_preview).
     
     Fallback method when Tavily returns no results or NA.
+    Uses LangChain's with_structured_output for reliable JSON parsing.
+    Per-request timeout is 120s. Retries are handled by Temporal at the activity level.
     
     Args:
         input_data: DrugClassExtractionInput with drug info
@@ -227,7 +217,7 @@ def extract_with_grounded(input_data: DrugClassExtractionInput) -> DrugExtractio
         DrugExtractionResult with extracted classes
         
     Raises:
-        DrugClassExtractionError: If extraction fails
+        DrugClassExtractionError: If extraction fails (triggers Temporal retry)
     """
     # Load and parse prompt (includes fallback logic)
     system_prompt, rules_message, prompt_version = get_grounded_search_prompt_parts()

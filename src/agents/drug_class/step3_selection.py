@@ -6,7 +6,7 @@ unless the drug has multiple biological targets.
 
 This module exports a SINGLE-DRUG function. Loop/checkpointing is in pipeline.py.
 Uses with_structured_output for reliable JSON parsing.
-Includes timeout (120s) and retry (1 retry) handling.
+Per-request timeout is 120s. Retries are handled by Temporal at the activity level.
 """
 
 import json
@@ -14,7 +14,6 @@ import json
 from langfuse import observe, get_client
 from langfuse.langchain import CallbackHandler
 from langchain_core.messages import HumanMessage, SystemMessage
-from tenacity import retry, stop_after_attempt, retry_if_exception_type, wait_fixed
 
 from src.agents.core import settings, create_llm, LLMConfig
 from src.agents.core.langfuse_config import is_langfuse_enabled
@@ -30,12 +29,6 @@ from src.agents.drug_class.schemas import (
 )
 
 
-@retry(
-    stop=stop_after_attempt(2),  # 1 initial + 1 retry
-    wait=wait_fixed(1),  # 1 second between retries
-    retry=retry_if_exception_type((TimeoutError, ConnectionError, Exception)),
-    reraise=True,
-)
 @observe(as_type="generation", name="drug-class-step3-selection")
 def select_drug_class(input_data: SelectionInput) -> DrugSelectionResult:
     """Select the best drug class(es) for a single drug.
@@ -43,7 +36,8 @@ def select_drug_class(input_data: SelectionInput) -> DrugSelectionResult:
     This is an atomic function for a SINGLE drug. For processing multiple
     drugs with checkpointing, use the pipeline orchestrator.
     
-    Uses with_structured_output for reliable parsing.
+    Uses LangChain's with_structured_output for reliable JSON parsing.
+    Per-request timeout is 120s. Retries are handled by Temporal at the activity level.
     
     Args:
         input_data: SelectionInput with drug and extraction details
@@ -52,7 +46,7 @@ def select_drug_class(input_data: SelectionInput) -> DrugSelectionResult:
         DrugSelectionResult with selected class(es)
         
     Raises:
-        DrugClassExtractionError: If selection fails
+        DrugClassExtractionError: If selection fails (triggers Temporal retry)
     """
     # Handle edge case: no classes to select from
     if not input_data.extraction_details:
