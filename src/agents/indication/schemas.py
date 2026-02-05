@@ -56,7 +56,7 @@ class ExtractionLLMResponse(BaseModel):
         description="The extracted medical indication"
     )
     reasoning: str = Field(
-        default="",
+        ...,
         description="Step-by-step extraction reasoning"
     )
     rules_retrieved: list[RuleRetrieved] = Field(
@@ -111,7 +111,7 @@ class ValidationLLMResponse(BaseModel):
     Matches the output format defined in INDICATION_VALIDATION_SYSTEM_PROMPT.
     """
     validation_status: str = Field(
-        default="REVIEW",
+        ...,
         description="Status: PASS, REVIEW, or FAIL"
     )
     issues_found: list[IssueFound] = Field(
@@ -123,6 +123,6 @@ class ValidationLLMResponse(BaseModel):
         description="Results of all 6 validation checks"
     )
     validation_reasoning: str = Field(
-        default="",
+        ...,
         description="Step-by-step explanation of validation process"
     )

@@ -32,7 +32,10 @@ from typing import Optional, Union
 
 from tqdm import tqdm
 
+from pydantic import ValidationError
+
 from src.agents.indication import IndicationAgent, IndicationInput
+from src.agents.indication.schemas import ExtractionLLMResponse
 from src.agents.core.storage import LocalStorageClient, GCSStorageClient, get_storage_client
 
 
@@ -224,9 +227,34 @@ def process_single(
                 duration_seconds=duration,
             )
         
-        # Extract and pretty print JSON
+        # Extract and validate JSON
         json_str = extract_json_block(content)
-        pretty_json = pretty_print_json(json_str)
+        
+        # Validate JSON is parseable
+        try:
+            parsed = json.loads(json_str)
+        except json.JSONDecodeError as e:
+            duration = time.time() - start_time
+            return ProcessResult(
+                abstract_id=input_data.abstract_id,
+                abstract_title=input_data.abstract_title,
+                error=f"Invalid JSON response from LLM: {str(e)}",
+                duration_seconds=duration,
+            )
+        
+        # Validate against schema
+        try:
+            ExtractionLLMResponse.model_validate(parsed)
+        except ValidationError as e:
+            duration = time.time() - start_time
+            return ProcessResult(
+                abstract_id=input_data.abstract_id,
+                abstract_title=input_data.abstract_title,
+                error=f"LLM response doesn't match expected schema: {str(e)}",
+                duration_seconds=duration,
+            )
+        
+        pretty_json = json.dumps(parsed, indent=2, ensure_ascii=False)
         
         duration = time.time() - start_time
         return ProcessResult(
