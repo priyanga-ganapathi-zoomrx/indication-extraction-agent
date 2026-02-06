@@ -1,6 +1,8 @@
 """Schemas for Temporal workflows.
 
-This module exports status tracking schemas used for checkpointing.
+This module exports:
+- Status tracking schemas (from status.py)
+- Workflow input/output schemas (from workflow.py)
 """
 
 from src.temporal.schemas.status import (
@@ -12,6 +14,15 @@ from src.temporal.schemas.status import (
     WorkflowStatus,
 )
 
+from src.temporal.schemas.workflow import (
+    AbstractExtractionInput,
+    AbstractExtractionOutput,
+    StepResult,
+    DrugResult,
+    DrugClassResult,
+    IndicationResult,
+)
+
 __all__ = [
     "StepStatus",
     "PipelineMetrics",
@@ -19,4 +30,10 @@ __all__ = [
     "DrugClassPipelineStatus",
     "IndicationPipelineStatus",
     "WorkflowStatus",
+    "AbstractExtractionInput",
+    "AbstractExtractionOutput",
+    "StepResult",
+    "DrugResult",
+    "DrugClassResult",
+    "IndicationResult",
 ]

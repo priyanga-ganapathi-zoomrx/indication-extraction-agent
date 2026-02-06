@@ -2,11 +2,11 @@
 
 This module exports:
 - AbstractExtractionWorkflow: Single flat workflow orchestrating all extraction steps
-- Input/Output schemas for the workflow
+- Input/Output schemas (re-exported from schemas.workflow for convenience)
 """
 
-from src.temporal.workflows.abstract_extraction import (
-    AbstractExtractionWorkflow,
+from src.temporal.workflows.abstract_extraction import AbstractExtractionWorkflow
+from src.temporal.schemas.workflow import (
     AbstractExtractionInput,
     AbstractExtractionOutput,
     DrugResult,

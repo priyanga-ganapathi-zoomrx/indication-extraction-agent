@@ -1,30 +1,14 @@
 """Abstract Extraction Workflow - Temporal orchestration for medical abstract processing.
 
-This is a single flat workflow that processes one abstract through three pipelines:
+Single flat workflow that processes one abstract through up to three pipelines:
 1. Drug Pipeline (extraction + validation)
 2. Drug Class Pipeline (5-step pipeline + validation)
 3. Indication Pipeline (extraction + validation)
 
-Pipeline Selection:
-- The `pipelines` field on AbstractExtractionInput controls which pipelines run.
-- Defaults to all three: ["drug", "drug_class", "indication"]
-- External checkpoints ensure already-completed steps are skipped on reruns.
-
-Task Queue Routing:
-- Workflow executes on: TaskQueues.WORKFLOWS
-- Checkpoint activities on: TaskQueues.CHECKPOINT
-- Drug activities on: TaskQueues.DRUG
-- Drug class activities on: TaskQueues.DRUG_CLASS
-- Indication extraction on: TaskQueues.INDICATION_EXTRACTION
-- Indication validation on: TaskQueues.INDICATION_VALIDATION
-
-Checkpointing (per-step):
-- Each step is checkpointed individually via load/save activities.
-- On resume, _run_with_checkpoint loads the checkpoint and returns cached output.
-- Status is saved after each pipeline completes.
+Pipeline selection via `pipelines` field on AbstractExtractionInput.
+Per-step checkpointing via _run_with_checkpoint.
 """
 
-from dataclasses import dataclass, field
 from datetime import timedelta
 from typing import Optional
 
@@ -32,26 +16,25 @@ from temporalio import workflow
 from temporalio.common import RetryPolicy
 
 with workflow.unsafe.imports_passed_through():
-    # Checkpoint activities
     from src.temporal.activities.checkpoint import (
         load_workflow_status,
         save_workflow_status,
         load_step_output,
         save_step_output,
     )
-    # Config
     from src.temporal.config import (
         TaskQueues,
         Timeouts,
         RetryPolicies,
     )
-    # Status schemas
     from src.temporal.schemas.status import (
         WorkflowStatus,
-        DrugPipelineStatus,
-        DrugClassPipelineStatus,
-        IndicationPipelineStatus,
         StepStatus,
+    )
+    from src.temporal.schemas.workflow import (
+        AbstractExtractionInput,
+        AbstractExtractionOutput,
+        StepResult,
     )
     # Drug activities + schemas
     from src.agents.drug.schemas import (
@@ -87,86 +70,6 @@ with workflow.unsafe.imports_passed_through():
 
 
 # =============================================================================
-# WORKFLOW INPUT/OUTPUT SCHEMAS
-# =============================================================================
-
-@dataclass
-class AbstractExtractionInput:
-    """Input for the abstract extraction workflow.
-
-    Best Practice: Single dataclass input allows adding fields
-    without breaking existing workflow executions.
-    """
-    abstract_id: str
-    abstract_title: str
-    session_title: str = ""
-    full_abstract: str = ""
-    firms: list[str] = field(default_factory=list)
-
-    # Storage path for checkpoints (gs://bucket/prefix or local path)
-    # If empty, no checkpointing is performed
-    storage_path: str = ""
-
-    # Which pipelines to run (default: all three)
-    # Options: "drug", "drug_class", "indication"
-    pipelines: list[str] = field(
-        default_factory=lambda: ["drug", "drug_class", "indication"]
-    )
-
-
-@dataclass
-class StepResult:
-    """Result of a single step execution.
-
-    Returned by _run_with_checkpoint to indicate step outcome.
-    """
-    status: str  # "success" or "failed"
-    output: Optional[dict] = None
-    from_checkpoint: bool = False
-    error: Optional[str] = None
-
-    def to_step_status(self, llm_calls: int = 1, tokens: int = 0) -> StepStatus:
-        """Convert to StepStatus for status.json."""
-        if self.status == "success":
-            return StepStatus.success(llm_calls=llm_calls, tokens=tokens)
-        return StepStatus.failed(self.error or "Unknown error")
-
-
-@dataclass
-class DrugResult:
-    """Result of drug extraction and validation."""
-    extraction: dict = field(default_factory=dict)
-    validation: Optional[dict] = None
-
-
-@dataclass
-class DrugClassResult:
-    """Result of drug class pipeline."""
-    drug_results: list[dict] = field(default_factory=list)
-    explicit_classes: list[str] = field(default_factory=list)
-    refined_explicit_classes: list[str] = field(default_factory=list)
-    validation_results: list[dict] = field(default_factory=list)
-
-
-@dataclass
-class IndicationResult:
-    """Result of indication extraction and validation."""
-    extraction: dict = field(default_factory=dict)
-    validation: Optional[dict] = None
-
-
-@dataclass
-class AbstractExtractionOutput:
-    """Output from the abstract extraction workflow."""
-    abstract_id: str
-    drug: DrugResult = field(default_factory=DrugResult)
-    drug_class: DrugClassResult = field(default_factory=DrugClassResult)
-    indication: IndicationResult = field(default_factory=IndicationResult)
-    completed: bool = False
-    errors: list[str] = field(default_factory=list)
-
-
-# =============================================================================
 # WORKFLOW DEFINITION
 # =============================================================================
 
@@ -197,7 +100,6 @@ class AbstractExtractionWorkflow:
             f"(pipelines: {input.pipelines})"
         )
 
-        # Load existing status from checkpoint
         self._current_step = "loading_status"
         await self._load_status(input)
 
@@ -221,12 +123,10 @@ class AbstractExtractionWorkflow:
 
             # --- Drug Class Pipeline (depends on drug extraction) ---
             if "drug_class" in input.pipelines:
-                # Ensure drug extraction data is available for dependency
                 if not self._output.drug.extraction:
                     self._output.drug.extraction = (
                         await self._load_checkpoint(input, "drug_extraction") or {}
                     )
-
                 primary_drugs = self._output.drug.extraction.get("primary_drugs", [])
 
                 if primary_drugs and self._status.should_run_drug_class_pipeline():
@@ -270,10 +170,8 @@ class AbstractExtractionWorkflow:
             self._output.errors.append(str(e))
             self._status.mark_failed(str(e))
 
-        # Save final status
         self._current_step = "saving_status"
         await self._save_status(input)
-
         return self._output
 
     # =========================================================================
@@ -282,17 +180,14 @@ class AbstractExtractionWorkflow:
 
     @workflow.query
     def current_step(self) -> str:
-        """Query the current processing step."""
         return self._current_step
 
     @workflow.query
     def get_output(self) -> Optional[AbstractExtractionOutput]:
-        """Query the current output state."""
         return self._output
 
     @workflow.query
     def get_status(self) -> Optional[dict]:
-        """Query the current status."""
         return self._status.to_dict() if self._status else None
 
     # =========================================================================
@@ -327,7 +222,6 @@ class AbstractExtractionWorkflow:
         """Save current status to checkpoint."""
         if not input.storage_path:
             return
-
         self._status.update_timestamp()
         await workflow.execute_activity(
             save_workflow_status,
@@ -384,22 +278,10 @@ class AbstractExtractionWorkflow:
     ) -> StepResult:
         """Run an activity with checkpoint support.
 
-        Pattern:
         1. Load existing checkpoint -> return cached result if found
         2. Execute activity (single input or multiple args)
         3. Save result as checkpoint
-
-        Args:
-            input: Workflow input (for storage_path and abstract_id)
-            step_name: Checkpoint filename (e.g. "drug_extraction")
-            activity_fn: The activity function to execute
-            task_queue: Task queue for the activity
-            timeout: Activity timeout
-            retry_policy: Activity retry policy
-            activity_input: Single input for the activity (or None if using activity_args)
-            activity_args: List of args for multi-param activities
         """
-        # 1. Try to load checkpoint
         existing = await self._load_checkpoint(input, step_name)
         if existing is not None:
             workflow.logger.info(
@@ -409,7 +291,6 @@ class AbstractExtractionWorkflow:
                 status="success", output=existing, from_checkpoint=True
             )
 
-        # 2. Execute activity
         try:
             if activity_args is not None:
                 result = await workflow.execute_activity(
@@ -431,9 +312,7 @@ class AbstractExtractionWorkflow:
             workflow.logger.error(f"Activity {step_name} failed: {e}")
             return StepResult(status="failed", error=str(e))
 
-        # 3. Save checkpoint
         await self._save_checkpoint(input, step_name, result)
-
         return StepResult(status="success", output=result, from_checkpoint=False)
 
     # =========================================================================
@@ -442,14 +321,11 @@ class AbstractExtractionWorkflow:
 
     async def _run_drug_pipeline(self, input: AbstractExtractionInput) -> None:
         """Run drug extraction + validation with per-step checkpointing."""
-        workflow.logger.info(
-            f"Running drug pipeline for abstract {input.abstract_id}"
-        )
+        workflow.logger.info(f"Running drug pipeline for abstract {input.abstract_id}")
 
         # Extraction
         extraction = await self._run_with_checkpoint(
-            input, "drug_extraction",
-            extract_drugs,
+            input, "drug_extraction", extract_drugs,
             TaskQueues.DRUG, Timeouts.FAST_LLM, RetryPolicies.FAST_LLM,
             activity_input=DrugInput(
                 abstract_id=input.abstract_id,
@@ -463,8 +339,7 @@ class AbstractExtractionWorkflow:
 
         # Validation
         validation = await self._run_with_checkpoint(
-            input, "drug_validation",
-            validate_drugs,
+            input, "drug_validation", validate_drugs,
             TaskQueues.DRUG, Timeouts.FAST_LLM, RetryPolicies.FAST_LLM,
             activity_input=DrugValidationInput(
                 abstract_id=input.abstract_id,
@@ -479,9 +354,7 @@ class AbstractExtractionWorkflow:
             self._output.drug.validation = validation.output
 
         await self._save_status(input)
-        workflow.logger.info(
-            f"Drug pipeline completed for {input.abstract_id}"
-        )
+        workflow.logger.info(f"Drug pipeline completed for {input.abstract_id}")
 
     # =========================================================================
     # INDICATION PIPELINE
@@ -501,23 +374,19 @@ class AbstractExtractionWorkflow:
 
         # Extraction (fast LLM)
         extraction = await self._run_with_checkpoint(
-            input, "indication_extraction",
-            extract_indication,
+            input, "indication_extraction", extract_indication,
             TaskQueues.INDICATION_EXTRACTION,
             Timeouts.FAST_LLM, RetryPolicies.FAST_LLM,
             activity_input=indication_input,
         )
         self._status.indication.extraction = extraction.to_step_status()
         if extraction.status != "success":
-            raise RuntimeError(
-                f"Indication extraction failed: {extraction.error}"
-            )
+            raise RuntimeError(f"Indication extraction failed: {extraction.error}")
         self._output.indication.extraction = extraction.output
 
         # Validation (slow LLM - Sonnet 4.5, multi-arg activity)
         validation = await self._run_with_checkpoint(
-            input, "indication_validation",
-            validate_indication,
+            input, "indication_validation", validate_indication,
             TaskQueues.INDICATION_VALIDATION,
             Timeouts.SLOW_LLM, RetryPolicies.SLOW_LLM,
             activity_args=[indication_input, extraction.output],
@@ -542,56 +411,29 @@ class AbstractExtractionWorkflow:
     async def _run_drug_class_pipeline(
         self, input: AbstractExtractionInput, primary_drugs: list[str]
     ) -> None:
-        """Run the full drug class pipeline (steps 1-5 + validation).
-
-        Steps 1-3: Per-drug processing (regimen -> extraction -> selection)
-        Step 4: Per-abstract explicit extraction from title
-        Step 5: Per-abstract consolidation
-        Step 6: Per-component validation
-        """
+        """Run the full drug class pipeline (steps 1-5 + validation)."""
         workflow.logger.info(
             f"Running drug class pipeline for abstract {input.abstract_id} "
             f"with {len(primary_drugs)} drugs"
         )
 
         # ---- Steps 1-3 (combined checkpoint) ----
-        all_drug_selections: list[dict] = []
-        all_search_results: dict[str, list[dict]] = {}
-        all_extraction_results: dict[str, dict] = {}
-
         steps1_3_data = await self._load_checkpoint(input, "drug_class_steps1_3")
-
-        if steps1_3_data is not None:
-            workflow.logger.info(
-                f"Loaded steps 1-3 from checkpoint for {input.abstract_id}"
-            )
-            self._output.drug_class.drug_results = steps1_3_data.get(
-                "drug_results", []
-            )
-            all_drug_selections = steps1_3_data.get("drug_selections", [])
-            all_search_results = steps1_3_data.get("search_results", {})
-            all_extraction_results = steps1_3_data.get("extraction_results", {})
-            self._status.drug_class.step1_regimen = StepStatus.success()
-            self._status.drug_class.step2_extraction = StepStatus.success()
-            self._status.drug_class.step3_selection = StepStatus.success()
-        else:
-            steps1_3_data = await self._run_drug_class_steps1_3(
-                input, primary_drugs
-            )
-            self._output.drug_class.drug_results = steps1_3_data["drug_results"]
-            all_drug_selections = steps1_3_data["drug_selections"]
-            all_search_results = steps1_3_data["search_results"]
-            all_extraction_results = steps1_3_data["extraction_results"]
-            self._status.drug_class.step1_regimen = StepStatus.success()
-            self._status.drug_class.step2_extraction = StepStatus.success()
-            self._status.drug_class.step3_selection = StepStatus.success()
-
+        if steps1_3_data is None:
+            steps1_3_data = await self._run_drug_class_steps1_3(input, primary_drugs)
             await self._save_checkpoint(input, "drug_class_steps1_3", steps1_3_data)
+
+        self._output.drug_class.drug_results = steps1_3_data.get("drug_results", [])
+        all_drug_selections = steps1_3_data.get("drug_selections", [])
+        all_search_results = steps1_3_data.get("search_results", {})
+        all_extraction_results = steps1_3_data.get("extraction_results", {})
+        self._status.drug_class.step1_regimen = StepStatus.success()
+        self._status.drug_class.step2_extraction = StepStatus.success()
+        self._status.drug_class.step3_selection = StepStatus.success()
 
         # ---- Step 4: Explicit extraction from title ----
         step4 = await self._run_with_checkpoint(
-            input, "drug_class_step4",
-            step4_explicit,
+            input, "drug_class_step4", step4_explicit,
             TaskQueues.DRUG_CLASS, Timeouts.FAST_LLM, RetryPolicies.FAST_LLM,
             activity_input=ExplicitExtractionInput(
                 abstract_id=input.abstract_id,
@@ -611,8 +453,7 @@ class AbstractExtractionWorkflow:
         explicit = self._output.drug_class.explicit_classes
         if explicit and explicit != ["NA"]:
             step5 = await self._run_with_checkpoint(
-                input, "drug_class_step5",
-                step5_consolidation,
+                input, "drug_class_step5", step5_consolidation,
                 TaskQueues.DRUG_CLASS, Timeouts.FAST_LLM, RetryPolicies.FAST_LLM,
                 activity_input=ConsolidationInput(
                     abstract_id=input.abstract_id,
@@ -628,9 +469,7 @@ class AbstractExtractionWorkflow:
                 )
             else:
                 self._output.drug_class.refined_explicit_classes = explicit
-                self._output.errors.append(
-                    step5.error or "Drug class step 5 failed"
-                )
+                self._output.errors.append(step5.error or "Drug class step 5 failed")
         else:
             self._output.drug_class.refined_explicit_classes = explicit
             self._status.drug_class.step5_consolidation = StepStatus.success()
@@ -639,14 +478,10 @@ class AbstractExtractionWorkflow:
         validation_data = await self._run_drug_class_validation(
             input, all_extraction_results, all_search_results
         )
-        self._output.drug_class.validation_results = validation_data.get(
-            "results", []
-        )
+        self._output.drug_class.validation_results = validation_data.get("results", [])
         if validation_data.get("errors"):
             self._output.errors.extend(validation_data["errors"])
-            self._status.drug_class.validation = StepStatus.success()
-        else:
-            self._status.drug_class.validation = StepStatus.success()
+        self._status.drug_class.validation = StepStatus.success()
 
         await self._save_status(input)
         workflow.logger.info(
@@ -654,9 +489,7 @@ class AbstractExtractionWorkflow:
         )
 
     async def _run_drug_class_steps1_3(
-        self,
-        input: AbstractExtractionInput,
-        primary_drugs: list[str],
+        self, input: AbstractExtractionInput, primary_drugs: list[str],
     ) -> dict:
         """Run steps 1-3 for all primary drugs (per-drug loops).
 
@@ -670,12 +503,9 @@ class AbstractExtractionWorkflow:
 
         for drug in primary_drugs:
             drug_data = {
-                "drug": drug,
-                "components": [],
-                "extractions": {},
-                "selections": {},
+                "drug": drug, "components": [],
+                "extractions": {}, "selections": {},
             }
-
             try:
                 # Step 1: Regimen identification
                 workflow.logger.info(
@@ -709,22 +539,18 @@ class AbstractExtractionWorkflow:
                     )
 
                     # Step 2b: Extract with Tavily
-                    extraction_input = DrugClassExtractionInput(
+                    ext_input = DrugClassExtractionInput(
                         abstract_id=input.abstract_id,
                         abstract_title=input.abstract_title,
                         drug=component,
                         full_abstract=input.full_abstract,
                         firms=input.firms,
-                        drug_class_results=search_result.get(
-                            "drug_class_results", []
-                        ),
-                        firm_search_results=search_result.get(
-                            "firm_search_results", []
-                        ),
+                        drug_class_results=search_result.get("drug_class_results", []),
+                        firm_search_results=search_result.get("firm_search_results", []),
                     )
                     extraction_result = await workflow.execute_activity(
                         step2_extract_with_tavily,
-                        extraction_input,
+                        ext_input,
                         task_queue=TaskQueues.DRUG_CLASS,
                         start_to_close_timeout=Timeouts.FAST_LLM,
                         retry_policy=RetryPolicies.FAST_LLM,
@@ -734,12 +560,11 @@ class AbstractExtractionWorkflow:
                     drug_classes = extraction_result.get("drug_classes", [])
                     if not drug_classes or drug_classes == ["NA"]:
                         workflow.logger.info(
-                            f"Tavily returned NA for {component}, "
-                            "trying grounded search"
+                            f"Tavily returned NA for {component}, trying grounded search"
                         )
                         extraction_result = await workflow.execute_activity(
                             step2_extract_with_grounded,
-                            extraction_input,
+                            ext_input,
                             task_queue=TaskQueues.DRUG_CLASS,
                             start_to_close_timeout=Timeouts.FAST_LLM,
                             retry_policy=RetryPolicies.FAST_LLM,
@@ -749,9 +574,7 @@ class AbstractExtractionWorkflow:
                     all_extraction_results[component] = extraction_result
 
                     # Step 3: Selection (if extraction has details)
-                    extraction_details = extraction_result.get(
-                        "extraction_details", []
-                    )
+                    extraction_details = extraction_result.get("extraction_details", [])
                     if extraction_details:
                         selection_result = await workflow.execute_activity(
                             step3_selection,
@@ -793,17 +616,11 @@ class AbstractExtractionWorkflow:
         extraction_results: dict[str, dict],
         search_results: dict[str, list[dict]],
     ) -> dict:
-        """Run validation for each drug component that has extraction results.
-
-        Loads from checkpoint first if available.
-
-        Returns dict with results list and any errors.
-        """
+        """Run validation for each drug component. Loads checkpoint first."""
         existing = await self._load_checkpoint(input, "drug_class_validation")
         if existing is not None:
             workflow.logger.info(
-                f"Loaded drug class validation from checkpoint "
-                f"for {input.abstract_id}"
+                f"Loaded drug class validation from checkpoint for {input.abstract_id}"
             )
             return existing
 
@@ -814,7 +631,6 @@ class AbstractExtractionWorkflow:
             drug_classes = extraction_result.get("drug_classes", [])
             if not drug_classes or drug_classes == ["NA"]:
                 continue
-
             try:
                 validation_result = await workflow.execute_activity(
                     validate_drug_class_activity,
@@ -831,13 +647,10 @@ class AbstractExtractionWorkflow:
                     retry_policy=RetryPolicies.FAST_LLM,
                 )
                 results.append({
-                    "drug_name": component,
-                    "validation": validation_result,
+                    "drug_name": component, "validation": validation_result,
                 })
             except Exception as e:
-                workflow.logger.error(
-                    f"Validation failed for drug '{component}': {e}"
-                )
+                workflow.logger.error(f"Validation failed for drug '{component}': {e}")
                 errors.append(f"Validation error for {component}: {e}")
 
         validation_data = {"results": results, "errors": errors}
