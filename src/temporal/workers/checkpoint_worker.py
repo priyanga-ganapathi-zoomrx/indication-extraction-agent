@@ -16,10 +16,14 @@ since checkpoint activities are cross-cutting storage operations.
 
 Usage:
     python -m src.temporal.workers.checkpoint_worker
+    
+    # With idle shutdown (env var)
+    IDLE_SHUTDOWN_MINUTES=5 python -m src.temporal.workers.checkpoint_worker
 """
 
 import asyncio
 import logging
+import os
 
 from src.temporal.config import TaskQueues, WorkerSettings
 from src.temporal.activities.checkpoint import (
@@ -33,15 +37,11 @@ from src.temporal.workers.base import run_worker
 logger = logging.getLogger(__name__)
 
 
-async def run_checkpoint_worker() -> None:
+async def run_checkpoint_worker(idle_shutdown_minutes: float | None = None) -> None:
     """Run the checkpoint/storage worker.
     
-    This worker handles all checkpoint/persistence activities.
-    These are fast I/O operations (typically <1s) shared by all
-    entity pipelines.
-    
-    Configuration from WorkerSettings.CHECKPOINT:
-    - max_concurrent_activities: 50 (I/O bound, can be high)
+    Args:
+        idle_shutdown_minutes: Auto-shutdown after N minutes of inactivity
     """
     settings = WorkerSettings.CHECKPOINT
     
@@ -49,7 +49,7 @@ async def run_checkpoint_worker() -> None:
     
     await run_worker(
         task_queue=TaskQueues.CHECKPOINT,
-        workflows=None,  # No workflows - activities only
+        workflows=None,
         activities=[
             load_workflow_status,
             save_workflow_status,
@@ -57,12 +57,21 @@ async def run_checkpoint_worker() -> None:
             save_step_output,
         ],
         max_concurrent_activities=settings.get("max_concurrent_activities", 50),
+        idle_shutdown_minutes=idle_shutdown_minutes,
     )
 
 
-if __name__ == "__main__":
+def main():
+    """Entry point."""
+    idle_shutdown = os.getenv("IDLE_SHUTDOWN_MINUTES")
+    idle_minutes = float(idle_shutdown) if idle_shutdown else None
+    
     logging.basicConfig(
         level=logging.INFO,
         format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
     )
-    asyncio.run(run_checkpoint_worker())
+    asyncio.run(run_checkpoint_worker(idle_shutdown_minutes=idle_minutes))
+
+
+if __name__ == "__main__":
+    main()

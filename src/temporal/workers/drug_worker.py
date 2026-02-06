@@ -11,10 +11,14 @@ Activities:
 
 Usage:
     python -m src.temporal.workers.drug_worker
+    
+    # With idle shutdown (env var)
+    IDLE_SHUTDOWN_MINUTES=5 python -m src.temporal.workers.drug_worker
 """
 
 import asyncio
 import logging
+import os
 
 from src.temporal.config import TaskQueues, WorkerSettings
 from src.temporal.activities.drug import extract_drugs, validate_drugs
@@ -23,14 +27,11 @@ from src.temporal.workers.base import run_worker
 logger = logging.getLogger(__name__)
 
 
-async def run_drug_worker() -> None:
+async def run_drug_worker(idle_shutdown_minutes: float | None = None) -> None:
     """Run the drug activities worker.
     
-    This worker handles drug extraction and validation activities.
-    Both use fast LLMs (GPT-4) with typical response times of 5-15s.
-    
-    Configuration from WorkerSettings.DRUG:
-    - max_concurrent_activities: 15
+    Args:
+        idle_shutdown_minutes: Auto-shutdown after N minutes of inactivity
     """
     settings = WorkerSettings.DRUG
     
@@ -38,15 +39,24 @@ async def run_drug_worker() -> None:
     
     await run_worker(
         task_queue=TaskQueues.DRUG,
-        workflows=None,  # No workflows - activities only
+        workflows=None,
         activities=[extract_drugs, validate_drugs],
         max_concurrent_activities=settings.get("max_concurrent_activities", 15),
+        idle_shutdown_minutes=idle_shutdown_minutes,
     )
 
 
-if __name__ == "__main__":
+def main():
+    """Entry point."""
+    idle_shutdown = os.getenv("IDLE_SHUTDOWN_MINUTES")
+    idle_minutes = float(idle_shutdown) if idle_shutdown else None
+    
     logging.basicConfig(
         level=logging.INFO,
         format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
     )
-    asyncio.run(run_drug_worker())
+    asyncio.run(run_drug_worker(idle_shutdown_minutes=idle_minutes))
+
+
+if __name__ == "__main__":
+    main()

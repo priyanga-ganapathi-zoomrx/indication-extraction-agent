@@ -12,9 +12,11 @@ Activities are pure storage operations with no business logic.
 from temporalio import activity
 
 from src.agents.core.storage import get_storage_client
+from src.temporal.idle_shutdown import track_activity
 
 
 @activity.defn(name="load_workflow_status")
+@track_activity
 def load_workflow_status(storage_path: str, abstract_id: str) -> dict | None:
     """Load workflow status from storage.
     
@@ -39,6 +41,7 @@ def load_workflow_status(storage_path: str, abstract_id: str) -> dict | None:
 
 
 @activity.defn(name="save_workflow_status")
+@track_activity
 def save_workflow_status(storage_path: str, abstract_id: str, status: dict) -> None:
     """Save workflow status to storage.
     
@@ -57,6 +60,7 @@ def save_workflow_status(storage_path: str, abstract_id: str, status: dict) -> N
 
 
 @activity.defn(name="load_step_output")
+@track_activity
 def load_step_output(storage_path: str, abstract_id: str, step_name: str) -> dict | None:
     """Load step output from storage.
     
@@ -84,6 +88,7 @@ def load_step_output(storage_path: str, abstract_id: str, step_name: str) -> dic
 
 
 @activity.defn(name="save_step_output")
+@track_activity
 def save_step_output(storage_path: str, abstract_id: str, step_name: str, data: dict) -> None:
     """Save step output to storage.
     

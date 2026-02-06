@@ -34,7 +34,7 @@ Worker Architecture:
 └───────────────────┘                    └───────────────────┘
 """
 
-from src.temporal.workers.base import create_temporal_client, run_worker
+from src.temporal.workers.base import run_worker
 from src.temporal.workers.workflow_worker import run_workflow_worker
 from src.temporal.workers.checkpoint_worker import run_checkpoint_worker
 from src.temporal.workers.drug_worker import run_drug_worker
@@ -44,7 +44,6 @@ from src.temporal.workers.indication_validation_worker import run_indication_val
 
 __all__ = [
     # Utilities
-    "create_temporal_client",
     "run_worker",
     # Worker runners
     "run_workflow_worker",

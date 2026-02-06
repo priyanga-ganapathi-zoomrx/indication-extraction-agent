@@ -38,6 +38,7 @@ from src.agents.drug_class.schemas import (
     ConsolidationInput,
     ValidationInput as DrugClassValidationInput,
 )
+from src.temporal.idle_shutdown import track_activity
 
 
 # =============================================================================
@@ -45,6 +46,7 @@ from src.agents.drug_class.schemas import (
 # =============================================================================
 
 @activity.defn(name="step1_regimen")
+@track_activity
 def step1_regimen(input_data: RegimenInput) -> list[str]:
     """Identify if a drug is a regimen and extract its components.
     
@@ -91,6 +93,7 @@ def step1_regimen(input_data: RegimenInput) -> list[str]:
 # =============================================================================
 
 @activity.defn(name="step2_fetch_search_results")
+@track_activity
 def step2_fetch_search_results(
     drug: str,
     firms: list[str],
@@ -136,6 +139,7 @@ def step2_fetch_search_results(
 
 
 @activity.defn(name="step2_extract_with_tavily")
+@track_activity
 def step2_extract_with_tavily(input_data: DrugClassExtractionInput) -> dict:
     """Extract drug classes using pre-fetched Tavily search results.
     
@@ -179,6 +183,7 @@ def step2_extract_with_tavily(input_data: DrugClassExtractionInput) -> dict:
 
 
 @activity.defn(name="step2_extract_with_grounded")
+@track_activity
 def step2_extract_with_grounded(input_data: DrugClassExtractionInput) -> dict:
     """Extract drug classes using LLM's grounded search (web_search_preview).
     
@@ -215,6 +220,7 @@ def step2_extract_with_grounded(input_data: DrugClassExtractionInput) -> dict:
 # =============================================================================
 
 @activity.defn(name="step3_selection")
+@track_activity
 def step3_selection(input_data: SelectionInput) -> dict:
     """Select the best drug class(es) for a drug with multiple classes.
     
@@ -257,6 +263,7 @@ def step3_selection(input_data: SelectionInput) -> dict:
 # =============================================================================
 
 @activity.defn(name="step4_explicit")
+@track_activity
 def step4_explicit(input_data: ExplicitExtractionInput) -> dict:
     """Extract drug classes explicitly mentioned in the abstract title.
     
@@ -296,6 +303,7 @@ def step4_explicit(input_data: ExplicitExtractionInput) -> dict:
 # =============================================================================
 
 @activity.defn(name="step5_consolidation")
+@track_activity
 def step5_consolidation(input_data: ConsolidationInput) -> dict:
     """Consolidate explicit classes with drug-derived classes.
     
@@ -338,6 +346,7 @@ def step5_consolidation(input_data: ConsolidationInput) -> dict:
 # =============================================================================
 
 @activity.defn(name="validate_drug_class")
+@track_activity
 def validate_drug_class_activity(input_data: DrugClassValidationInput) -> dict:
     """Validate a drug class extraction result.
     

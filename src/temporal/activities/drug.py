@@ -17,9 +17,11 @@ Best Practices Applied:
 from temporalio import activity
 
 from src.agents.drug.schemas import DrugInput, ValidationInput
+from src.temporal.idle_shutdown import track_activity
 
 
 @activity.defn(name="extract_drugs")
+@track_activity
 def extract_drugs(input_data: DrugInput) -> dict:
     """Extract drugs from an abstract title.
     
@@ -65,6 +67,7 @@ def extract_drugs(input_data: DrugInput) -> dict:
 
 
 @activity.defn(name="validate_drugs")
+@track_activity
 def validate_drugs(input_data: ValidationInput) -> dict:
     """Validate extracted drugs against rules.
     

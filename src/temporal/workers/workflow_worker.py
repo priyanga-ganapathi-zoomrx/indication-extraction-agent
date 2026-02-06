@@ -11,6 +11,9 @@ to allow independent scaling and avoid resource contention.
 Note: Checkpoint activities run on a dedicated CHECKPOINT queue,
 not on this workflow queue.
 
+Note: Idle shutdown is not useful for workflow-only workers since
+they don't run activities (idle tracking is activity-based).
+
 Usage:
     python -m src.temporal.workers.workflow_worker
 """
@@ -50,6 +53,8 @@ async def run_workflow_worker() -> None:
         activities=None,  # No activities - orchestration only
         max_concurrent_workflow_tasks=settings.get("max_concurrent_workflow_tasks", 100),
         max_cached_workflows=settings.get("max_cached_workflows", 50),
+        # Note: idle_shutdown_minutes not set because workflow workers
+        # don't track activity execution (idle tracking is activity-based)
     )
 
 

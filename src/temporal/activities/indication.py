@@ -29,6 +29,7 @@ from src.agents.indication.schemas import (
     ExtractionLLMResponse,
     ValidationLLMResponse,
 )
+from src.temporal.idle_shutdown import track_activity
 
 
 class IndicationExtractionError(Exception):
@@ -131,6 +132,7 @@ def _extract_result_from_messages(messages: list, model_class) -> dict:
 # =============================================================================
 
 @activity.defn(name="extract_indication")
+@track_activity
 def extract_indication(input_data: IndicationInput) -> dict:
     """Extract medical indication from abstract titles.
     
@@ -201,6 +203,7 @@ def extract_indication(input_data: IndicationInput) -> dict:
 # =============================================================================
 
 @activity.defn(name="validate_indication")
+@track_activity
 def validate_indication(
     input_data: IndicationInput,
     extraction_result: dict,
