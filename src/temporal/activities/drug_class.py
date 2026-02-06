@@ -127,7 +127,7 @@ def step2_fetch_search_results(
     )
     
     # Create storage client for caching
-    storage = LocalStorageClient(base_path=storage_base_path) if storage_base_path else LocalStorageClient()
+    storage = LocalStorageClient(base_dir=storage_base_path) if storage_base_path else LocalStorageClient()
     
     # Call existing function - returns tuple
     drug_class_results, firm_search_results = fetch_search_results(drug, firms, storage)

@@ -23,6 +23,10 @@ import asyncio
 import logging
 import os
 
+from dotenv import load_dotenv
+
+load_dotenv()
+
 from src.temporal.config import TaskQueues, WorkerSettings
 from src.temporal.activities.indication import validate_indication
 from src.temporal.workers.base import run_worker

@@ -25,6 +25,10 @@ import asyncio
 import logging
 import os
 
+from dotenv import load_dotenv
+
+load_dotenv()
+
 from src.temporal.config import TaskQueues, WorkerSettings
 from src.temporal.activities.checkpoint import (
     load_workflow_status,

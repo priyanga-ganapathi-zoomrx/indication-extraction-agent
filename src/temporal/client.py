@@ -3,15 +3,18 @@
 This module provides:
 - Batch workflow execution with controlled concurrency
 - CSV loading from local or GCS storage
-- CLI for starting batch extractions
+- Three-tier status reporting (success / partial_success / failed)
+- Retry CSV generation for failed/partial abstracts
 
 Usage:
-    python -m src.temporal.client --input data/abstracts.csv
-    python -m src.temporal.client --input gs://bucket/abstracts.csv --max_concurrent 100
-    python -m src.temporal.client --input data/abstracts.csv --storage_path data/output --limit 10
-    python -m src.temporal.client --input data/abstracts.csv --pipelines drug,indication
+    # Run batch extraction
+    python -m src.temporal.client --input data/abstracts.csv --storage_path data/output
 
-For workflow status, results, retries, and cancellation, use the Temporal UI or CLI.
+    # Retry failed items from a previous batch
+    python -m src.temporal.client --input data/output/failed_20260206_123456.csv --storage_path data/output
+
+For workflow status inspection, use the Temporal UI or CLI:
+    temporal workflow list --query "ExecutionStatus = 'Failed'"
 """
 
 import argparse
@@ -113,13 +116,17 @@ class BatchItem:
 class BatchResult:
     """Result of a batch extraction item."""
     abstract_id: str
+    abstract_title: str
     workflow_id: str
     output: Optional[AbstractExtractionOutput] = None
     error: Optional[str] = None
     
     @property
-    def success(self) -> bool:
-        return self.output is not None and self.error is None
+    def status(self) -> str:
+        """Three-tier status: success, partial_success, or failed."""
+        if self.error or self.output is None:
+            return "failed"
+        return self.output.status
 
 
 # =============================================================================
@@ -150,7 +157,7 @@ def load_batch_items(csv_path: str, limit: Optional[int] = None) -> list[BatchIt
         storage = get_storage_client(f"gs://{bucket}")
         content = storage.download_text(prefix)
     else:
-        content = Path(csv_path).read_text()
+        content = Path(csv_path).read_text(encoding="utf-8-sig")
     
     # Parse CSV
     reader = csv.DictReader(io.StringIO(content))
@@ -254,6 +261,7 @@ async def start_batch_extraction(
                 
                 return BatchResult(
                     abstract_id=item.abstract_id,
+                    abstract_title=item.abstract_title,
                     workflow_id=workflow_id,
                     output=output,
                 )
@@ -262,6 +270,7 @@ async def start_batch_extraction(
                 logger.error(f"Batch item {item.abstract_id} failed: {e}")
                 return BatchResult(
                     abstract_id=item.abstract_id,
+                    abstract_title=item.abstract_title,
                     workflow_id=workflow_id,
                     error=str(e),
                 )
@@ -280,6 +289,66 @@ async def start_batch_extraction(
 
 
 # =============================================================================
+# BATCH SUMMARY AND RETRY CSV WRITING
+# =============================================================================
+
+def _write_retry_csv(filepath: Path, results: list[BatchResult]) -> None:
+    """Write a CSV of abstract IDs for retry.
+    
+    Output has the same columns as the input CSV so it can be
+    passed directly as --input.
+    """
+    filepath.parent.mkdir(parents=True, exist_ok=True)
+    with open(filepath, "w", newline="", encoding="utf-8") as f:
+        writer = csv.writer(f)
+        writer.writerow(["abstract_id", "abstract_title"])
+        for r in results:
+            writer.writerow([r.abstract_id, r.abstract_title])
+
+
+def _print_batch_summary(
+    total: int,
+    success_results: list[BatchResult],
+    partial_results: list[BatchResult],
+    failed_results: list[BatchResult],
+    storage_path: str,
+) -> None:
+    """Print batch summary and write retry CSVs if needed."""
+    from datetime import datetime
+    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+
+    print("\n" + "=" * 50)
+    print("Batch Complete")
+    print("=" * 50)
+    print(f"  Total:    {total}")
+    print(f"  Success:  {len(success_results)}")
+    print(f"  Partial:  {len(partial_results)}")
+    print(f"  Failed:   {len(failed_results)}")
+
+    # Determine output directory for retry CSVs
+    if storage_path:
+        output_dir = Path(storage_path)
+    else:
+        output_dir = Path("data/output")
+
+    # Write retry CSVs
+    if failed_results:
+        failed_path = output_dir / f"failed_{timestamp}.csv"
+        _write_retry_csv(failed_path, failed_results)
+        print(f"\n  Retry (failed):  {failed_path} ({len(failed_results)} items)")
+
+    if partial_results:
+        partial_path = output_dir / f"partial_{timestamp}.csv"
+        _write_retry_csv(partial_path, partial_results)
+        print(f"  Retry (partial): {partial_path} ({len(partial_results)} items)")
+
+    if not failed_results and not partial_results:
+        print("\n  All abstracts processed successfully!")
+
+    print("=" * 50)
+
+
+# =============================================================================
 # CLI ENTRY POINT
 # =============================================================================
 
@@ -290,42 +359,48 @@ async def main():
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog="""
 Examples:
-    python -m src.temporal.client --input data/abstracts.csv
-    python -m src.temporal.client --input gs://bucket/abstracts.csv --max_concurrent 100
-    python -m src.temporal.client --input data/abstracts.csv --storage_path data/output --limit 10
-    python -m src.temporal.client --input data/abstracts.csv --pipelines drug,indication
+    # Run batch extraction
+    python -m src.temporal.client --input data/abstracts.csv --storage_path data/output
+
+    # Limit concurrency and abstracts
+    python -m src.temporal.client --input data/abstracts.csv --storage_path data/output --max_concurrent 100 --limit 10
+
+    # Run specific pipelines
+    python -m src.temporal.client --input data/abstracts.csv --storage_path data/output --pipelines drug,indication
+
+    # Retry failed items from a previous batch
+    python -m src.temporal.client --input data/output/failed_20260206_123456.csv --storage_path data/output
         """,
     )
     parser.add_argument(
-        "--input", 
-        required=True, 
-        help="CSV path (local or gs://bucket/path)"
+        "--input",
+        required=True,
+        help="CSV path (local or gs://bucket/path)",
     )
     parser.add_argument(
-        "--max_concurrent", 
-        type=int, 
+        "--max_concurrent",
+        type=int,
         default=50,
-        help="Maximum concurrent workflows (default: 50)"
+        help="Maximum concurrent workflows (default: 50)",
     )
     parser.add_argument(
-        "--storage_path", 
+        "--storage_path",
         default="",
-        help="Base path for checkpoints (gs://bucket/prefix or local path)"
+        help="Base path for checkpoints (gs://bucket/prefix or local path)",
     )
     parser.add_argument(
-        "--limit", 
-        type=int, 
+        "--limit",
+        type=int,
         default=None,
-        help="Limit number of abstracts to process (for testing)"
+        help="Limit number of abstracts to process (for testing)",
     )
     parser.add_argument(
         "--pipelines",
         default="drug,drug_class,indication",
-        help="Comma-separated pipelines to run (default: drug,drug_class,indication)"
+        help="Comma-separated pipelines to run (default: drug,drug_class,indication)",
     )
-    
     args = parser.parse_args()
-    
+
     # Parse pipelines
     pipelines = [p.strip() for p in args.pipelines.split(",") if p.strip()]
     valid_pipelines = {"drug", "drug_class", "indication"}
@@ -333,38 +408,51 @@ Examples:
     if invalid:
         print(f"Invalid pipeline(s): {invalid}. Valid options: {valid_pipelines}")
         return
-    
+
     # Load items from CSV
     print(f"Loading abstracts from {args.input}...")
     items = load_batch_items(args.input, args.limit)
     print(f"Loaded {len(items)} abstracts")
-    
+
     if not items:
         print("No items to process")
         return
-    
+
     # Run batch extraction
     print(f"Starting batch extraction (max_concurrent: {args.max_concurrent})...")
     print(f"Pipelines: {pipelines}")
     if args.storage_path:
-        print(f"Checkpoints will be saved to: {args.storage_path}")
-    
-    success, failed = 0, 0
+        print(f"Checkpoints: {args.storage_path}")
+
+    success_results = []
+    partial_results = []
+    failed_results = []
+
     async for result in start_batch_extraction(
         items,
         max_concurrent=args.max_concurrent,
         storage_path=args.storage_path,
         pipelines=pipelines,
     ):
-        if result.success:
-            success += 1
-            print(f"  ✓ {result.abstract_id}")
+        status = result.status
+        if status == "success":
+            success_results.append(result)
+            print(f"  [OK]      {result.abstract_id}")
+        elif status == "partial_success":
+            partial_results.append(result)
+            errors = result.output.errors if result.output else []
+            print(f"  [PARTIAL] {result.abstract_id}: {errors}")
         else:
-            failed += 1
-            print(f"  ✗ {result.abstract_id}: {result.error}")
-    
-    # Final summary
-    print(f"\nCompleted: {success} success, {failed} failed")
+            failed_results.append(result)
+            print(f"  [FAILED]  {result.abstract_id}: {result.error}")
+
+    _print_batch_summary(
+        total=len(items),
+        success_results=success_results,
+        partial_results=partial_results,
+        failed_results=failed_results,
+        storage_path=args.storage_path,
+    )
 
 
 if __name__ == "__main__":

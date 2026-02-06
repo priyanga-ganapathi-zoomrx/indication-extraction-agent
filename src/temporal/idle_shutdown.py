@@ -40,6 +40,7 @@ class IdleTracker:
     
     def __init__(self):
         self._active_count = 0
+        self._started_at = time.monotonic()
         self._last_completion = time.monotonic()
         self._has_received_task = False
         self._lock = threading.Lock()
@@ -59,21 +60,26 @@ class IdleTracker:
     def is_idle(self, timeout_seconds: float) -> bool:
         """Check if worker has been idle for the specified duration.
         
-        Returns False if:
-        - No task has ever been received (prevents premature shutdown on startup)
-        - There are active tasks running
-        - Time since last completion is less than timeout
+        Returns True if:
+        - No active tasks AND time since start >= timeout (no tasks ever received)
+        - No active tasks AND time since last completion >= timeout
         """
         with self._lock:
-            if not self._has_received_task:
-                return False
             if self._active_count > 0:
                 return False
+            
+            # If no task received, measure from startup time
+            if not self._has_received_task:
+                return (time.monotonic() - self._started_at) >= timeout_seconds
+            
+            # Otherwise measure from last completion
             return (time.monotonic() - self._last_completion) >= timeout_seconds
     
     def time_since_last_activity(self) -> float:
-        """Get seconds since last activity completed."""
+        """Get seconds since last activity completed (or startup if none)."""
         with self._lock:
+            if not self._has_received_task:
+                return time.monotonic() - self._started_at
             return time.monotonic() - self._last_completion
     
     @property

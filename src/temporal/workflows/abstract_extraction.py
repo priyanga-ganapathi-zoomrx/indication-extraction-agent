@@ -160,10 +160,17 @@ class AbstractExtractionWorkflow:
                     )
 
             self._output.completed = True
-            self._status.mark_success()
-            workflow.logger.info(
-                f"Completed extraction for abstract {input.abstract_id}"
-            )
+            if self._output.errors:
+                self._status.mark_partial_success()
+                workflow.logger.warning(
+                    f"Partial success for abstract {input.abstract_id}: "
+                    f"{len(self._output.errors)} error(s)"
+                )
+            else:
+                self._status.mark_success()
+                workflow.logger.info(
+                    f"Completed extraction for abstract {input.abstract_id}"
+                )
 
         except Exception as e:
             workflow.logger.error(f"Workflow error for {input.abstract_id}: {e}")
@@ -206,9 +213,13 @@ class AbstractExtractionWorkflow:
             )
             if status_dict:
                 self._status = WorkflowStatus.from_dict(status_dict)
+                # Clear stale errors from previous runs so they don't
+                # carry forward into a retry
+                self._status.errors = []
+                self._status.status = "running"
                 workflow.logger.info(
-                    f"Loaded existing status for {input.abstract_id}: "
-                    f"{self._status.status}"
+                    f"Loaded existing status for {input.abstract_id}, "
+                    "cleared previous errors for fresh run"
                 )
                 return
 
@@ -421,7 +432,23 @@ class AbstractExtractionWorkflow:
         steps1_3_data = await self._load_checkpoint(input, "drug_class_steps1_3")
         if steps1_3_data is None:
             steps1_3_data = await self._run_drug_class_steps1_3(input, primary_drugs)
-            await self._save_checkpoint(input, "drug_class_steps1_3", steps1_3_data)
+
+        # Check if any drug had errors during steps 1-3
+        drug_errors = [
+            d["error"] for d in steps1_3_data.get("drug_results", [])
+            if d.get("error")
+        ]
+        if drug_errors:
+            # Do NOT save checkpoint when there are errors - allows retry
+            error_msg = f"Drug class steps 1-3 errors: {drug_errors}"
+            self._status.drug_class.step2_extraction = StepStatus.failed(error_msg)
+            self._output.errors.append(error_msg)
+            workflow.logger.error(error_msg)
+            await self._save_status(input)
+            return
+
+        # Only checkpoint on success so retries re-execute
+        await self._save_checkpoint(input, "drug_class_steps1_3", steps1_3_data)
 
         self._output.drug_class.drug_results = steps1_3_data.get("drug_results", [])
         all_drug_selections = steps1_3_data.get("drug_selections", [])
@@ -470,6 +497,8 @@ class AbstractExtractionWorkflow:
             else:
                 self._output.drug_class.refined_explicit_classes = explicit
                 self._output.errors.append(step5.error or "Drug class step 5 failed")
+                await self._save_status(input)
+                return
         else:
             self._output.drug_class.refined_explicit_classes = explicit
             self._status.drug_class.step5_consolidation = StepStatus.success()
@@ -481,7 +510,11 @@ class AbstractExtractionWorkflow:
         self._output.drug_class.validation_results = validation_data.get("results", [])
         if validation_data.get("errors"):
             self._output.errors.extend(validation_data["errors"])
-        self._status.drug_class.validation = StepStatus.success()
+            self._status.drug_class.validation = StepStatus.failed(
+                "; ".join(validation_data["errors"])
+            )
+        else:
+            self._status.drug_class.validation = StepStatus.success()
 
         await self._save_status(input)
         workflow.logger.info(
@@ -654,5 +687,7 @@ class AbstractExtractionWorkflow:
                 errors.append(f"Validation error for {component}: {e}")
 
         validation_data = {"results": results, "errors": errors}
-        await self._save_checkpoint(input, "drug_class_validation", validation_data)
+        # Only checkpoint if all validations passed - allows retry of failures
+        if not errors:
+            await self._save_checkpoint(input, "drug_class_validation", validation_data)
         return validation_data

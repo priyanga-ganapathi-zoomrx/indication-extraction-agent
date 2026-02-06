@@ -84,3 +84,12 @@ class AbstractExtractionOutput:
     indication: IndicationResult = field(default_factory=IndicationResult)
     completed: bool = False
     errors: list[str] = field(default_factory=list)
+
+    @property
+    def status(self) -> str:
+        """Derive status from completion state and errors."""
+        if not self.completed:
+            return "failed"
+        if self.errors:
+            return "partial_success"
+        return "success"

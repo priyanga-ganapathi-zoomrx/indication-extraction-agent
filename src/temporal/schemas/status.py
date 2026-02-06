@@ -261,7 +261,7 @@ class WorkflowStatus:
     """
     abstract_id: str
     abstract_title: str = ""
-    status: str = "running"  # "running", "success", "failed"
+    status: str = "running"  # "running", "success", "partial_success", "failed"
     last_updated: str = ""
     metrics: PipelineMetrics = field(default_factory=PipelineMetrics)
     drug: DrugPipelineStatus = field(default_factory=DrugPipelineStatus)
@@ -307,6 +307,11 @@ class WorkflowStatus:
     def mark_success(self) -> None:
         """Mark workflow as successful."""
         self.status = "success"
+        self.update_timestamp()
+    
+    def mark_partial_success(self) -> None:
+        """Mark workflow as partial success (some steps failed)."""
+        self.status = "partial_success"
         self.update_timestamp()
     
     def mark_failed(self, error: str) -> None:

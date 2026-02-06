@@ -21,10 +21,13 @@ Best Practices Applied:
 - Non-retryable errors for validation/parsing failures
 """
 
-from datetime import timedelta
-from temporalio.common import RetryPolicy
 import os
+from datetime import timedelta
 
+from dotenv import load_dotenv
+from temporalio.common import RetryPolicy
+
+load_dotenv()
 
 # =============================================================================
 # ENVIRONMENT / CONNECTION
