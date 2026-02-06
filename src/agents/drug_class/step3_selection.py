@@ -57,10 +57,16 @@ def select_drug_class(input_data: SelectionInput) -> DrugSelectionResult:
         )
     
     # Handle edge case: only one unique class - no LLM call needed
+    # Support both Pydantic objects (direct calls) and dicts (Temporal pipeline)
+    def _get(detail, field):
+        if isinstance(detail, dict):
+            return detail.get(field, "")
+        return getattr(detail, field, "")
+
     unique_classes = list(set(
-        detail.normalized_form or detail.extracted_text
+        _get(detail, "normalized_form") or _get(detail, "extracted_text")
         for detail in input_data.extraction_details
-        if detail.normalized_form or detail.extracted_text
+        if _get(detail, "normalized_form") or _get(detail, "extracted_text")
     ))
     
     if len(unique_classes) <= 1:
@@ -78,12 +84,12 @@ def select_drug_class(input_data: SelectionInput) -> DrugSelectionResult:
     extracted_classes = []
     for detail in input_data.extraction_details:
         extracted_classes.append({
-            "extracted_text": detail.extracted_text or "",
-            "class_type": detail.class_type or "Therapeutic",
-            "drug_class": detail.normalized_form or detail.extracted_text or "",
-            "evidence": detail.evidence or "",
-            "source": detail.source or "",
-            "rules_applied": detail.rules_applied or [],
+            "extracted_text": _get(detail, "extracted_text") or "",
+            "class_type": _get(detail, "class_type") or "Therapeutic",
+            "drug_class": _get(detail, "normalized_form") or _get(detail, "extracted_text") or "",
+            "evidence": _get(detail, "evidence") or "",
+            "source": _get(detail, "source") or "",
+            "rules_applied": _get(detail, "rules_applied") or [],
         })
     
     input_json = json.dumps({
@@ -187,10 +193,15 @@ def needs_llm_selection(extraction_details: list) -> bool:
     if not extraction_details:
         return False
     
+    def _get(detail, field):
+        if isinstance(detail, dict):
+            return detail.get(field, "")
+        return getattr(detail, field, "")
+
     unique_classes = set(
-        detail.normalized_form or detail.extracted_text
+        _get(detail, "normalized_form") or _get(detail, "extracted_text")
         for detail in extraction_details
-        if detail.normalized_form or detail.extracted_text
+        if _get(detail, "normalized_form") or _get(detail, "extracted_text")
     )
     
     return len(unique_classes) > 1

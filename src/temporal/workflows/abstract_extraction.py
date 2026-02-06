@@ -452,7 +452,6 @@ class AbstractExtractionWorkflow:
 
         self._output.drug_class.drug_results = steps1_3_data.get("drug_results", [])
         all_drug_selections = steps1_3_data.get("drug_selections", [])
-        all_search_results = steps1_3_data.get("search_results", {})
         all_extraction_results = steps1_3_data.get("extraction_results", {})
         self._status.drug_class.step1_regimen = StepStatus.success()
         self._status.drug_class.step2_extraction = StepStatus.success()
@@ -505,7 +504,7 @@ class AbstractExtractionWorkflow:
 
         # ---- Step 6: Validation (per component) ----
         validation_data = await self._run_drug_class_validation(
-            input, all_extraction_results, all_search_results
+            input, all_extraction_results
         )
         self._output.drug_class.validation_results = validation_data.get("results", [])
         if validation_data.get("errors"):
@@ -526,12 +525,11 @@ class AbstractExtractionWorkflow:
     ) -> dict:
         """Run steps 1-3 for all primary drugs (per-drug loops).
 
-        Returns dict with drug_results, drug_selections, search_results,
-        extraction_results.
+        Returns dict with drug_results, drug_selections, extraction_results.
+        Search results are cached separately and loaded during validation.
         """
         drug_results = []
         all_drug_selections = []
-        all_search_results = {}
         all_extraction_results = {}
 
         for drug in primary_drugs:
@@ -566,9 +564,6 @@ class AbstractExtractionWorkflow:
                         task_queue=TaskQueues.DRUG_CLASS,
                         start_to_close_timeout=Timeouts.SEARCH,
                         retry_policy=RetryPolicies.SEARCH,
-                    )
-                    all_search_results[component] = search_result.get(
-                        "drug_class_results", []
                     )
 
                     # Step 2b: Extract with Tavily
@@ -639,7 +634,6 @@ class AbstractExtractionWorkflow:
         return {
             "drug_results": drug_results,
             "drug_selections": all_drug_selections,
-            "search_results": all_search_results,
             "extraction_results": all_extraction_results,
         }
 
@@ -647,9 +641,11 @@ class AbstractExtractionWorkflow:
         self,
         input: AbstractExtractionInput,
         extraction_results: dict[str, dict],
-        search_results: dict[str, list[dict]],
     ) -> dict:
-        """Run validation for each drug component. Loads checkpoint first."""
+        """Run validation for each drug component.
+        
+        Loads search results from cache for each component (no API calls).
+        """
         existing = await self._load_checkpoint(input, "drug_class_validation")
         if existing is not None:
             workflow.logger.info(
@@ -665,6 +661,15 @@ class AbstractExtractionWorkflow:
             if not drug_classes or drug_classes == ["NA"]:
                 continue
             try:
+                # Load search results from cache (no API call - already cached)
+                search_result = await workflow.execute_activity(
+                    step2_fetch_search_results,
+                    args=[component, input.firms, input.storage_path],
+                    task_queue=TaskQueues.DRUG_CLASS,
+                    start_to_close_timeout=Timeouts.SEARCH,
+                    retry_policy=RetryPolicies.SEARCH,
+                )
+                
                 validation_result = await workflow.execute_activity(
                     validate_drug_class_activity,
                     DrugClassValidationInput(
@@ -672,7 +677,7 @@ class AbstractExtractionWorkflow:
                         drug_name=component,
                         abstract_title=input.abstract_title,
                         full_abstract=input.full_abstract,
-                        search_results=search_results.get(component, []),
+                        search_results=search_result.get("drug_class_results", []),
                         extraction_result=extraction_result,
                     ),
                     task_queue=TaskQueues.DRUG_CLASS,
