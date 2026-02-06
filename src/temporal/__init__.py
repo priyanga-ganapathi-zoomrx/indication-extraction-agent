@@ -4,16 +4,11 @@ This module provides:
 - Activities: Thin wrappers around existing agents
 - Workflows: Orchestration logic for extraction pipeline
 - Workers: Separate workers per task queue
-- Client: Utilities for starting and managing workflows
+- Client: Batch workflow execution utilities
 - Config: Task queues, timeouts, retry policies
-"""
 
-from src.temporal.config import (
-    TASK_QUEUES,
-    TIMEOUTS,
-    RETRY_POLICIES,
-    WORKER_SETTINGS,
-)
+For workflow status, results, retries, and cancellation, use Temporal UI or CLI.
+"""
 
 from src.temporal.workflows import (
     AbstractExtractionWorkflow,
@@ -22,33 +17,22 @@ from src.temporal.workflows import (
 )
 
 from src.temporal.client import (
-    get_client,
-    start_extraction,
-    execute_extraction,
+    generate_workflow_id,
+    load_batch_items,
     start_batch_extraction,
-    get_extraction_status,
-    get_extraction_result,
-    query_extraction_step,
-    cancel_extraction,
+    BatchItem,
+    BatchResult,
 )
 
 __all__ = [
-    # Config
-    "TASK_QUEUES",
-    "TIMEOUTS",
-    "RETRY_POLICIES",
-    "WORKER_SETTINGS",
     # Workflows
     "AbstractExtractionWorkflow",
     "AbstractExtractionInput",
     "AbstractExtractionOutput",
     # Client utilities
-    "get_client",
-    "start_extraction",
-    "execute_extraction",
+    "generate_workflow_id",
+    "load_batch_items",
     "start_batch_extraction",
-    "get_extraction_status",
-    "get_extraction_result",
-    "query_extraction_step",
-    "cancel_extraction",
+    "BatchItem",
+    "BatchResult",
 ]

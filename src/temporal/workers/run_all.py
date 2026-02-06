@@ -8,9 +8,17 @@ For production, run each worker separately for:
 - Better resource isolation
 - Easier monitoring and deployment
 
+Workers started:
+1. Workflow worker - orchestration only (single flat workflow)
+2. Checkpoint worker - storage/persistence (shared by all pipelines)
+3. Drug worker - drug extraction/validation
+4. Drug class worker - 5-step drug class pipeline
+5. Indication extraction worker - fast LLM extraction
+6. Indication validation worker - slow LLM validation
+
 Usage:
     python -m src.temporal.workers.run_all
-    
+
     # Or with poetry
     poetry run python -m src.temporal.workers.run_all
 
@@ -39,6 +47,7 @@ from src.temporal.activities import (
     DRUG_ACTIVITIES,
     DRUG_CLASS_ACTIVITIES,
     INDICATION_ACTIVITIES,
+    CHECKPOINT_ACTIVITIES,
 )
 
 logger = logging.getLogger(__name__)
@@ -46,10 +55,10 @@ logger = logging.getLogger(__name__)
 
 async def run_all_workers(client: Optional[Client] = None) -> None:
     """Run all workers concurrently in a single process.
-    
+
     Note: For production, run each worker separately using the individual
     worker scripts. This combined approach is for development only.
-    
+
     Args:
         client: Optional pre-existing Temporal client
     """
@@ -58,47 +67,63 @@ async def run_all_workers(client: Optional[Client] = None) -> None:
         logger.info(f"Connecting to Temporal at {TEMPORAL_HOST}")
         client = await Client.connect(TEMPORAL_HOST, namespace=TEMPORAL_NAMESPACE)
         logger.info("Connected to Temporal")
-    
+
     # Setup shutdown event
     shutdown_event = asyncio.Event()
-    
+
     def signal_handler(sig, frame):
         logger.info(f"Received signal {sig}, initiating graceful shutdown...")
         shutdown_event.set()
-    
+
     signal.signal(signal.SIGINT, signal_handler)
     signal.signal(signal.SIGTERM, signal_handler)
-    
+
     # Create thread pool for activities
     # Size should accommodate all workers' max concurrent activities
     total_max_activities = (
+        WorkerSettings.CHECKPOINT.get("max_concurrent_activities", 50) +
         WorkerSettings.DRUG.get("max_concurrent_activities", 15) +
         WorkerSettings.DRUG_CLASS.get("max_concurrent_activities", 10) +
         WorkerSettings.INDICATION_EXTRACTION.get("max_concurrent_activities", 20) +
         WorkerSettings.INDICATION_VALIDATION.get("max_concurrent_activities", 5)
     )
-    
+
     with concurrent.futures.ThreadPoolExecutor(
         max_workers=total_max_activities
     ) as activity_executor:
-        
+
         # Create workers for each task queue
         workers = []
-        
-        # 1. Workflow worker (no activities)
+
+        # 1. Workflow worker (orchestration only, no activities)
         workflow_settings = WorkerSettings.WORKFLOWS
         workflow_worker = Worker(
             client,
             task_queue=TaskQueues.WORKFLOWS,
-            workflows=[AbstractExtractionWorkflow],
+            workflows=[
+                AbstractExtractionWorkflow,
+            ],
             max_concurrent_workflow_tasks=workflow_settings.get(
                 "max_concurrent_workflow_tasks", 100
             ),
             max_cached_workflows=workflow_settings.get("max_cached_workflows", 50),
         )
         workers.append(("workflows", workflow_worker))
-        
-        # 2. Drug activities worker
+
+        # 2. Checkpoint worker (storage operations, shared by all pipelines)
+        checkpoint_settings = WorkerSettings.CHECKPOINT
+        checkpoint_worker = Worker(
+            client,
+            task_queue=TaskQueues.CHECKPOINT,
+            activities=CHECKPOINT_ACTIVITIES,
+            activity_executor=activity_executor,
+            max_concurrent_activities=checkpoint_settings.get(
+                "max_concurrent_activities", 50
+            ),
+        )
+        workers.append(("checkpoint", checkpoint_worker))
+
+        # 3. Drug activities worker
         drug_settings = WorkerSettings.DRUG
         drug_worker = Worker(
             client,
@@ -110,8 +135,8 @@ async def run_all_workers(client: Optional[Client] = None) -> None:
             ),
         )
         workers.append(("drug", drug_worker))
-        
-        # 3. Drug class activities worker
+
+        # 4. Drug class activities worker
         drug_class_settings = WorkerSettings.DRUG_CLASS
         drug_class_worker = Worker(
             client,
@@ -123,8 +148,8 @@ async def run_all_workers(client: Optional[Client] = None) -> None:
             ),
         )
         workers.append(("drug_class", drug_class_worker))
-        
-        # 4. Indication extraction worker
+
+        # 5. Indication extraction worker
         indication_extraction_settings = WorkerSettings.INDICATION_EXTRACTION
         indication_extraction_worker = Worker(
             client,
@@ -136,8 +161,8 @@ async def run_all_workers(client: Optional[Client] = None) -> None:
             ),
         )
         workers.append(("indication_extraction", indication_extraction_worker))
-        
-        # 5. Indication validation worker (slow)
+
+        # 6. Indication validation worker (slow)
         indication_validation_settings = WorkerSettings.INDICATION_VALIDATION
         indication_validation_worker = Worker(
             client,
@@ -149,7 +174,7 @@ async def run_all_workers(client: Optional[Client] = None) -> None:
             ),
         )
         workers.append(("indication_validation", indication_validation_worker))
-        
+
         # Log worker configuration
         logger.info("=" * 60)
         logger.info("Starting All Workers (Development Mode)")
@@ -159,19 +184,19 @@ async def run_all_workers(client: Optional[Client] = None) -> None:
         logger.info(f"  Total thread pool workers: {total_max_activities}")
         logger.info("=" * 60)
         logger.info("Press Ctrl+C to shutdown gracefully")
-        
+
         # Run all workers concurrently
         async def run_single_worker(name: str, worker: Worker):
             async with worker:
                 logger.info(f"Worker '{name}' started")
                 await shutdown_event.wait()
                 logger.info(f"Worker '{name}' shutting down...")
-        
+
         # Start all workers
         await asyncio.gather(
             *[run_single_worker(name, worker) for name, worker in workers]
         )
-        
+
         logger.info("All workers shut down gracefully")
 
 

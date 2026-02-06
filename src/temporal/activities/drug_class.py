@@ -36,6 +36,7 @@ from src.agents.drug_class.schemas import (
     SelectionInput,
     ExplicitExtractionInput,
     ConsolidationInput,
+    ValidationInput as DrugClassValidationInput,
 )
 
 
@@ -328,5 +329,50 @@ def step5_consolidation(input_data: ConsolidationInput) -> dict:
     )
     
     result = consolidate_drug_classes(input_data)
+    
+    return result.model_dump()
+
+
+# =============================================================================
+# STEP 6: VALIDATION
+# =============================================================================
+
+@activity.defn(name="validate_drug_class")
+def validate_drug_class_activity(input_data: DrugClassValidationInput) -> dict:
+    """Validate a drug class extraction result.
+    
+    Performs three validation checks:
+    1. Hallucination Detection - are extracted classes grounded in sources?
+    2. Omission Detection - are there valid classes that weren't extracted?
+    3. Rule Compliance - were extraction rules applied correctly?
+    
+    Args:
+        input_data: ValidationInput dataclass containing:
+            - abstract_id: Unique identifier
+            - drug_name: Drug being validated
+            - abstract_title: Title text
+            - full_abstract: Full abstract text
+            - search_results: List of search result dicts
+            - extraction_result: Dict of extraction result to validate
+    
+    Returns:
+        dict: Serialized ValidationOutput containing:
+            - validation_status: PASS, REVIEW, or FAIL
+            - validation_confidence: Confidence score 0.0-1.0
+            - issues_found: List of validation issues
+            - checks_performed: Results of all checks
+            - validation_reasoning: Step-by-step reasoning
+    
+    Raises:
+        DrugClassExtractionError: If validation fails (triggers Temporal retry)
+    """
+    from src.agents.drug_class.validation import validate_drug_class
+    
+    activity.logger.info(
+        f"Validating drug class for drug '{input_data.drug_name}' "
+        f"in abstract {input_data.abstract_id}"
+    )
+    
+    result = validate_drug_class(input_data)
     
     return result.model_dump()

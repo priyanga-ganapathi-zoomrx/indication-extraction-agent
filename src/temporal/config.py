@@ -6,103 +6,122 @@ This module defines:
 - Retry policies following Temporal best practices
 - Worker settings for concurrency control
 
+Task Queue Design:
+- WORKFLOWS: Lightweight orchestration only
+- CHECKPOINT: Cross-cutting storage operations (load/save status, step outputs)
+- DRUG: Drug extraction LLM activities
+- DRUG_CLASS: Drug class classification pipeline
+- INDICATION_EXTRACTION: Fast indication extraction (GPT-4)
+- INDICATION_VALIDATION: Slow validation (Sonnet 4.5)
+
 Best Practices Applied:
-- Fine-grained activities with appropriate timeouts
-- Separate task queues for different workload characteristics
-- Retry policies tuned for LLM API behavior
-- Non-retryable errors for validation failures
+- Separate queues by workload characteristics (latency, resource needs)
+- Checkpoint queue shared across all pipelines for storage ops
+- LLM queues separated by latency profile
+- Non-retryable errors for validation/parsing failures
 """
 
 from datetime import timedelta
 from temporalio.common import RetryPolicy
+import os
+
+
+# =============================================================================
+# ENVIRONMENT / CONNECTION
+# =============================================================================
+
+TEMPORAL_HOST = os.getenv("TEMPORAL_HOST", "localhost:7233")
+TEMPORAL_NAMESPACE = os.getenv("TEMPORAL_NAMESPACE", "default")
 
 
 # =============================================================================
 # TASK QUEUES
 # =============================================================================
-# Separate queues allow:
-# - Independent scaling per workload type
-# - Different timeout/retry configurations
-# - Isolation of slow activities (Sonnet 4.5) from fast ones
+# Design principles:
+# - Workflows on dedicated queue (lightweight orchestration)
+# - Checkpoint activities on shared queue (fast storage, cross-cutting)
+# - LLM activities grouped by latency profile and entity type
+# - Slow activities isolated to prevent blocking fast ones
+
 
 class TaskQueues:
-    """Task queue names as constants to ensure consistency."""
+    """Task queue constants for consistent routing."""
     
-    # Workflow queue - handles orchestration only (lightweight)
+    # Workflow orchestration - no activities, just coordination
     WORKFLOWS = "extraction-workflows"
     
-    # Activity queues - grouped by entity and latency profile
+    # Checkpoint/storage operations - fast, cross-cutting, used by all pipelines
+    CHECKPOINT = "checkpoint-storage"
+    
+    # Drug pipeline activities
     DRUG = "drug-activities"
     DRUG_CLASS = "drug-class-activities"
+    
+    # Indication pipeline activities (separated by latency)
     INDICATION_EXTRACTION = "indication-extraction"
-    INDICATION_VALIDATION = "indication-validation-slow"  # Sonnet 4.5 - high latency
-
-
-# Convenience dict for programmatic access
-TASK_QUEUES = {
-    "workflows": TaskQueues.WORKFLOWS,
-    "drug": TaskQueues.DRUG,
-    "drug_class": TaskQueues.DRUG_CLASS,
-    "indication_extraction": TaskQueues.INDICATION_EXTRACTION,
-    "indication_validation": TaskQueues.INDICATION_VALIDATION,
-}
+    INDICATION_VALIDATION = "indication-validation-slow"
 
 
 # =============================================================================
 # TIMEOUTS
 # =============================================================================
-# Timeout best practices:
-# - start_to_close_timeout: Max time for activity execution
-# - schedule_to_close_timeout: Total time from scheduling to completion
-# - heartbeat_timeout: For long-running activities (not needed for LLM calls)
+# Timeout categories by activity type:
+# - STORAGE: Fast local/GCS operations (<1s typical)
+# - FAST_LLM: GPT-4 calls (5-15s typical)
+# - SLOW_LLM: Sonnet 4.5 calls (30-60s typical)
+# - SEARCH: External search APIs (2-10s typical)
 #
-# LLM calls typically complete in 5-60s, but can occasionally take longer.
 # Set timeouts with buffer for retries and network variability.
 
+
 class Timeouts:
-    """Timeout configurations for different activity types."""
+    """Timeout configurations by activity type."""
     
-    # Fast LLM activities (GPT-4, typically 5-15s)
+    # Storage/checkpoint activities (typically <1s)
+    STORAGE = timedelta(seconds=30)
+    
+    # Fast LLM activities - GPT-4 (typically 5-15s)
     FAST_LLM = timedelta(minutes=2)
     
-    # Slow LLM activities (Sonnet 4.5, typically 30-60s)
+    # Slow LLM activities - Sonnet 4.5 (typically 30-60s)
     SLOW_LLM = timedelta(minutes=5)
     
-    # Search activities (Tavily API, typically 2-10s)
+    # Search activities - Tavily API (typically 2-10s)
     SEARCH = timedelta(seconds=45)
-    
-    # Storage/DB activities (typically <1s)
-    STORAGE = timedelta(seconds=30)
     
     # Workflow execution timeout (entire abstract processing)
     WORKFLOW_EXECUTION = timedelta(minutes=30)
     
-    # Workflow run timeout (single workflow run, before continue-as-new)
+    # Workflow run timeout (single run before continue-as-new)
     WORKFLOW_RUN = timedelta(minutes=30)
-
-
-TIMEOUTS = {
-    "fast_llm": Timeouts.FAST_LLM,
-    "slow_llm": Timeouts.SLOW_LLM,
-    "search": Timeouts.SEARCH,
-    "storage": Timeouts.STORAGE,
-    "workflow_execution": Timeouts.WORKFLOW_EXECUTION,
-    "workflow_run": Timeouts.WORKFLOW_RUN,
-}
 
 
 # =============================================================================
 # RETRY POLICIES
 # =============================================================================
-# Retry best practices:
-# - initial_interval: Start with reasonable backoff (not too aggressive)
-# - backoff_coefficient: 2.0 is standard exponential backoff
-# - maximum_interval: Cap to avoid very long waits
-# - maximum_attempts: Limit to avoid infinite retries on persistent failures
-# - non_retryable_error_types: Skip retries for validation/parsing errors
+# Retry design:
+# - Storage: Quick retries for transient failures
+# - Fast LLM: Moderate retries with backoff
+# - Slow LLM: Fewer retries (expensive)
+# - Search: Quick retries for rate limits
+#
+# Non-retryable errors: validation failures, bad input data
+
 
 class RetryPolicies:
-    """Retry policies for different activity types."""
+    """Retry policies by activity type."""
+    
+    # Storage activities - quick retries for transient failures
+    STORAGE = RetryPolicy(
+        initial_interval=timedelta(seconds=1),
+        backoff_coefficient=2.0,
+        maximum_interval=timedelta(seconds=10),
+        maximum_attempts=3,
+        non_retryable_error_types=[
+            "ValueError",
+            "PermissionError",
+        ],
+    )
     
     # Fast LLM activities - moderate retries
     FAST_LLM = RetryPolicy(
@@ -111,8 +130,8 @@ class RetryPolicies:
         maximum_interval=timedelta(seconds=30),
         maximum_attempts=3,
         non_retryable_error_types=[
-            "ValueError",           # Bad input data
-            "ValidationError",      # Pydantic validation failures
+            "ValueError",
+            "ValidationError",
         ],
     )
     
@@ -121,14 +140,14 @@ class RetryPolicies:
         initial_interval=timedelta(seconds=15),
         backoff_coefficient=2.0,
         maximum_interval=timedelta(minutes=1),
-        maximum_attempts=2,  # Only 1 retry - these are expensive
+        maximum_attempts=2,
         non_retryable_error_types=[
             "ValueError",
             "ValidationError",
         ],
     )
     
-    # Search activities - quick retries for transient failures
+    # Search activities - quick retries for rate limits
     SEARCH = RetryPolicy(
         initial_interval=timedelta(seconds=2),
         backoff_coefficient=2.0,
@@ -138,40 +157,21 @@ class RetryPolicies:
             "ValueError",
         ],
     )
-    
-    # Storage activities - quick retries
-    STORAGE = RetryPolicy(
-        initial_interval=timedelta(seconds=1),
-        backoff_coefficient=2.0,
-        maximum_interval=timedelta(seconds=10),
-        maximum_attempts=3,
-        non_retryable_error_types=[
-            "ValueError",
-            "IntegrityError",  # Database constraint violations
-        ],
-    )
-
-
-RETRY_POLICIES = {
-    "fast_llm": RetryPolicies.FAST_LLM,
-    "slow_llm": RetryPolicies.SLOW_LLM,
-    "search": RetryPolicies.SEARCH,
-    "storage": RetryPolicies.STORAGE,
-}
 
 
 # =============================================================================
 # WORKER SETTINGS
 # =============================================================================
-# Worker configuration best practices:
-# - max_concurrent_workflow_tasks: Workflows are lightweight, can be high
-# - max_concurrent_activities: Tune based on LLM rate limits and latency
-# - Separate workers per queue to avoid resource contention
+# Worker configuration by queue:
+# - Workflows: High concurrency (lightweight coordination)
+# - Checkpoint: Moderate concurrency (fast I/O bound)
+# - LLM queues: Tuned for API rate limits
 #
-# Note: Running multiple queues in one worker is an anti-pattern per Temporal docs
+# Each queue should have its own dedicated worker process.
+
 
 class WorkerSettings:
-    """Worker configuration for each task queue."""
+    """Worker configuration per task queue."""
     
     # Workflow worker - lightweight orchestration
     WORKFLOWS = {
@@ -179,12 +179,17 @@ class WorkerSettings:
         "max_cached_workflows": 50,
     }
     
+    # Checkpoint worker - fast storage operations
+    CHECKPOINT = {
+        "max_concurrent_activities": 50,  # I/O bound, can be high
+    }
+    
     # Drug activities - fast LLM calls
     DRUG = {
         "max_concurrent_activities": 15,
     }
     
-    # Drug class activities - heavier workload (5 steps per abstract)
+    # Drug class activities - multi-step pipeline
     DRUG_CLASS = {
         "max_concurrent_activities": 10,
     }
@@ -194,64 +199,7 @@ class WorkerSettings:
         "max_concurrent_activities": 20,
     }
     
-    # Indication validation - slow (Sonnet 4.5), limit concurrent
+    # Indication validation - slow (Sonnet 4.5)
     INDICATION_VALIDATION = {
         "max_concurrent_activities": 5,
-    }
-
-
-WORKER_SETTINGS = {
-    "workflows": WorkerSettings.WORKFLOWS,
-    "drug": WorkerSettings.DRUG,
-    "drug_class": WorkerSettings.DRUG_CLASS,
-    "indication_extraction": WorkerSettings.INDICATION_EXTRACTION,
-    "indication_validation": WorkerSettings.INDICATION_VALIDATION,
-}
-
-
-# =============================================================================
-# TEMPORAL SERVER CONNECTION
-# =============================================================================
-# Connection settings - override via environment variables in production
-
-import os
-
-TEMPORAL_HOST = os.getenv("TEMPORAL_HOST", "localhost:7233")
-TEMPORAL_NAMESPACE = os.getenv("TEMPORAL_NAMESPACE", "default")
-
-
-# =============================================================================
-# ACTIVITY OPTIONS HELPERS
-# =============================================================================
-# Helper functions to create consistent activity options
-
-def get_fast_llm_activity_options() -> dict:
-    """Get activity options for fast LLM activities (GPT-4)."""
-    return {
-        "start_to_close_timeout": Timeouts.FAST_LLM,
-        "retry_policy": RetryPolicies.FAST_LLM,
-    }
-
-
-def get_slow_llm_activity_options() -> dict:
-    """Get activity options for slow LLM activities (Sonnet 4.5)."""
-    return {
-        "start_to_close_timeout": Timeouts.SLOW_LLM,
-        "retry_policy": RetryPolicies.SLOW_LLM,
-    }
-
-
-def get_search_activity_options() -> dict:
-    """Get activity options for search activities."""
-    return {
-        "start_to_close_timeout": Timeouts.SEARCH,
-        "retry_policy": RetryPolicies.SEARCH,
-    }
-
-
-def get_storage_activity_options() -> dict:
-    """Get activity options for storage/DB activities."""
-    return {
-        "start_to_close_timeout": Timeouts.STORAGE,
-        "retry_policy": RetryPolicies.STORAGE,
     }
