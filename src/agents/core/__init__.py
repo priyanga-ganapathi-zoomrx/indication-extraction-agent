@@ -11,6 +11,7 @@ from src.agents.core.langfuse_config import (
 )
 from src.agents.core.llm_handler import LLMConfig, create_llm
 from src.agents.core.prompts import load_prompt
+from src.agents.core.token_tracking import TokenUsage, TokenUsageCallbackHandler
 from src.agents.core.storage import (
     StorageClient,
     LocalStorageClient,
@@ -31,6 +32,9 @@ __all__ = [
     "LLMConfig",
     "create_llm",
     "load_prompt",
+    # Token tracking
+    "TokenUsage",
+    "TokenUsageCallbackHandler",
     # Storage
     "StorageClient",
     "LocalStorageClient",

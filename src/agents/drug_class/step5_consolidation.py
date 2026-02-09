@@ -30,7 +30,7 @@ from src.agents.drug_class.schemas import (
 
 
 @observe(as_type="generation", name="drug-class-step5-consolidation")
-def consolidate_drug_classes(input_data: ConsolidationInput) -> Step5Output:
+def consolidate_drug_classes(input_data: ConsolidationInput, callbacks: list = None) -> Step5Output:
     """Consolidate explicit classes with drug-derived classes.
     
     Compares explicit drug classes (from Step 4) with drug-specific selections
@@ -41,6 +41,7 @@ def consolidate_drug_classes(input_data: ConsolidationInput) -> Step5Output:
     
     Args:
         input_data: ConsolidationInput with explicit classes and drug selections
+        callbacks: Optional list of LangChain callback handlers (e.g., TokenUsageCallbackHandler)
         
     Returns:
         Step5Output with refined explicit classes
@@ -148,7 +149,12 @@ def consolidate_drug_classes(input_data: ConsolidationInput) -> Step5Output:
         )
         langfuse_handler = CallbackHandler()
     
-    invoke_config = {"callbacks": [langfuse_handler]} if langfuse_handler else {}
+    all_callbacks = []
+    if langfuse_handler:
+        all_callbacks.append(langfuse_handler)
+    if callbacks:
+        all_callbacks.extend(callbacks)
+    invoke_config = {"callbacks": all_callbacks} if all_callbacks else {}
     
     try:
         result: ConsolidationLLMResponse = llm.invoke(messages, config=invoke_config)

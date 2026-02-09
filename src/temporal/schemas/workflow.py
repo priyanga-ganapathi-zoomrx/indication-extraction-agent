@@ -39,16 +39,28 @@ class StepResult:
     """Result of a single step execution.
 
     Returned by _run_with_checkpoint to indicate step outcome.
+    Token usage is automatically extracted from activity output
+    and stored here for status.json updates.
     """
     status: str  # "success" or "failed"
     output: Optional[dict] = None
     from_checkpoint: bool = False
     error: Optional[str] = None
+    token_usage: Optional[dict] = None  # {"input_tokens": N, "output_tokens": N, "total_tokens": N}
+    llm_calls: int = 1
 
-    def to_step_status(self, llm_calls: int = 1, tokens: int = 0) -> StepStatus:
-        """Convert to StepStatus for status.json."""
+    def to_step_status(self) -> StepStatus:
+        """Convert to StepStatus for status.json.
+
+        Reads token usage from self.token_usage automatically.
+        """
         if self.status == "success":
-            return StepStatus.success(llm_calls=llm_calls, tokens=tokens)
+            return StepStatus.success(
+                llm_calls=self.llm_calls,
+                tokens=self.token_usage.get("total_tokens", 0) if self.token_usage else 0,
+                input_tokens=self.token_usage.get("input_tokens", 0) if self.token_usage else 0,
+                output_tokens=self.token_usage.get("output_tokens", 0) if self.token_usage else 0,
+            )
         return StepStatus.failed(self.error or "Unknown error")
 
 

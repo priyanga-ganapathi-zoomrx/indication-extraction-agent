@@ -14,7 +14,7 @@ from src.agents.drug_class.schemas import (
 
 
 @observe(as_type="generation", name="drug-class-step1-regimen")
-def identify_regimen(input_data: RegimenInput) -> list[str]:
+def identify_regimen(input_data: RegimenInput, callbacks: list = None) -> list[str]:
     """Identify if a drug is a regimen and extract its components.
     
     Uses LangChain's with_structured_output for reliable JSON parsing.
@@ -22,6 +22,7 @@ def identify_regimen(input_data: RegimenInput) -> list[str]:
     
     Args:
         input_data: RegimenInput with abstract_id, abstract_title, drug
+        callbacks: Optional list of LangChain callback handlers (e.g., TokenUsageCallbackHandler)
         
     Returns:
         List of component drugs. If not a regimen, returns [drug].
@@ -75,8 +76,13 @@ Drug: {input_data.drug}"""
         # Create LangChain callback handler linked to current trace
         langfuse_handler = CallbackHandler()
     
-    # Invoke LLM with structured output and Langfuse callback
-    invoke_config = {"callbacks": [langfuse_handler]} if langfuse_handler else {}
+    # Invoke LLM with structured output and callbacks (Langfuse + token tracking)
+    all_callbacks = []
+    if langfuse_handler:
+        all_callbacks.append(langfuse_handler)
+    if callbacks:
+        all_callbacks.extend(callbacks)
+    invoke_config = {"callbacks": all_callbacks} if all_callbacks else {}
     
     try:
         result: RegimenLLMResponse = llm.invoke([system_message, user_message], config=invoke_config)

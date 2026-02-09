@@ -93,6 +93,7 @@ class AbstractExtractionWorkflow:
     @workflow.run
     async def run(self, input: AbstractExtractionInput) -> AbstractExtractionOutput:
         """Execute the extraction pipeline for the requested pipelines."""
+        start_time = workflow.now()
         self._output = AbstractExtractionOutput(abstract_id=input.abstract_id)
 
         workflow.logger.info(
@@ -176,6 +177,10 @@ class AbstractExtractionWorkflow:
             workflow.logger.error(f"Workflow error for {input.abstract_id}: {e}")
             self._output.errors.append(str(e))
             self._status.mark_failed(str(e))
+
+        # Aggregate token usage from all steps into pipeline metrics
+        duration = (workflow.now() - start_time).total_seconds()
+        self._status.aggregate_metrics(duration_seconds=duration)
 
         self._current_step = "saving_status"
         await self._save_status(input)
@@ -276,6 +281,20 @@ class AbstractExtractionWorkflow:
         )
         workflow.logger.info(f"Saved {step_name} checkpoint for {input.abstract_id}")
 
+    @staticmethod
+    def _extract_token_metadata(result: dict) -> tuple[dict | None, int]:
+        """Extract and remove token metadata from an activity result dict.
+
+        Activities embed _token_usage and _llm_calls in their output.
+        This strips them before checkpoint save so only business data is persisted.
+
+        Returns:
+            (token_usage dict or None, llm_calls count)
+        """
+        token_usage = result.pop("_token_usage", None)
+        llm_calls = result.pop("_llm_calls", 1)
+        return token_usage, llm_calls
+
     async def _run_with_checkpoint(
         self,
         input: AbstractExtractionInput,
@@ -291,7 +310,8 @@ class AbstractExtractionWorkflow:
 
         1. Load existing checkpoint -> return cached result if found
         2. Execute activity (single input or multiple args)
-        3. Save result as checkpoint
+        3. Extract token metadata before saving checkpoint
+        4. Save clean result as checkpoint
         """
         existing = await self._load_checkpoint(input, step_name)
         if existing is not None:
@@ -323,8 +343,17 @@ class AbstractExtractionWorkflow:
             workflow.logger.error(f"Activity {step_name} failed: {e}")
             return StepResult(status="failed", error=str(e))
 
+        # Extract token metadata before saving clean data to checkpoint
+        token_usage, llm_calls = self._extract_token_metadata(result)
+
         await self._save_checkpoint(input, step_name, result)
-        return StepResult(status="success", output=result, from_checkpoint=False)
+        return StepResult(
+            status="success",
+            output=result,
+            from_checkpoint=False,
+            token_usage=token_usage,
+            llm_calls=llm_calls,
+        )
 
     # =========================================================================
     # DRUG PIPELINE
@@ -447,15 +476,38 @@ class AbstractExtractionWorkflow:
             await self._save_status(input)
             return
 
+        # Extract token metadata before checkpointing clean data
+        s1_usage = steps1_3_data.pop("_step1_token_usage", {})
+        s1_calls = steps1_3_data.pop("_step1_llm_calls", 1)
+        s2_usage = steps1_3_data.pop("_step2_token_usage", {})
+        s2_calls = steps1_3_data.pop("_step2_llm_calls", 1)
+        s3_usage = steps1_3_data.pop("_step3_token_usage", {})
+        s3_calls = steps1_3_data.pop("_step3_llm_calls", 1)
+
         # Only checkpoint on success so retries re-execute
         await self._save_checkpoint(input, "drug_class_steps1_3", steps1_3_data)
 
         self._output.drug_class.drug_results = steps1_3_data.get("drug_results", [])
         all_drug_selections = steps1_3_data.get("drug_selections", [])
         all_extraction_results = steps1_3_data.get("extraction_results", {})
-        self._status.drug_class.step1_regimen = StepStatus.success()
-        self._status.drug_class.step2_extraction = StepStatus.success()
-        self._status.drug_class.step3_selection = StepStatus.success()
+        self._status.drug_class.step1_regimen = StepStatus.success(
+            llm_calls=s1_calls,
+            tokens=s1_usage.get("total_tokens", 0),
+            input_tokens=s1_usage.get("input_tokens", 0),
+            output_tokens=s1_usage.get("output_tokens", 0),
+        )
+        self._status.drug_class.step2_extraction = StepStatus.success(
+            llm_calls=s2_calls,
+            tokens=s2_usage.get("total_tokens", 0),
+            input_tokens=s2_usage.get("input_tokens", 0),
+            output_tokens=s2_usage.get("output_tokens", 0),
+        )
+        self._status.drug_class.step3_selection = StepStatus.success(
+            llm_calls=s3_calls,
+            tokens=s3_usage.get("total_tokens", 0),
+            input_tokens=s3_usage.get("input_tokens", 0),
+            output_tokens=s3_usage.get("output_tokens", 0),
+        )
 
         # ---- Step 4: Explicit extraction from title ----
         step4 = await self._run_with_checkpoint(
@@ -527,10 +579,19 @@ class AbstractExtractionWorkflow:
 
         Returns dict with drug_results, drug_selections, extraction_results.
         Search results are cached separately and loaded during validation.
+        Token metadata is accumulated into step-level StepStatus objects.
         """
         drug_results = []
         all_drug_selections = []
         all_extraction_results = {}
+
+        # Accumulators for token usage across all drugs
+        step1_tokens = {"input_tokens": 0, "output_tokens": 0, "total_tokens": 0}
+        step1_llm_calls = 0
+        step2_tokens = {"input_tokens": 0, "output_tokens": 0, "total_tokens": 0}
+        step2_llm_calls = 0
+        step3_tokens = {"input_tokens": 0, "output_tokens": 0, "total_tokens": 0}
+        step3_llm_calls = 0
 
         for drug in primary_drugs:
             drug_data = {
@@ -542,7 +603,7 @@ class AbstractExtractionWorkflow:
                 workflow.logger.info(
                     f"Step 1 - Regimen for drug '{drug}' in {input.abstract_id}"
                 )
-                components = await workflow.execute_activity(
+                step1_result = await workflow.execute_activity(
                     step1_regimen,
                     RegimenInput(
                         abstract_id=input.abstract_id,
@@ -553,6 +614,12 @@ class AbstractExtractionWorkflow:
                     start_to_close_timeout=Timeouts.FAST_LLM,
                     retry_policy=RetryPolicies.FAST_LLM,
                 )
+                # step1_regimen now returns dict with _result, _token_usage, _llm_calls
+                components = step1_result.get("_result", [drug])
+                s1_usage = step1_result.get("_token_usage", {})
+                step1_llm_calls += step1_result.get("_llm_calls", 1)
+                for k in step1_tokens:
+                    step1_tokens[k] += s1_usage.get(k, 0)
                 drug_data["components"] = components
 
                 # Steps 2-3: For each component
@@ -583,6 +650,12 @@ class AbstractExtractionWorkflow:
                         start_to_close_timeout=Timeouts.FAST_LLM,
                         retry_policy=RetryPolicies.FAST_LLM,
                     )
+                    # Strip token metadata
+                    s2_usage, s2_calls = self._extract_token_metadata(extraction_result)
+                    step2_llm_calls += s2_calls
+                    if s2_usage:
+                        for k in step2_tokens:
+                            step2_tokens[k] += s2_usage.get(k, 0)
 
                     # Fallback to grounded search if Tavily returns NA
                     drug_classes = extraction_result.get("drug_classes", [])
@@ -597,6 +670,12 @@ class AbstractExtractionWorkflow:
                             start_to_close_timeout=Timeouts.FAST_LLM,
                             retry_policy=RetryPolicies.FAST_LLM,
                         )
+                        # Strip token metadata from grounded result too
+                        s2g_usage, s2g_calls = self._extract_token_metadata(extraction_result)
+                        step2_llm_calls += s2g_calls
+                        if s2g_usage:
+                            for k in step2_tokens:
+                                step2_tokens[k] += s2g_usage.get(k, 0)
 
                     drug_data["extractions"][component] = extraction_result
                     all_extraction_results[component] = extraction_result
@@ -615,6 +694,13 @@ class AbstractExtractionWorkflow:
                             start_to_close_timeout=Timeouts.FAST_LLM,
                             retry_policy=RetryPolicies.FAST_LLM,
                         )
+                        # Strip token metadata
+                        s3_usage, s3_calls = self._extract_token_metadata(selection_result)
+                        step3_llm_calls += s3_calls
+                        if s3_usage:
+                            for k in step3_tokens:
+                                step3_tokens[k] += s3_usage.get(k, 0)
+
                         drug_data["selections"][component] = selection_result
                         all_drug_selections.append({
                             "drug_name": component,
@@ -635,6 +721,13 @@ class AbstractExtractionWorkflow:
             "drug_results": drug_results,
             "drug_selections": all_drug_selections,
             "extraction_results": all_extraction_results,
+            # Token usage aggregated per step across all drugs
+            "_step1_token_usage": step1_tokens,
+            "_step1_llm_calls": step1_llm_calls,
+            "_step2_token_usage": step2_tokens,
+            "_step2_llm_calls": step2_llm_calls,
+            "_step3_token_usage": step3_tokens,
+            "_step3_llm_calls": step3_llm_calls,
         }
 
     async def _run_drug_class_validation(
@@ -684,6 +777,8 @@ class AbstractExtractionWorkflow:
                     start_to_close_timeout=Timeouts.FAST_LLM,
                     retry_policy=RetryPolicies.FAST_LLM,
                 )
+                # Strip token metadata before storing
+                self._extract_token_metadata(validation_result)
                 results.append({
                     "drug_name": component, "validation": validation_result,
                 })

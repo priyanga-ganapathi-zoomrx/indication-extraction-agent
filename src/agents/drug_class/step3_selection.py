@@ -30,7 +30,7 @@ from src.agents.drug_class.schemas import (
 
 
 @observe(as_type="generation", name="drug-class-step3-selection")
-def select_drug_class(input_data: SelectionInput) -> DrugSelectionResult:
+def select_drug_class(input_data: SelectionInput, callbacks: list = None) -> DrugSelectionResult:
     """Select the best drug class(es) for a single drug.
     
     This is an atomic function for a SINGLE drug. For processing multiple
@@ -41,6 +41,7 @@ def select_drug_class(input_data: SelectionInput) -> DrugSelectionResult:
     
     Args:
         input_data: SelectionInput with drug and extraction details
+        callbacks: Optional list of LangChain callback handlers (e.g., TokenUsageCallbackHandler)
         
     Returns:
         DrugSelectionResult with selected class(es)
@@ -160,7 +161,12 @@ Understand the extraction rules, analyze the evidence for each extracted class, 
         )
         langfuse_handler = CallbackHandler()
     
-    invoke_config = {"callbacks": [langfuse_handler]} if langfuse_handler else {}
+    all_callbacks = []
+    if langfuse_handler:
+        all_callbacks.append(langfuse_handler)
+    if callbacks:
+        all_callbacks.extend(callbacks)
+    invoke_config = {"callbacks": all_callbacks} if all_callbacks else {}
     
     try:
         result: DrugSelectionResult = llm.invoke(messages, config=invoke_config)

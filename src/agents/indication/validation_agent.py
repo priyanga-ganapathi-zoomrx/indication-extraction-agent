@@ -182,6 +182,7 @@ Please perform all 6 validation checks and return your validation result in the 
         abstract_title: str,
         extraction_result: dict,
         abstract_id: str = None,
+        callbacks: list = None,
     ) -> dict:
         """Invoke agent and return raw result.
         
@@ -190,6 +191,7 @@ Please perform all 6 validation checks and return your validation result in the 
             abstract_title: The research abstract title
             extraction_result: The extraction result dict to validate
             abstract_id: Optional ID for Langfuse tracing
+            callbacks: Optional list of LangChain callback handlers (e.g., TokenUsageCallbackHandler)
             
         Returns:
             Dict with 'messages' list containing conversation
@@ -203,7 +205,16 @@ Please perform all 6 validation checks and return your validation result in the 
             HumanMessage(content=validation_input),
         ]
         
+        config = self._get_langfuse_config(abstract_id)
+        if callbacks:
+            existing = config.get("callbacks", []) if isinstance(config, dict) else (config.callbacks or [])
+            all_callbacks = list(existing) + list(callbacks)
+            if hasattr(config, "callbacks"):
+                config.callbacks = all_callbacks
+            else:
+                config["callbacks"] = all_callbacks
+        
         return self.graph.invoke(
             {"messages": initial_messages},
-            self._get_langfuse_config(abstract_id),
+            config,
         )

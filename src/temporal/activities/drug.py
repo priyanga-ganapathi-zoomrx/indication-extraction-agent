@@ -53,17 +53,23 @@ def extract_drugs(input_data: DrugInput) -> dict:
     """
     # Import here to avoid circular imports and keep activity lightweight
     from src.agents.drug.extraction_agent import extract_drugs as _extract_drugs
+    from src.agents.core.token_tracking import TokenUsageCallbackHandler
     
     # Log activity info for debugging
     activity.logger.info(
         f"Extracting drugs for abstract {input_data.abstract_id}"
     )
     
-    # Call existing agent function
-    result = _extract_drugs(input_data)
+    # Create tracker and call agent with it
+    tracker = TokenUsageCallbackHandler()
+    result = _extract_drugs(input_data, callbacks=[tracker])
     
-    # Serialize Pydantic model to dict for Temporal
-    return result.model_dump()
+    # Serialize Pydantic model to dict with token metadata for workflow
+    return {
+        **result.model_dump(),
+        "_token_usage": tracker.usage.to_dict(),
+        "_llm_calls": tracker.llm_calls,
+    }
 
 
 @activity.defn(name="validate_drugs")
@@ -103,14 +109,20 @@ def validate_drugs(input_data: ValidationInput) -> dict:
     """
     # Import here to avoid circular imports and keep activity lightweight
     from src.agents.drug.validation_agent import validate_drugs as _validate_drugs
+    from src.agents.core.token_tracking import TokenUsageCallbackHandler
     
     # Log activity info for debugging
     activity.logger.info(
         f"Validating drugs for abstract {input_data.abstract_id}"
     )
     
-    # Call existing agent function
-    result = _validate_drugs(input_data)
+    # Create tracker and call agent with it
+    tracker = TokenUsageCallbackHandler()
+    result = _validate_drugs(input_data, callbacks=[tracker])
     
-    # Serialize Pydantic model to dict for Temporal
-    return result.model_dump()
+    # Serialize Pydantic model to dict with token metadata for workflow
+    return {
+        **result.model_dump(),
+        "_token_usage": tracker.usage.to_dict(),
+        "_llm_calls": tracker.llm_calls,
+    }

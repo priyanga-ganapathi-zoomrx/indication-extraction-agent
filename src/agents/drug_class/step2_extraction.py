@@ -81,7 +81,7 @@ def _format_search_results(
 # =============================================================================
 
 @observe(as_type="generation", name="drug-class-step2-tavily")
-def extract_with_tavily(input_data: DrugClassExtractionInput) -> DrugExtractionResult:
+def extract_with_tavily(input_data: DrugClassExtractionInput, callbacks: list = None) -> DrugExtractionResult:
     """Extract drug classes using Tavily search results.
     
     Uses LangChain's with_structured_output for reliable JSON parsing.
@@ -89,6 +89,7 @@ def extract_with_tavily(input_data: DrugClassExtractionInput) -> DrugExtractionR
     
     Args:
         input_data: DrugClassExtractionInput with drug and search results
+        callbacks: Optional list of LangChain callback handlers (e.g., TokenUsageCallbackHandler)
         
     Returns:
         DrugExtractionResult with extracted classes
@@ -178,7 +179,12 @@ def extract_with_tavily(input_data: DrugClassExtractionInput) -> DrugExtractionR
         # Create LangChain callback handler linked to current trace
         langfuse_handler = CallbackHandler()
     
-    invoke_config = {"callbacks": [langfuse_handler]} if langfuse_handler else {}
+    all_callbacks = []
+    if langfuse_handler:
+        all_callbacks.append(langfuse_handler)
+    if callbacks:
+        all_callbacks.extend(callbacks)
+    invoke_config = {"callbacks": all_callbacks} if all_callbacks else {}
     
     try:
         result: DrugClassLLMResponse = llm.invoke(messages, config=invoke_config)
@@ -203,7 +209,7 @@ def extract_with_tavily(input_data: DrugClassExtractionInput) -> DrugExtractionR
 
 
 @observe(as_type="generation", name="drug-class-step2-grounded")
-def extract_with_grounded(input_data: DrugClassExtractionInput) -> DrugExtractionResult:
+def extract_with_grounded(input_data: DrugClassExtractionInput, callbacks: list = None) -> DrugExtractionResult:
     """Extract drug classes using LLM's grounded search (web_search_preview).
     
     Fallback method when Tavily returns no results or NA.
@@ -212,6 +218,7 @@ def extract_with_grounded(input_data: DrugClassExtractionInput) -> DrugExtractio
     
     Args:
         input_data: DrugClassExtractionInput with drug info
+        callbacks: Optional list of LangChain callback handlers (e.g., TokenUsageCallbackHandler)
         
     Returns:
         DrugExtractionResult with extracted classes
@@ -300,7 +307,12 @@ def extract_with_grounded(input_data: DrugClassExtractionInput) -> DrugExtractio
         # Create LangChain callback handler linked to current trace
         langfuse_handler = CallbackHandler()
     
-    invoke_config = {"callbacks": [langfuse_handler]} if langfuse_handler else {}
+    all_callbacks = []
+    if langfuse_handler:
+        all_callbacks.append(langfuse_handler)
+    if callbacks:
+        all_callbacks.extend(callbacks)
+    invoke_config = {"callbacks": all_callbacks} if all_callbacks else {}
     
     try:
         result: GroundedSearchLLMResponse = llm.invoke(messages, config=invoke_config)

@@ -58,10 +58,11 @@ def _parse_json_from_message(content: str, model_class):
     """
     from pydantic import ValidationError
     
-    # Try to extract JSON from markdown code block
-    json_match = re.search(r"```(?:json)?\s*([\s\S]*?)\s*```", content)
-    if json_match:
-        json_str = json_match.group(1)
+    # Try to extract JSON from markdown code blocks (take the last one,
+    # since LLM may echo the input JSON before providing the output JSON)
+    json_matches = re.findall(r"```(?:json)?\s*([\s\S]*?)\s*```", content)
+    if json_matches:
+        json_str = json_matches[-1]
     else:
         # Try to find raw JSON object
         json_match = re.search(r"\{[\s\S]*\}", content)
@@ -171,19 +172,22 @@ def extract_indication(input_data: IndicationInput) -> dict:
         "EGFR-positive non-small cell lung cancer"
     """
     from src.agents.indication.extraction_agent import IndicationAgent
+    from src.agents.core.token_tracking import TokenUsageCallbackHandler
     
     activity.logger.info(
         f"Extracting indication from abstract {input_data.abstract_id}"
     )
     
-    # Create agent instance (avoids state leakage between activities)
+    # Create tracker and agent instance
+    tracker = TokenUsageCallbackHandler()
     agent = IndicationAgent()
     
-    # Invoke agent with input data
+    # Invoke agent with token tracking callback
     raw_result = agent.invoke(
         abstract_title=input_data.abstract_title,
         session_title=input_data.session_title,
         abstract_id=input_data.abstract_id,
+        callbacks=[tracker],
     )
     
     # Parse result from messages
@@ -194,6 +198,10 @@ def extract_indication(input_data: IndicationInput) -> dict:
         f"Extracted indication: '{result.get('generated_indication', '')}' "
         f"from source: {result.get('selected_source', 'unknown')}"
     )
+    
+    # Embed token metadata for workflow
+    result["_token_usage"] = tracker.usage.to_dict()
+    result["_llm_calls"] = tracker.llm_calls
     
     return result
 
@@ -253,20 +261,23 @@ def validate_indication(
         "PASS"
     """
     from src.agents.indication.validation_agent import IndicationValidationAgent
+    from src.agents.core.token_tracking import TokenUsageCallbackHandler
     
     activity.logger.info(
         f"Validating indication extraction for abstract {input_data.abstract_id}"
     )
     
-    # Create agent instance (avoids state leakage between activities)
+    # Create tracker and agent instance
+    tracker = TokenUsageCallbackHandler()
     agent = IndicationValidationAgent()
     
-    # Invoke agent with input data
+    # Invoke agent with token tracking callback
     raw_result = agent.invoke(
         session_title=input_data.session_title,
         abstract_title=input_data.abstract_title,
         extraction_result=extraction_result,
         abstract_id=input_data.abstract_id,
+        callbacks=[tracker],
     )
     
     # Parse result from messages
@@ -277,5 +288,9 @@ def validate_indication(
         f"Validation result for abstract {input_data.abstract_id}: "
         f"{result.get('validation_status', 'UNKNOWN')}"
     )
+    
+    # Embed token metadata for workflow
+    result["_token_usage"] = tracker.usage.to_dict()
+    result["_llm_calls"] = tracker.llm_calls
     
     return result

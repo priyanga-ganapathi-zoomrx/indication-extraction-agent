@@ -21,20 +21,20 @@ Example status.json:
     "output_tokens": 3500
   },
   "drug": {
-    "extraction": {"status": "success", "llm_calls": 1, "tokens": 1550},
-    "validation": {"status": "success", "llm_calls": 1, "tokens": 1500}
+    "extraction": {"status": "success", "llm_calls": 1, "tokens": 1550, "input_tokens": 1200, "output_tokens": 350},
+    "validation": {"status": "success", "llm_calls": 1, "tokens": 1500, "input_tokens": 1100, "output_tokens": 400}
   },
   "drug_class": {
-    "step1_regimen": {"status": "success", "llm_calls": 1, "tokens": 500},
-    "step2_extraction": {"status": "success", "llm_calls": 2, "tokens": 3000},
-    "step3_selection": {"status": "success", "llm_calls": 1, "tokens": 800},
-    "step4_explicit": {"status": "success", "llm_calls": 1, "tokens": 600},
-    "step5_consolidation": {"status": "success", "llm_calls": 1, "tokens": 700},
-    "validation": {"status": "success", "llm_calls": 1, "tokens": 1200}
+    "step1_regimen": {"status": "success", "llm_calls": 1, "tokens": 500, "input_tokens": 400, "output_tokens": 100},
+    "step2_extraction": {"status": "success", "llm_calls": 2, "tokens": 3000, "input_tokens": 2500, "output_tokens": 500},
+    "step3_selection": {"status": "success", "llm_calls": 1, "tokens": 800, "input_tokens": 600, "output_tokens": 200},
+    "step4_explicit": {"status": "success", "llm_calls": 1, "tokens": 600, "input_tokens": 450, "output_tokens": 150},
+    "step5_consolidation": {"status": "success", "llm_calls": 1, "tokens": 700, "input_tokens": 550, "output_tokens": 150},
+    "validation": {"status": "success", "llm_calls": 1, "tokens": 1200, "input_tokens": 900, "output_tokens": 300}
   },
   "indication": {
-    "extraction": {"status": "success", "llm_calls": 1, "tokens": 2000},
-    "validation": {"status": "success", "llm_calls": 1, "tokens": 2500}
+    "extraction": {"status": "success", "llm_calls": 1, "tokens": 2000, "input_tokens": 1500, "output_tokens": 500},
+    "validation": {"status": "success", "llm_calls": 1, "tokens": 2500, "input_tokens": 1800, "output_tokens": 700}
   },
   "errors": []
 }
@@ -55,7 +55,9 @@ class StepStatus:
     """Status for a single step (extraction or validation)."""
     status: str  # "success" or "failed"
     llm_calls: int = 0
-    tokens: int = 0  # Combined input + output tokens
+    tokens: int = 0  # Combined input + output tokens (backward compat)
+    input_tokens: int = 0
+    output_tokens: int = 0
     error: Optional[str] = None
     
     def to_dict(self) -> dict:
@@ -63,6 +65,8 @@ class StepStatus:
             "status": self.status,
             "llm_calls": self.llm_calls,
             "tokens": self.tokens,
+            "input_tokens": self.input_tokens,
+            "output_tokens": self.output_tokens,
         }
         if self.error:
             result["error"] = self.error
@@ -74,13 +78,27 @@ class StepStatus:
             status=data.get("status", "failed"),
             llm_calls=data.get("llm_calls", 0),
             tokens=data.get("tokens", 0),
+            input_tokens=data.get("input_tokens", 0),
+            output_tokens=data.get("output_tokens", 0),
             error=data.get("error"),
         )
     
     @classmethod
-    def success(cls, llm_calls: int = 1, tokens: int = 0) -> "StepStatus":
+    def success(
+        cls,
+        llm_calls: int = 1,
+        tokens: int = 0,
+        input_tokens: int = 0,
+        output_tokens: int = 0,
+    ) -> "StepStatus":
         """Create a successful step status."""
-        return cls(status="success", llm_calls=llm_calls, tokens=tokens)
+        return cls(
+            status="success",
+            llm_calls=llm_calls,
+            tokens=tokens,
+            input_tokens=input_tokens,
+            output_tokens=output_tokens,
+        )
     
     @classmethod
     def failed(cls, error: str) -> "StepStatus":
@@ -331,3 +349,45 @@ class WorkflowStatus:
     def should_run_indication_pipeline(self) -> bool:
         """Check if indication pipeline needs to run."""
         return not self.indication.is_complete()
+    
+    def aggregate_metrics(self, duration_seconds: float = 0.0) -> None:
+        """Aggregate token usage from all steps into pipeline metrics.
+        
+        Sums llm_calls, input_tokens, and output_tokens from every step
+        across all pipelines.
+        
+        Args:
+            duration_seconds: Total workflow duration to record
+        """
+        all_steps: list[Optional[StepStatus]] = [
+            # Drug pipeline
+            self.drug.extraction,
+            self.drug.validation,
+            # Drug class pipeline
+            self.drug_class.step1_regimen,
+            self.drug_class.step2_extraction,
+            self.drug_class.step3_selection,
+            self.drug_class.step4_explicit,
+            self.drug_class.step5_consolidation,
+            self.drug_class.validation,
+            # Indication pipeline
+            self.indication.extraction,
+            self.indication.validation,
+        ]
+        
+        total_llm_calls = 0
+        total_input_tokens = 0
+        total_output_tokens = 0
+        
+        for step in all_steps:
+            if step and step.status == "success":
+                total_llm_calls += step.llm_calls
+                total_input_tokens += step.input_tokens
+                total_output_tokens += step.output_tokens
+        
+        self.metrics = PipelineMetrics(
+            duration_seconds=duration_seconds,
+            llm_calls=total_llm_calls,
+            input_tokens=total_input_tokens,
+            output_tokens=total_output_tokens,
+        )

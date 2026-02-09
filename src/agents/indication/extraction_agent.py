@@ -108,21 +108,31 @@ class IndicationAgent:
             metadata={"langfuse_tags": tags},
         )
     
-    def invoke(self, abstract_title: str, session_title: str = "", abstract_id: str = None) -> dict:
+    def invoke(self, abstract_title: str, session_title: str = "", abstract_id: str = None, callbacks: list = None) -> dict:
         """Invoke agent and return raw result.
         
         Args:
             abstract_title: The abstract title to extract indication from
             session_title: Optional session title (fallback source)
             abstract_id: Optional ID for Langfuse tracing
+            callbacks: Optional list of LangChain callback handlers (e.g., TokenUsageCallbackHandler)
             
         Returns:
             Dict with 'messages' list containing conversation
         """
         prompt = f"Extract indication from:\n\nsession_title: {session_title}\nabstract_title: {abstract_title}"
         
+        config = self._get_langfuse_config(abstract_id)
+        if callbacks:
+            existing = config.get("callbacks", []) if isinstance(config, dict) else (config.callbacks or [])
+            all_callbacks = list(existing) + list(callbacks)
+            if hasattr(config, "callbacks"):
+                config.callbacks = all_callbacks
+            else:
+                config["callbacks"] = all_callbacks
+        
         return self.graph.invoke(
             {"messages": [HumanMessage(content=prompt)]},
-            self._get_langfuse_config(abstract_id),
+            config,
         )
 

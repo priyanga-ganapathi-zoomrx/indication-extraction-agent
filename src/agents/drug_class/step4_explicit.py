@@ -28,7 +28,7 @@ from src.agents.drug_class.schemas import (
 
 
 @observe(as_type="generation", name="drug-class-step4-explicit")
-def extract_explicit_classes(input_data: ExplicitExtractionInput) -> Step4Output:
+def extract_explicit_classes(input_data: ExplicitExtractionInput, callbacks: list = None) -> Step4Output:
     """Extract explicit drug classes from abstract title.
     
     This is an atomic function for extracting drug classes directly mentioned
@@ -39,6 +39,7 @@ def extract_explicit_classes(input_data: ExplicitExtractionInput) -> Step4Output
     
     Args:
         input_data: ExplicitExtractionInput with abstract_id and abstract_title
+        callbacks: Optional list of LangChain callback handlers (e.g., TokenUsageCallbackHandler)
         
     Returns:
         Step4Output with extracted explicit drug classes
@@ -116,7 +117,12 @@ def extract_explicit_classes(input_data: ExplicitExtractionInput) -> Step4Output
         )
         langfuse_handler = CallbackHandler()
     
-    invoke_config = {"callbacks": [langfuse_handler]} if langfuse_handler else {}
+    all_callbacks = []
+    if langfuse_handler:
+        all_callbacks.append(langfuse_handler)
+    if callbacks:
+        all_callbacks.extend(callbacks)
+    invoke_config = {"callbacks": all_callbacks} if all_callbacks else {}
     
     try:
         result: ExplicitLLMResponse = llm.invoke(messages, config=invoke_config)
