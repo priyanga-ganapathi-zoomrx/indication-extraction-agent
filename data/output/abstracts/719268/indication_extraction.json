@@ -1,0 +1,49 @@
+{
+  "components_identified": [
+    {
+      "component": "first-line",
+      "normalized_form": "First-Line",
+      "rule_applied": "Generic Title Case rule.",
+      "type": "Treatment Line"
+    },
+    {
+      "component": "metastatic castration-resistant prostate cancer",
+      "normalized_form": "Metastatic Castration-Resistant Prostate Cancer",
+      "rule_applied": "Generic Title Case and Singular Form rules.",
+      "type": "Disease"
+    },
+    {
+      "component": "with DNA repair defects",
+      "normalized_form": "With DNA Repair Defects",
+      "rule_applied": "Generic Title Case rule.",
+      "type": "Genetic Status"
+    }
+  ],
+  "generated_indication": "First-Line Metastatic Castration-Resistant Prostate Cancer With DNA Repair Defects",
+  "reasoning": "Step 1: The abstract title contains a specific disease, 'metastatic castration-resistant prostate cancer', so it was chosen as the sole source based on the single-source principle.\nStep 2: I identified the core components in the title: the disease ('prostate cancer'), metastasis status ('metastatic'), treatment resistance ('castration-resistant'), line of treatment ('first-line'), and a genetic characteristic ('with DNA repair defects').\nStep 3: I attempted to retrieve specific rules for 'Occurrence', 'Treatment Set-up', and 'Patient Sub-Group' to ensure correct formatting, but the tool calls failed. Therefore, I proceeded using the generic rules.\nStep 4: I applied the generic rules. The disease was converted to Title Case and singular form ('Prostate Cancer'). The qualifiers 'metastatic', 'castration-resistant', and 'first-line' were also converted to Title Case and prepended to the disease name as they are standard clinical descriptors. The genetic characteristic 'with DNA repair defects' was retained as it describes a key patient subgroup and formatted in Title Case.\nStep 5: The final indication was constructed by combining these components, resulting in a clinically precise description of the patient population.",
+  "rules_retrieved": [
+    {
+      "category": "Occurrence",
+      "reason": "To get formatting rules for 'metastatic' and 'castration-resistant'.",
+      "subcategories": [
+        "Metastasis-Related Terms",
+        "Resistance"
+      ]
+    },
+    {
+      "category": "Treatment Set-up",
+      "reason": "To get formatting rules for 'first-line'.",
+      "subcategories": [
+        "Line of treatment"
+      ]
+    },
+    {
+      "category": "Patient Sub-Group",
+      "reason": "To get formatting rules for 'DNA repair defects'.",
+      "subcategories": [
+        "Genetic Status"
+      ]
+    }
+  ],
+  "selected_source": "abstract_title"
+}

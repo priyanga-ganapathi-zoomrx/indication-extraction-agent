@@ -1,0 +1,59 @@
+{
+  "errors": [],
+  "results": [
+    {
+      "drug_name": "Abiraterone",
+      "validation": {
+        "checks_performed": {
+          "hallucination_detection": {
+            "note": "The class 'CYP17 Inhibitor' is directly supported by verbatim text in Search Results 1 and 2.",
+            "passed": true
+          },
+          "omission_detection": {
+            "note": "Abstract title does not contain a drug class. Scanning of other sources identified the specific MoA; generic terms like 'Hormonal Therapy' or 'Androgen Deprivation' are not explicitly stated as drug classes in the text.",
+            "passed": true
+          },
+          "rule_compliance": {
+            "note": "Rules 11, 13, and 3 were correctly applied to format the target and modality.",
+            "passed": true
+          }
+        },
+        "issues_found": [],
+        "llm_calls": 1,
+        "missed_drug_classes": [],
+        "raw_llm_response": null,
+        "validation_confidence": 0.98,
+        "validation_reasoning": "1. Scanned Abstract Title: No drug class found, correctly moved to Stage 2 of the workflow.\n2. Verified evidence for 'CYP17 Inhibitor' in Search Results 1 and 2 ('ZYTIGA is a CYP17 inhibitor').\n3. Confirmed Rule 11 (Include biological target) and Rule 3 (Title Case) were correctly applied to produce 'CYP17 Inhibitor'.\n4. Checked for omissions: Search results mention treatment of prostate cancer and combination with prednisone, but 'CYP17 Inhibitor' is the only explicitly stated drug class per Rule 34 (broad therapy exclusion) and Rule 35.\n5. Final status: PASS.",
+        "validation_status": "PASS",
+        "validation_success": true
+      }
+    },
+    {
+      "drug_name": "Olaparib",
+      "validation": {
+        "checks_performed": {
+          "hallucination_detection": {
+            "note": "All extracted details are grounded in the PubChem and FDA search results provided.",
+            "passed": true
+          },
+          "omission_detection": {
+            "note": "The title was correctly identified as containing no class, and the primary MoA (PARP Inhibitor) was extracted. Generic terms like 'antineoplastic agent' were correctly ignored per Rule 34.",
+            "passed": true
+          },
+          "rule_compliance": {
+            "note": "Rule 11 and 13 were correctly applied to format the target and modality into 'PARP Inhibitor'.",
+            "passed": true
+          }
+        },
+        "issues_found": [],
+        "llm_calls": 1,
+        "missed_drug_classes": [],
+        "raw_llm_response": null,
+        "validation_confidence": 0.98,
+        "validation_reasoning": "1. Reviewed Abstract Title: It mentions 'abiraterone, olaparib, or abiraterone + olaparib' but provides no drug class for olaparib, correctly triggering Stage 2 extraction workflow.\n2. Hallucination Check: Verified 'poly (ADP-ribose) polymerase (PARP) inhibitor' exists in Search Results 1, 2, and 3. The extracted text is verbatim from sources.\n3. Rule Compliance: The extractor correctly applied Rule 11 (Biological target PARP) and Rule 13 (Inhibitor term) to normalize the class to 'PARP Inhibitor'. Rule 3 (Title Case) and Rule 5 (Singular form) were also followed.\n4. Omission Check: Search results mentioned 'antineoplastic agent' and 'apoptosis inducer'. Per Rule 34, 'antineoplastic agent' is a generic label to be excluded. 'PARP Inhibitor' is the specific and correct MoA.\n5. Status: PASS.",
+        "validation_status": "PASS",
+        "validation_success": true
+      }
+    }
+  ]
+}

@@ -1,0 +1,28 @@
+{
+  "explicit_drug_classes": [
+    "NA"
+  ],
+  "extraction_details": [
+    {
+      "class_type": "Drug Name",
+      "evidence": "Enzalutamide with or without radium-223",
+      "extracted_text": "Enzalutamide",
+      "normalized_form": "NA",
+      "rules_applied": [
+        "Rule 36: Do NOT invent or infer a drug class from a drug name"
+      ],
+      "source": "abstract_title"
+    },
+    {
+      "class_type": "Drug Name",
+      "evidence": "Enzalutamide with or without radium-223",
+      "extracted_text": "radium-223",
+      "normalized_form": "NA",
+      "rules_applied": [
+        "Rule 36: Do NOT invent or infer a drug class from a drug name"
+      ],
+      "source": "abstract_title"
+    }
+  ],
+  "reasoning": "In the provided abstract title, no explicit drug classes are mentioned. 'Enzalutamide' and 'radium-223' are specific drug names; however, their respective drug classes (such as androgen receptor signaling inhibitors or alpha-emitting radiopharmaceuticals) are not explicitly stated. Per the extraction rules, drug classes must be verbatim in the title and not inferred from drug names. No other terms in the title qualify as drug classes."
+}

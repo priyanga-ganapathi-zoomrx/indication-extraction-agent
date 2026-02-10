@@ -1,0 +1,192 @@
+{
+  "drug_results": [
+    {
+      "components": [
+        "Abiraterone"
+      ],
+      "drug": "Abiraterone",
+      "extractions": {
+        "Abiraterone": {
+          "confidence_score": 1.0,
+          "drug_classes": [
+            "CYP17 Inhibitor"
+          ],
+          "drug_name": "Abiraterone",
+          "extraction_details": [
+            {
+              "class_type": "MoA",
+              "evidence": "ZYTIGA is a CYP17 inhibitor indicated in combination with prednisone",
+              "extracted_text": "CYP17 inhibitor",
+              "normalized_form": "CYP17 Inhibitor",
+              "rules_applied": [
+                "Rule 11: Include biological target (CYP17)",
+                "Rule 13: Add Inhibitor as drug class",
+                "Rule 3: Apply Title Case"
+              ],
+              "source": "https://dailymed.nlm.nih.gov/dailymed/lookup.cfm?setid=4e338e89-3cf2-48eb-b6e2-a06c608c6513"
+            }
+          ],
+          "extraction_method": "tavily",
+          "reasoning": "The abstract title mentions the drug but does not describe its class. Search results (Results 1 and 2) explicitly state that Abiraterone is a 'CYP17 inhibitor'. This is a specific enzymatic target and mechanism. Rule 11 requires including the biological target (CYP17) with the inhibitor modality. Rule 13 supports adding 'Inhibitor'. Rule 3 requires Title Case. The extracted class is 'CYP17 Inhibitor'.",
+          "selected_sources": [
+            "https://dailymed.nlm.nih.gov/dailymed/lookup.cfm?setid=4e338e89-3cf2-48eb-b6e2-a06c608c6513",
+            "https://dailymed.nlm.nih.gov/dailymed/drugInfo.cfm?setid=b36bff33-595e-4827-9a73-85c6954c314c"
+          ],
+          "success": true
+        }
+      },
+      "selections": {
+        "Abiraterone": {
+          "drug_name": "Abiraterone",
+          "reasoning": "Only one unique class was extracted. No selection needed.",
+          "selected_drug_classes": [
+            "CYP17 Inhibitor"
+          ]
+        }
+      }
+    },
+    {
+      "components": [
+        "Olaparib"
+      ],
+      "drug": "Olaparib",
+      "extractions": {
+        "Olaparib": {
+          "confidence_score": 1.0,
+          "drug_classes": [
+            "PARP Inhibitor"
+          ],
+          "drug_name": "Olaparib",
+          "extraction_details": [
+            {
+              "class_type": "MoA",
+              "evidence": "Olaparib is a selective and potent inhibitor of poly (ADP-ribose) polymerase (PARP) enzymes",
+              "extracted_text": "inhibitor of poly (ADP-ribose) polymerase (PARP) enzymes",
+              "normalized_form": "PARP Inhibitor",
+              "rules_applied": [
+                "Rule 11: Include biological target (PARP)",
+                "Rule 13: Add Inhibitor as a drug class",
+                "Rule 3: Maintain Title Case"
+              ],
+              "source": "https://pubchem.ncbi.nlm.nih.gov/compound/Olaparib"
+            },
+            {
+              "class_type": "MoA",
+              "evidence": "Lynparza is a poly (ADP-ribose) polymerase (PARP) inhibitor",
+              "extracted_text": "poly (ADP-ribose) polymerase (PARP) inhibitor",
+              "normalized_form": "PARP Inhibitor",
+              "rules_applied": [
+                "Rule 11: Include biological target (PARP)",
+                "Rule 13: Add Inhibitor as a drug class",
+                "Rule 3: Maintain Title Case"
+              ],
+              "source": "https://www.accessdata.fda.gov/drugsatfda_docs/label/2018/208558s001lbl.pdf"
+            }
+          ],
+          "extraction_method": "tavily",
+          "reasoning": "The abstract title mentions Olaparib but does not explicitly state its drug class. Therefore, the search results were examined. The search results consistently describe Olaparib as a poly (ADP-ribose) polymerase (PARP) inhibitor. Specifically, Result 1 from PubChem states it is a 'selective and potent inhibitor of poly (ADP-ribose) polymerase (PARP) enzymes' and 'DrugBank: Olaparib is a Poly(ADP-Ribose) Polymerase Inhibitor'. Result 2 and Result 3 (FDA labels) also define it as a 'poly (ADP-ribose) polymerase (PARP) inhibitor'. Following Rule 11 and Rule 13, this is extracted as 'PARP Inhibitor'. Rule 13 states to add 'Inhibitor' when blockade/inhibitor terms are used. Rule 11 requires including the biological target (PARP).",
+          "selected_sources": [
+            "https://pubchem.ncbi.nlm.nih.gov/compound/Olaparib",
+            "https://www.accessdata.fda.gov/drugsatfda_docs/label/2018/208558s001lbl.pdf",
+            "https://www.accessdata.fda.gov/drugsatfda_docs/nda/2017/206162Orig1s007.pdf"
+          ],
+          "success": true
+        }
+      },
+      "selections": {
+        "Olaparib": {
+          "drug_name": "Olaparib",
+          "reasoning": "Only one unique class was extracted. No selection needed.",
+          "selected_drug_classes": [
+            "PARP Inhibitor"
+          ]
+        }
+      }
+    }
+  ],
+  "drug_selections": [
+    {
+      "drug_name": "Abiraterone",
+      "selected_classes": [
+        "CYP17 Inhibitor"
+      ]
+    },
+    {
+      "drug_name": "Olaparib",
+      "selected_classes": [
+        "PARP Inhibitor"
+      ]
+    }
+  ],
+  "extraction_results": {
+    "Abiraterone": {
+      "confidence_score": 1.0,
+      "drug_classes": [
+        "CYP17 Inhibitor"
+      ],
+      "drug_name": "Abiraterone",
+      "extraction_details": [
+        {
+          "class_type": "MoA",
+          "evidence": "ZYTIGA is a CYP17 inhibitor indicated in combination with prednisone",
+          "extracted_text": "CYP17 inhibitor",
+          "normalized_form": "CYP17 Inhibitor",
+          "rules_applied": [
+            "Rule 11: Include biological target (CYP17)",
+            "Rule 13: Add Inhibitor as drug class",
+            "Rule 3: Apply Title Case"
+          ],
+          "source": "https://dailymed.nlm.nih.gov/dailymed/lookup.cfm?setid=4e338e89-3cf2-48eb-b6e2-a06c608c6513"
+        }
+      ],
+      "extraction_method": "tavily",
+      "reasoning": "The abstract title mentions the drug but does not describe its class. Search results (Results 1 and 2) explicitly state that Abiraterone is a 'CYP17 inhibitor'. This is a specific enzymatic target and mechanism. Rule 11 requires including the biological target (CYP17) with the inhibitor modality. Rule 13 supports adding 'Inhibitor'. Rule 3 requires Title Case. The extracted class is 'CYP17 Inhibitor'.",
+      "selected_sources": [
+        "https://dailymed.nlm.nih.gov/dailymed/lookup.cfm?setid=4e338e89-3cf2-48eb-b6e2-a06c608c6513",
+        "https://dailymed.nlm.nih.gov/dailymed/drugInfo.cfm?setid=b36bff33-595e-4827-9a73-85c6954c314c"
+      ],
+      "success": true
+    },
+    "Olaparib": {
+      "confidence_score": 1.0,
+      "drug_classes": [
+        "PARP Inhibitor"
+      ],
+      "drug_name": "Olaparib",
+      "extraction_details": [
+        {
+          "class_type": "MoA",
+          "evidence": "Olaparib is a selective and potent inhibitor of poly (ADP-ribose) polymerase (PARP) enzymes",
+          "extracted_text": "inhibitor of poly (ADP-ribose) polymerase (PARP) enzymes",
+          "normalized_form": "PARP Inhibitor",
+          "rules_applied": [
+            "Rule 11: Include biological target (PARP)",
+            "Rule 13: Add Inhibitor as a drug class",
+            "Rule 3: Maintain Title Case"
+          ],
+          "source": "https://pubchem.ncbi.nlm.nih.gov/compound/Olaparib"
+        },
+        {
+          "class_type": "MoA",
+          "evidence": "Lynparza is a poly (ADP-ribose) polymerase (PARP) inhibitor",
+          "extracted_text": "poly (ADP-ribose) polymerase (PARP) inhibitor",
+          "normalized_form": "PARP Inhibitor",
+          "rules_applied": [
+            "Rule 11: Include biological target (PARP)",
+            "Rule 13: Add Inhibitor as a drug class",
+            "Rule 3: Maintain Title Case"
+          ],
+          "source": "https://www.accessdata.fda.gov/drugsatfda_docs/label/2018/208558s001lbl.pdf"
+        }
+      ],
+      "extraction_method": "tavily",
+      "reasoning": "The abstract title mentions Olaparib but does not explicitly state its drug class. Therefore, the search results were examined. The search results consistently describe Olaparib as a poly (ADP-ribose) polymerase (PARP) inhibitor. Specifically, Result 1 from PubChem states it is a 'selective and potent inhibitor of poly (ADP-ribose) polymerase (PARP) enzymes' and 'DrugBank: Olaparib is a Poly(ADP-Ribose) Polymerase Inhibitor'. Result 2 and Result 3 (FDA labels) also define it as a 'poly (ADP-ribose) polymerase (PARP) inhibitor'. Following Rule 11 and Rule 13, this is extracted as 'PARP Inhibitor'. Rule 13 states to add 'Inhibitor' when blockade/inhibitor terms are used. Rule 11 requires including the biological target (PARP).",
+      "selected_sources": [
+        "https://pubchem.ncbi.nlm.nih.gov/compound/Olaparib",
+        "https://www.accessdata.fda.gov/drugsatfda_docs/label/2018/208558s001lbl.pdf",
+        "https://www.accessdata.fda.gov/drugsatfda_docs/nda/2017/206162Orig1s007.pdf"
+      ],
+      "success": true
+    }
+  }
+}

@@ -1,0 +1,39 @@
+{
+  "checks_performed": {
+    "exclusion_compliance": {
+      "note": "No terms that should be excluded (e.g., procedural, sociodemographic) were present in the final indication.",
+      "passed": true
+    },
+    "formatting_compliance": {
+      "note": "The indication failed on Title Case rules due to the incorrect capitalization of the preposition 'With'.",
+      "passed": false
+    },
+    "hallucination_check": {
+      "note": "All components ('first-line', 'metastatic castration-resistant prostate cancer', 'with DNA repair defects') are present in the source abstract title.",
+      "passed": true
+    },
+    "omission_check": {
+      "note": "All relevant indication terms from the source title were captured in the final indication.",
+      "passed": true
+    },
+    "rule_application": {
+      "note": "The generic casing rule for prepositions was not applied correctly. The word 'With' should have been lowercase.",
+      "passed": false
+    },
+    "source_selection": {
+      "note": "The abstract_title contains 'prostate cancer' and was correctly selected as the source, following the single-source principle.",
+      "passed": true
+    }
+  },
+  "issues_found": [
+    {
+      "check_type": "formatting",
+      "component": "With DNA Repair Defects",
+      "description": "The preposition 'With' was incorrectly capitalized. According to the generic casing rules, short prepositions should be lowercase unless they begin the indication.",
+      "evidence": "The generated indication is '...Prostate Cancer With DNA Repair Defects', but the rule states prepositions like 'with' should be lowercase. The correct format is '...Prostate Cancer with DNA Repair Defects'.",
+      "severity": "low"
+    }
+  ],
+  "validation_reasoning": "The validation failed due to a low-severity formatting error. The extractor correctly identified the source title and all relevant components without any hallucinations or omissions. However, it violated the generic formatting rules by capitalizing the preposition 'With' in the phrase 'With DNA Repair Defects'. According to the reference rules, short prepositions should be lowercase. The correct indication should have been 'First-Line Metastatic Castration-Resistant Prostate Cancer with DNA Repair Defects'. All other validation checks passed.",
+  "validation_status": "FAIL"
+}

@@ -1,0 +1,89 @@
+{
+  "abstract_id": "719267",
+  "abstract_title": "Final overall survival results from the EORTC 1333/PEACE-3 trial: Enzalutamide with or without radium-223 in metastatic castration-resistant prostate cancer.",
+  "drug": {
+    "extraction": {
+      "input_tokens": 4471,
+      "llm_calls": 1,
+      "output_tokens": 729,
+      "status": "success",
+      "tokens": 5200
+    },
+    "validation": {
+      "input_tokens": 9298,
+      "llm_calls": 1,
+      "output_tokens": 635,
+      "status": "success",
+      "tokens": 9933
+    }
+  },
+  "drug_class": {
+    "step1_regimen": {
+      "input_tokens": 713,
+      "llm_calls": 1,
+      "output_tokens": 129,
+      "status": "success",
+      "tokens": 842
+    },
+    "step2_extraction": {
+      "input_tokens": 8716,
+      "llm_calls": 1,
+      "output_tokens": 1060,
+      "status": "success",
+      "tokens": 9776
+    },
+    "step3_selection": {
+      "input_tokens": 0,
+      "llm_calls": 0,
+      "output_tokens": 0,
+      "status": "success",
+      "tokens": 0
+    },
+    "step4_explicit": {
+      "input_tokens": 6778,
+      "llm_calls": 1,
+      "output_tokens": 354,
+      "status": "success",
+      "tokens": 7132
+    },
+    "step5_consolidation": {
+      "input_tokens": 0,
+      "llm_calls": 1,
+      "output_tokens": 0,
+      "status": "success",
+      "tokens": 0
+    },
+    "validation": {
+      "input_tokens": 0,
+      "llm_calls": 1,
+      "output_tokens": 0,
+      "status": "success",
+      "tokens": 0
+    }
+  },
+  "errors": [],
+  "indication": {
+    "extraction": {
+      "input_tokens": 12665,
+      "llm_calls": 2,
+      "output_tokens": 2054,
+      "status": "success",
+      "tokens": 14719
+    },
+    "validation": {
+      "input_tokens": 23955,
+      "llm_calls": 2,
+      "output_tokens": 1674,
+      "status": "success",
+      "tokens": 25629
+    }
+  },
+  "last_updated": "2026-02-09T13:07:32.478146Z",
+  "metrics": {
+    "duration_seconds": 85.18,
+    "input_tokens": 66596,
+    "llm_calls": 11,
+    "output_tokens": 6635
+  },
+  "status": "success"
+}

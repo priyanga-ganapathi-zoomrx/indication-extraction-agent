@@ -1,0 +1,44 @@
+{
+  "checks_performed": {
+    "hallucination_detection": {
+      "note": "Both Enzalutamide and Radium-223 are confirmed therapeutic agents for prostate cancer.",
+      "passed": true
+    },
+    "misclassification_detection": {
+      "note": "Enzalutamide correctly classified as Primary and radium-223 as Secondary based on Rule 2.",
+      "passed": true
+    },
+    "omission_detection": {
+      "note": "No other therapeutic drugs found; PEACE-3 is correctly identified as a trial name and excluded.",
+      "passed": true
+    },
+    "rule_compliance": {
+      "note": "Rule 2 correctly applied for 'with or without' keyword. Casing and formatting are correct.",
+      "passed": true
+    }
+  },
+  "grounded_search_performed": true,
+  "issues_found": [],
+  "missed_drugs": [],
+  "search_results": [
+    {
+      "confidence": "high",
+      "drug_queried": "Enzalutamide",
+      "evidence": "Enzalutamide is a drug used to treat prostate cancer that has spread to other parts of the body.",
+      "is_therapeutic_drug": true,
+      "source_title": "Enzalutamide - NCI",
+      "source_url": "https://www.cancer.gov/about-cancer/treatment/drugs/enzalutamide"
+    },
+    {
+      "confidence": "high",
+      "drug_queried": "radium-223",
+      "evidence": "Radium 223 dichloride is a radioactive drug used to treat prostate cancer that has spread to the bones.",
+      "is_therapeutic_drug": true,
+      "source_title": "Radium 223 Dichloride - NCI",
+      "source_url": "https://www.cancer.gov/about-cancer/treatment/drugs/radium223dichloride"
+    }
+  ],
+  "validation_confidence": 0.98,
+  "validation_reasoning": "1. Verified Enzalutamide and radium-223 are valid therapeutic drugs via grounded search.\n2. Identified the classification keyword 'with or without' in the title.\n3. Applied Rule 2: 'Drug A with or without Drug B' designates Drug A (Enzalutamide) as Primary and Drug B (radium-223) as Secondary.\n4. Confirmed no comparator arms were mentioned explicitly using 'vs' or 'compared with'.\n5. Verified exclusion rules: PEACE-3 is a trial reference and correctly omitted.\n6. Conclusion: The extraction is fully compliant with all rules.",
+  "validation_status": "PASS"
+}

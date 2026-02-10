@@ -1,0 +1,32 @@
+{
+  "errors": [],
+  "results": [
+    {
+      "drug_name": "Enzalutamide",
+      "validation": {
+        "checks_performed": {
+          "hallucination_detection": {
+            "note": "Extracted class 'Androgen Receptor Inhibitor' is directly supported by verbatim text in all three search results.",
+            "passed": true
+          },
+          "omission_detection": {
+            "note": "No other valid drug classes were explicitly stated for the primary drug in the provided sources. Title does not contain a drug class.",
+            "passed": true
+          },
+          "rule_compliance": {
+            "note": "Applied Rule 3 (Title Case), Rule 5 (Singular), and Rule 11 (Biological Target) correctly.",
+            "passed": true
+          }
+        },
+        "issues_found": [],
+        "llm_calls": 1,
+        "missed_drug_classes": [],
+        "raw_llm_response": null,
+        "validation_confidence": 0.98,
+        "validation_reasoning": "1. Scanned Abstract Title: Mentions Enzalutamide but no drug class, so workflow correctly proceeded to Stage 2.\n2. Hallucination Check: The phrase 'androgen receptor inhibitor' appears exactly in all three FDA label search results. No hallucination.\n3. Omission Check: The abstract title mentions 'radium-223' but only as a co-treatment, not as a class for the primary drug (Rule 30). The abstract text was not provided. Search results do not mention 'Hormonal Therapy' or other classes for Enzalutamide specifically.\n4. Rule Compliance: The extraction follows Title Case (Rule 3) and correctly identifies the MoA including the target (Rule 11). No formatting or transformation rules were violated.\n5. Conclusion: All checks passed. The extraction is accurate based on the provided sources and rules.",
+        "validation_status": "PASS",
+        "validation_success": true
+      }
+    }
+  ]
+}

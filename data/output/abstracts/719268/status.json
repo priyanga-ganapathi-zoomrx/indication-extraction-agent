@@ -1,0 +1,89 @@
+{
+  "abstract_id": "719268",
+  "abstract_title": "Overall survival from the phase 2 trial of abiraterone, olaparib, or abiraterone + olaparib in first-line metastatic castration-resistant prostate cancer (mCRPC) with DNA repair defects (BRCAAway).",
+  "drug": {
+    "extraction": {
+      "input_tokens": 4481,
+      "llm_calls": 1,
+      "output_tokens": 975,
+      "status": "success",
+      "tokens": 5456
+    },
+    "validation": {
+      "input_tokens": 9325,
+      "llm_calls": 1,
+      "output_tokens": 666,
+      "status": "success",
+      "tokens": 9991
+    }
+  },
+  "drug_class": {
+    "step1_regimen": {
+      "input_tokens": 1445,
+      "llm_calls": 2,
+      "output_tokens": 287,
+      "status": "success",
+      "tokens": 1732
+    },
+    "step2_extraction": {
+      "input_tokens": 17908,
+      "llm_calls": 2,
+      "output_tokens": 1450,
+      "status": "success",
+      "tokens": 19358
+    },
+    "step3_selection": {
+      "input_tokens": 0,
+      "llm_calls": 0,
+      "output_tokens": 0,
+      "status": "success",
+      "tokens": 0
+    },
+    "step4_explicit": {
+      "input_tokens": 6788,
+      "llm_calls": 1,
+      "output_tokens": 283,
+      "status": "success",
+      "tokens": 7071
+    },
+    "step5_consolidation": {
+      "input_tokens": 0,
+      "llm_calls": 1,
+      "output_tokens": 0,
+      "status": "success",
+      "tokens": 0
+    },
+    "validation": {
+      "input_tokens": 0,
+      "llm_calls": 1,
+      "output_tokens": 0,
+      "status": "success",
+      "tokens": 0
+    }
+  },
+  "errors": [],
+  "indication": {
+    "extraction": {
+      "input_tokens": 12745,
+      "llm_calls": 2,
+      "output_tokens": 2523,
+      "status": "success",
+      "tokens": 15268
+    },
+    "validation": {
+      "input_tokens": 12033,
+      "llm_calls": 1,
+      "output_tokens": 2661,
+      "status": "success",
+      "tokens": 14694
+    }
+  },
+  "last_updated": "2026-02-09T13:08:07.473217Z",
+  "metrics": {
+    "duration_seconds": 120.16,
+    "input_tokens": 64725,
+    "llm_calls": 12,
+    "output_tokens": 8845
+  },
+  "status": "success"
+}
