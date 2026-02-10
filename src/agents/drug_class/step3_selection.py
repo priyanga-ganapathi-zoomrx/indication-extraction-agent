@@ -6,7 +6,7 @@ unless the drug has multiple biological targets.
 
 This module exports a SINGLE-DRUG function. Loop/checkpointing is in pipeline.py.
 Uses with_structured_output for reliable JSON parsing.
-Includes timeout (120s) and retry (1 retry) handling.
+Per-request timeout is 120s. Retries are handled by Temporal at the activity level.
 """
 
 import json
@@ -14,7 +14,6 @@ import json
 from langfuse import observe, get_client
 from langfuse.langchain import CallbackHandler
 from langchain_core.messages import HumanMessage, SystemMessage
-from tenacity import retry, stop_after_attempt, retry_if_exception_type, wait_fixed
 
 from src.agents.core import settings, create_llm, LLMConfig
 from src.agents.core.langfuse_config import is_langfuse_enabled
@@ -30,29 +29,25 @@ from src.agents.drug_class.schemas import (
 )
 
 
-@retry(
-    stop=stop_after_attempt(2),  # 1 initial + 1 retry
-    wait=wait_fixed(1),  # 1 second between retries
-    retry=retry_if_exception_type((TimeoutError, ConnectionError, Exception)),
-    reraise=True,
-)
 @observe(as_type="generation", name="drug-class-step3-selection")
-def select_drug_class(input_data: SelectionInput) -> DrugSelectionResult:
+def select_drug_class(input_data: SelectionInput, callbacks: list = None) -> DrugSelectionResult:
     """Select the best drug class(es) for a single drug.
     
     This is an atomic function for a SINGLE drug. For processing multiple
     drugs with checkpointing, use the pipeline orchestrator.
     
-    Uses with_structured_output for reliable parsing.
+    Uses LangChain's with_structured_output for reliable JSON parsing.
+    Per-request timeout is 120s. Retries are handled by Temporal at the activity level.
     
     Args:
         input_data: SelectionInput with drug and extraction details
+        callbacks: Optional list of LangChain callback handlers (e.g., TokenUsageCallbackHandler)
         
     Returns:
         DrugSelectionResult with selected class(es)
         
     Raises:
-        DrugClassExtractionError: If selection fails
+        DrugClassExtractionError: If selection fails (triggers Temporal retry)
     """
     # Handle edge case: no classes to select from
     if not input_data.extraction_details:
@@ -63,10 +58,16 @@ def select_drug_class(input_data: SelectionInput) -> DrugSelectionResult:
         )
     
     # Handle edge case: only one unique class - no LLM call needed
+    # Support both Pydantic objects (direct calls) and dicts (Temporal pipeline)
+    def _get(detail, field):
+        if isinstance(detail, dict):
+            return detail.get(field, "")
+        return getattr(detail, field, "")
+
     unique_classes = list(set(
-        detail.normalized_form or detail.extracted_text
+        _get(detail, "normalized_form") or _get(detail, "extracted_text")
         for detail in input_data.extraction_details
-        if detail.normalized_form or detail.extracted_text
+        if _get(detail, "normalized_form") or _get(detail, "extracted_text")
     ))
     
     if len(unique_classes) <= 1:
@@ -84,12 +85,12 @@ def select_drug_class(input_data: SelectionInput) -> DrugSelectionResult:
     extracted_classes = []
     for detail in input_data.extraction_details:
         extracted_classes.append({
-            "extracted_text": detail.extracted_text or "",
-            "class_type": detail.class_type or "Therapeutic",
-            "drug_class": detail.normalized_form or detail.extracted_text or "",
-            "evidence": detail.evidence or "",
-            "source": detail.source or "",
-            "rules_applied": detail.rules_applied or [],
+            "extracted_text": _get(detail, "extracted_text") or "",
+            "class_type": _get(detail, "class_type") or "Therapeutic",
+            "drug_class": _get(detail, "normalized_form") or _get(detail, "extracted_text") or "",
+            "evidence": _get(detail, "evidence") or "",
+            "source": _get(detail, "source") or "",
+            "rules_applied": _get(detail, "rules_applied") or [],
         })
     
     input_json = json.dumps({
@@ -160,7 +161,12 @@ Understand the extraction rules, analyze the evidence for each extracted class, 
         )
         langfuse_handler = CallbackHandler()
     
-    invoke_config = {"callbacks": [langfuse_handler]} if langfuse_handler else {}
+    all_callbacks = []
+    if langfuse_handler:
+        all_callbacks.append(langfuse_handler)
+    if callbacks:
+        all_callbacks.extend(callbacks)
+    invoke_config = {"callbacks": all_callbacks} if all_callbacks else {}
     
     try:
         result: DrugSelectionResult = llm.invoke(messages, config=invoke_config)
@@ -193,10 +199,15 @@ def needs_llm_selection(extraction_details: list) -> bool:
     if not extraction_details:
         return False
     
+    def _get(detail, field):
+        if isinstance(detail, dict):
+            return detail.get(field, "")
+        return getattr(detail, field, "")
+
     unique_classes = set(
-        detail.normalized_form or detail.extracted_text
+        _get(detail, "normalized_form") or _get(detail, "extracted_text")
         for detail in extraction_details
-        if detail.normalized_form or detail.extracted_text
+        if _get(detail, "normalized_form") or _get(detail, "extracted_text")
     )
     
     return len(unique_classes) > 1

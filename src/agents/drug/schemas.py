@@ -3,6 +3,10 @@
 This module defines:
 - Dataclasses for function input (Temporal-serializable)
 - Pydantic models for LLM structured output
+
+Required fields (no defaults) ensure LLM response matches expected structure.
+If LLM returns malformed JSON, Pydantic will raise ValidationError,
+which triggers Temporal retry at the activity level.
 """
 
 from dataclasses import dataclass
@@ -38,7 +42,18 @@ class ExtractionResult(BaseModel):
     """Schema for drug extraction LLM response.
     
     Matches DRUG_EXTRACTION_SYSTEM_PROMPT output format.
+    
+    Required fields (no defaults) ensure LLM response matches expected structure.
+    If LLM returns malformed JSON, Pydantic will raise ValidationError.
     """
+    # Required field - must be present in LLM response
+    reasoning: list[str] = Field(
+        ...,  # Required - no default
+        alias="Reasoning",
+        description="Step-by-step extraction reasoning"
+    )
+    
+    # Optional fields - can be empty/missing
     primary_drugs: list[str] = Field(
         default_factory=list,
         alias="Primary Drugs",
@@ -53,11 +68,6 @@ class ExtractionResult(BaseModel):
         default_factory=list,
         alias="Comparator Drugs",
         description="Comparator/control drugs"
-    )
-    reasoning: list[str] = Field(
-        default_factory=list,
-        alias="Reasoning",
-        description="Step-by-step extraction reasoning"
     )
     
     model_config = {"populate_by_name": True}

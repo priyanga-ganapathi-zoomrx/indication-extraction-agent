@@ -1,0 +1,137 @@
+{
+  "drug_results": [
+    {
+      "components": [
+        "Enzalutamide"
+      ],
+      "drug": "Enzalutamide",
+      "extractions": {
+        "Enzalutamide": {
+          "confidence_score": 1.0,
+          "drug_classes": [
+            "Androgen Receptor Inhibitor"
+          ],
+          "drug_name": "Enzalutamide",
+          "extraction_details": [
+            {
+              "class_type": "MoA",
+              "evidence": "XTANDI is an androgen receptor inhibitor indicated for the treatment of patients with:",
+              "extracted_text": "androgen receptor inhibitor",
+              "normalized_form": "Androgen Receptor Inhibitor",
+              "rules_applied": [
+                "Rule 3: Maintain Title Case",
+                "Rule 5: Singular form",
+                "Rule 11: Include biological target (Androgen Receptor)"
+              ],
+              "source": "https://dailymed.nlm.nih.gov/dailymed/downloadpdffile.cfm?setId=381cd215-78c9-4208-8595-7ae7a279b236"
+            },
+            {
+              "class_type": "MoA",
+              "evidence": "XTANDI is an androgen receptor inhibitor indicated for the treatment of patients with metastatic castration-resistant prostate cancer.",
+              "extracted_text": "androgen receptor inhibitor",
+              "normalized_form": "Androgen Receptor Inhibitor",
+              "rules_applied": [
+                "Rule 3: Maintain Title Case",
+                "Rule 5: Singular form",
+                "Rule 11: Include biological target (Androgen Receptor)"
+              ],
+              "source": "https://www.accessdata.fda.gov/drugsatfda_docs/label/2015/203415s007lbl.pdf"
+            },
+            {
+              "class_type": "MoA",
+              "evidence": "XTANDI is an androgen receptor inhibitor indicated for the treatment of patients with:",
+              "extracted_text": "androgen receptor inhibitor",
+              "normalized_form": "Androgen Receptor Inhibitor",
+              "rules_applied": [
+                "Rule 3: Maintain Title Case",
+                "Rule 5: Singular form",
+                "Rule 11: Include biological target (Androgen Receptor)"
+              ],
+              "source": "https://www.accessdata.fda.gov/drugsatfda_docs/label/2023/213674s010,203415s022lbl.pdf"
+            }
+          ],
+          "extraction_method": "tavily",
+          "reasoning": "The abstract title mentions the drug name but does not provide a drug class. Scanning the search results, specifically the FDA labels (dailymed and accessdata.fda.gov), explicitly defines Enzalutamide as an 'androgen receptor inhibitor'. Rule 11 requires including the biological target (Androgen Receptor) and Rule 13/11 supports using the 'Inhibitor' suffix. No other distinct mechanisms or classes like 'hormonal therapy' (Rule 19 allows 'Hormonal Therapy' if mentioned, but the specific MoA 'Androgen Receptor Inhibitor' is more precise and explicitly stated in the indications; however, Rule 19 also says to capture 'Hormonal Therapy' if 'Hormonal Therapy' or 'ADT' is mentioned. The text mentions it is used in castration-resistant prostate cancer and often with GnRH analogs, but the primary class definition in the label is 'androgen receptor inhibitor'. I will extract 'Androgen Receptor Inhibitor' as the primary class found.",
+          "selected_sources": [
+            "https://dailymed.nlm.nih.gov/dailymed/downloadpdffile.cfm?setId=381cd215-78c9-4208-8595-7ae7a279b236",
+            "https://www.accessdata.fda.gov/drugsatfda_docs/label/2015/203415s007lbl.pdf",
+            "https://www.accessdata.fda.gov/drugsatfda_docs/label/2023/213674s010,203415s022lbl.pdf"
+          ],
+          "success": true
+        }
+      },
+      "selections": {
+        "Enzalutamide": {
+          "drug_name": "Enzalutamide",
+          "reasoning": "Only one unique class was extracted. No selection needed.",
+          "selected_drug_classes": [
+            "Androgen Receptor Inhibitor"
+          ]
+        }
+      }
+    }
+  ],
+  "drug_selections": [
+    {
+      "drug_name": "Enzalutamide",
+      "selected_classes": [
+        "Androgen Receptor Inhibitor"
+      ]
+    }
+  ],
+  "extraction_results": {
+    "Enzalutamide": {
+      "confidence_score": 1.0,
+      "drug_classes": [
+        "Androgen Receptor Inhibitor"
+      ],
+      "drug_name": "Enzalutamide",
+      "extraction_details": [
+        {
+          "class_type": "MoA",
+          "evidence": "XTANDI is an androgen receptor inhibitor indicated for the treatment of patients with:",
+          "extracted_text": "androgen receptor inhibitor",
+          "normalized_form": "Androgen Receptor Inhibitor",
+          "rules_applied": [
+            "Rule 3: Maintain Title Case",
+            "Rule 5: Singular form",
+            "Rule 11: Include biological target (Androgen Receptor)"
+          ],
+          "source": "https://dailymed.nlm.nih.gov/dailymed/downloadpdffile.cfm?setId=381cd215-78c9-4208-8595-7ae7a279b236"
+        },
+        {
+          "class_type": "MoA",
+          "evidence": "XTANDI is an androgen receptor inhibitor indicated for the treatment of patients with metastatic castration-resistant prostate cancer.",
+          "extracted_text": "androgen receptor inhibitor",
+          "normalized_form": "Androgen Receptor Inhibitor",
+          "rules_applied": [
+            "Rule 3: Maintain Title Case",
+            "Rule 5: Singular form",
+            "Rule 11: Include biological target (Androgen Receptor)"
+          ],
+          "source": "https://www.accessdata.fda.gov/drugsatfda_docs/label/2015/203415s007lbl.pdf"
+        },
+        {
+          "class_type": "MoA",
+          "evidence": "XTANDI is an androgen receptor inhibitor indicated for the treatment of patients with:",
+          "extracted_text": "androgen receptor inhibitor",
+          "normalized_form": "Androgen Receptor Inhibitor",
+          "rules_applied": [
+            "Rule 3: Maintain Title Case",
+            "Rule 5: Singular form",
+            "Rule 11: Include biological target (Androgen Receptor)"
+          ],
+          "source": "https://www.accessdata.fda.gov/drugsatfda_docs/label/2023/213674s010,203415s022lbl.pdf"
+        }
+      ],
+      "extraction_method": "tavily",
+      "reasoning": "The abstract title mentions the drug name but does not provide a drug class. Scanning the search results, specifically the FDA labels (dailymed and accessdata.fda.gov), explicitly defines Enzalutamide as an 'androgen receptor inhibitor'. Rule 11 requires including the biological target (Androgen Receptor) and Rule 13/11 supports using the 'Inhibitor' suffix. No other distinct mechanisms or classes like 'hormonal therapy' (Rule 19 allows 'Hormonal Therapy' if mentioned, but the specific MoA 'Androgen Receptor Inhibitor' is more precise and explicitly stated in the indications; however, Rule 19 also says to capture 'Hormonal Therapy' if 'Hormonal Therapy' or 'ADT' is mentioned. The text mentions it is used in castration-resistant prostate cancer and often with GnRH analogs, but the primary class definition in the label is 'androgen receptor inhibitor'. I will extract 'Androgen Receptor Inhibitor' as the primary class found.",
+      "selected_sources": [
+        "https://dailymed.nlm.nih.gov/dailymed/downloadpdffile.cfm?setId=381cd215-78c9-4208-8595-7ae7a279b236",
+        "https://www.accessdata.fda.gov/drugsatfda_docs/label/2015/203415s007lbl.pdf",
+        "https://www.accessdata.fda.gov/drugsatfda_docs/label/2023/213674s010,203415s022lbl.pdf"
+      ],
+      "success": true
+    }
+  }
+}

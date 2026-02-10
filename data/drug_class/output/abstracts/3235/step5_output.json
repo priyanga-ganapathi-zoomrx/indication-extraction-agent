@@ -1,9 +1,0 @@
-{
-  "refined_explicit_classes": [
-    "NA"
-  ],
-  "removed_classes": [
-    "CD19/CD22-Targeted CAR-T Cell Therapy"
-  ],
-  "reasoning": "The explicit drug class 'CD19/CD22-Targeted CAR-T Cell Therapy' is an exact match for the class already associated with the drug 'CD19/CD22 Dual-Target CAR-T Cell'. Per Consolidation Rule 1, it is removed from the explicit list as it is no longer standalone."
-}

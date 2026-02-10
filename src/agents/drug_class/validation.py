@@ -121,7 +121,7 @@ Please perform all 3 validation checks (Hallucination Detection, Omission Detect
     reraise=True,
 )
 @observe(as_type="generation", name="drug-class-validation")
-def validate_drug_class(input_data: ValidationInput) -> ValidationOutput:
+def validate_drug_class(input_data: ValidationInput, callbacks: list = None) -> ValidationOutput:
     """Validate a drug class extraction result.
     
     Performs three validation checks:
@@ -133,6 +133,7 @@ def validate_drug_class(input_data: ValidationInput) -> ValidationOutput:
     
     Args:
         input_data: ValidationInput with extraction data to validate
+        callbacks: Optional list of LangChain callback handlers (e.g., TokenUsageCallbackHandler)
         
     Returns:
         ValidationOutput with validation status and any issues found
@@ -209,7 +210,12 @@ END OF REFERENCE RULES DOCUMENT"""
         )
         langfuse_handler = CallbackHandler()
     
-    invoke_config = {"callbacks": [langfuse_handler]} if langfuse_handler else {}
+    all_callbacks = []
+    if langfuse_handler:
+        all_callbacks.append(langfuse_handler)
+    if callbacks:
+        all_callbacks.extend(callbacks)
+    invoke_config = {"callbacks": all_callbacks} if all_callbacks else {}
     
     try:
         result: ValidationLLMResponse = llm.invoke(messages, config=invoke_config)

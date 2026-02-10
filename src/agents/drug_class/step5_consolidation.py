@@ -5,7 +5,7 @@ and remove duplicates as well as parent drug classes within the same hierarchy.
 
 This module exports a single function. Orchestration is in pipeline.py.
 Uses with_structured_output for reliable JSON parsing.
-Includes timeout (120s) and retry (1 retry) handling.
+Per-request timeout is 120s. Retries are handled by Temporal at the activity level.
 """
 
 import json
@@ -13,7 +13,6 @@ import json
 from langfuse import observe, get_client
 from langfuse.langchain import CallbackHandler
 from langchain_core.messages import HumanMessage, SystemMessage
-from tenacity import retry, stop_after_attempt, retry_if_exception_type, wait_fixed
 
 from src.agents.core import settings, create_llm, LLMConfig
 from src.agents.core.langfuse_config import is_langfuse_enabled
@@ -30,29 +29,25 @@ from src.agents.drug_class.schemas import (
 )
 
 
-@retry(
-    stop=stop_after_attempt(2),  # 1 initial + 1 retry
-    wait=wait_fixed(1),  # 1 second between retries
-    retry=retry_if_exception_type((TimeoutError, ConnectionError, Exception)),
-    reraise=True,
-)
 @observe(as_type="generation", name="drug-class-step5-consolidation")
-def consolidate_drug_classes(input_data: ConsolidationInput) -> Step5Output:
+def consolidate_drug_classes(input_data: ConsolidationInput, callbacks: list = None) -> Step5Output:
     """Consolidate explicit classes with drug-derived classes.
     
     Compares explicit drug classes (from Step 4) with drug-specific selections
     (from Step 3) and removes duplicates/parent classes.
     
-    Uses with_structured_output for reliable parsing.
+    Uses LangChain's with_structured_output for reliable JSON parsing.
+    Per-request timeout is 120s. Retries are handled by Temporal at the activity level.
     
     Args:
         input_data: ConsolidationInput with explicit classes and drug selections
+        callbacks: Optional list of LangChain callback handlers (e.g., TokenUsageCallbackHandler)
         
     Returns:
         Step5Output with refined explicit classes
         
     Raises:
-        DrugClassExtractionError: If consolidation fails
+        DrugClassExtractionError: If consolidation fails (triggers Temporal retry)
     """
     # Handle empty explicit classes - no LLM call needed
     if not input_data.explicit_drug_classes or input_data.explicit_drug_classes == ["NA"]:
@@ -154,7 +149,12 @@ def consolidate_drug_classes(input_data: ConsolidationInput) -> Step5Output:
         )
         langfuse_handler = CallbackHandler()
     
-    invoke_config = {"callbacks": [langfuse_handler]} if langfuse_handler else {}
+    all_callbacks = []
+    if langfuse_handler:
+        all_callbacks.append(langfuse_handler)
+    if callbacks:
+        all_callbacks.extend(callbacks)
+    invoke_config = {"callbacks": all_callbacks} if all_callbacks else {}
     
     try:
         result: ConsolidationLLMResponse = llm.invoke(messages, config=invoke_config)

@@ -1,0 +1,28 @@
+{
+  "explicit_drug_classes": [
+    "NA"
+  ],
+  "extraction_details": [
+    {
+      "class_type": "NA",
+      "evidence": "abiraterone, olaparib, or abiraterone + olaparib",
+      "extracted_text": "abiraterone",
+      "normalized_form": "NA",
+      "rules_applied": [
+        "Rule 36: Do NOT invent or infer a drug class (abiraterone is a drug name)."
+      ],
+      "source": "abstract_title"
+    },
+    {
+      "class_type": "NA",
+      "evidence": "abiraterone, olaparib, or abiraterone + olaparib",
+      "extracted_text": "olaparib",
+      "normalized_form": "NA",
+      "rules_applied": [
+        "Rule 36: Do NOT invent or infer a drug class (olaparib is a drug name)."
+      ],
+      "source": "abstract_title"
+    }
+  ],
+  "reasoning": "The abstract title lists 'abiraterone' and 'olaparib' as the interventions. No drug classes are explicitly stated in the title for these drugs. While 'DNA repair defects' describes the patient population's genetic status, it does not represent an explicit drug class for an intervention. Therefore, no explicit drug classes meet the criteria."
+}

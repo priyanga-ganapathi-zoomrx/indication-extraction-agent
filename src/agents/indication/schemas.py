@@ -46,18 +46,24 @@ class ExtractionLLMResponse(BaseModel):
     """Full schema for parsing extraction LLM JSON response.
     
     Matches the output format defined in MEDICAL_INDICATION_EXTRACTION_SYSTEM_PROMPT.
+    
+    Required fields (no defaults) ensure LLM response matches expected structure.
+    If LLM returns malformed JSON, Pydantic will raise ValidationError.
     """
+    # Required field - must be present in LLM response
+    reasoning: str = Field(
+        ...,  # Required - no default
+        description="Step-by-step extraction reasoning"
+    )
+    
+    # Optional fields - can be empty/missing
     selected_source: str = Field(
         default="none",
         description="Source used: abstract_title, session_title, or none"
     )
     generated_indication: str = Field(
         default="",
-        description="The extracted medical indication"
-    )
-    reasoning: str = Field(
-        ...,
-        description="Step-by-step extraction reasoning"
+        description="The extracted medical indication (empty if no indication found)"
     )
     rules_retrieved: list[RuleRetrieved] = Field(
         default_factory=list,
@@ -109,11 +115,21 @@ class ValidationLLMResponse(BaseModel):
     """Full schema for parsing validation LLM JSON response.
     
     Matches the output format defined in INDICATION_VALIDATION_SYSTEM_PROMPT.
+    
+    Required fields (no defaults) ensure LLM response matches expected structure.
+    If LLM returns malformed JSON, Pydantic will raise ValidationError.
     """
+    # Required fields - must be present in LLM response
     validation_status: str = Field(
-        ...,
+        ...,  # Required - no default
         description="Status: PASS, REVIEW, or FAIL"
     )
+    validation_reasoning: str = Field(
+        ...,  # Required - no default
+        description="Step-by-step explanation of validation process"
+    )
+    
+    # Optional fields - can be empty/missing
     issues_found: list[IssueFound] = Field(
         default_factory=list,
         description="List of issues found during validation"
@@ -121,8 +137,4 @@ class ValidationLLMResponse(BaseModel):
     checks_performed: Optional[ChecksPerformed] = Field(
         default=None,
         description="Results of all 6 validation checks"
-    )
-    validation_reasoning: str = Field(
-        ...,
-        description="Step-by-step explanation of validation process"
     )

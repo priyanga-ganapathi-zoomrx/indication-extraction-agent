@@ -1,0 +1,17 @@
+{
+  "comparator_drugs": [],
+  "primary_drugs": [
+    "Abiraterone",
+    "Olaparib"
+  ],
+  "reasoning": [
+    "Step 1: Identified drug candidates 'abiraterone' and 'olaparib' from the title.",
+    "Step 2: Analyzed the phrase 'abiraterone, olaparib, or abiraterone + olaparib'.",
+    "Step 3: The keyword 'or' indicates that these are different primary treatment arms being evaluated.",
+    "Step 4: The keyword '+' indicates a combination therapy arm, also a primary focus.",
+    "Step 5: Classified both 'Abiraterone' and 'Olaparib' as Primary drugs.",
+    "Step 6: No secondary or comparator drugs were identified.",
+    "Step 7: Formatted the output into the final JSON structure."
+  ],
+  "secondary_drugs": []
+}

@@ -1,0 +1,17 @@
+{
+  "comparator_drugs": [],
+  "primary_drugs": [
+    "Enzalutamide"
+  ],
+  "reasoning": [
+    "Step 1: Identified potential drug names in the title: Enzalutamide and radium-223.",
+    "Step 2: Analyzed the keyword 'with or without' which connects the two identified drugs.",
+    "Step 3: Based on the guideline 'Drug A with or without Drug B', Enzalutamide is classified as the Primary drug.",
+    "Step 4: Following the same guideline, radium-223 is classified as the Secondary drug.",
+    "Step 5: No comparator drugs were mentioned in the title.",
+    "Step 6: Formatted the extracted drugs into the final JSON structure."
+  ],
+  "secondary_drugs": [
+    "radium-223"
+  ]
+}

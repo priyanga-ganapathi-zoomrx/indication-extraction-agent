@@ -2,6 +2,10 @@
 
 Contains Pydantic models that match LLM structured outputs.
 Used with llm.with_structured_output() for reliable parsing.
+
+Required fields (no defaults) ensure LLM response matches expected structure.
+If LLM returns malformed JSON, Pydantic will raise ValidationError,
+which triggers Temporal retry at the activity level.
 """
 
 from typing import TYPE_CHECKING
@@ -24,7 +28,14 @@ if TYPE_CHECKING:
 # =============================================================================
 
 class RegimenLLMResponse(BaseModel):
-    components: list[str] = Field(default_factory=list, description="Component drugs")
+    """LLM response for regimen identification.
+    
+    Components is required - LLM must return at least the original drug.
+    """
+    components: list[str] = Field(
+        ...,  # Required - must be present
+        description="Component drugs. If not a regimen, returns [drug]."
+    )
 
 
 # =============================================================================
@@ -50,7 +61,17 @@ class DrugClassLLMResponse(BaseModel):
     
     Matches exactly what the LLM returns per DRUG_CLASS_EXTRACTION_FROM_SEARCH_REACT_PATTERN.md
     Used with with_structured_output() for reliable parsing.
+    
+    Required fields (no defaults) ensure LLM response matches expected structure.
+    If LLM returns malformed JSON, Pydantic will raise ValidationError.
     """
+    # Required fields - must be present in LLM response
+    reasoning: str = Field(
+        ...,  # Required - no default
+        description="Step-by-step extraction reasoning"
+    )
+    
+    # Optional fields - can be empty/missing
     drug_name: str = Field(default="", description="Drug being classified")
     drug_classes: list[str] = Field(default_factory=list, description="Extracted drug classes")
     selected_sources: list[str] = Field(
@@ -58,7 +79,6 @@ class DrugClassLLMResponse(BaseModel):
         description="Sources where classes were found: 'abstract_title' | 'abstract_text' | '<url>'"
     )
     confidence_score: float = Field(default=0.0, description="Confidence score 0.0-1.0")
-    reasoning: str = Field(default="", description="Extraction reasoning")
     extraction_details: list[ExtractionDetail] = Field(default_factory=list)
 
 
@@ -88,10 +108,19 @@ class GroundedSearchLLMResponse(BaseModel):
     - Has no_class_found boolean
     
     Used with with_structured_output() for reliable parsing.
+    
+    Required fields (no defaults) ensure LLM response matches expected structure.
+    If LLM returns malformed JSON, Pydantic will raise ValidationError.
     """
+    # Required field - must be present in LLM response
+    reasoning: str = Field(
+        ...,  # Required - no default
+        description="Step-by-step extraction reasoning"
+    )
+    
+    # Optional fields - can be empty/missing
     drug_name: str = Field(default="")
     drug_classes: list[GroundedSearchClassDetail] = Field(default_factory=list)
-    reasoning: str = Field(default="")
     no_class_found: bool = Field(default=False)
     
     def to_extraction_result(self, drug: str) -> "DrugExtractionResult":
@@ -174,11 +203,20 @@ class ExplicitLLMResponse(BaseModel):
     """LLM structured output for explicit drug class extraction from title.
     
     Matches the response format specified in DRUG_CLASS_EXTRACTION_FROM_TITLE prompt.
+    
+    Required fields (no defaults) ensure LLM response matches expected structure.
+    If LLM returns malformed JSON, Pydantic will raise ValidationError.
     """
+    # Required field - must be present in LLM response
+    reasoning: str = Field(
+        ...,  # Required - no default
+        description="Step-by-step explanation of extraction process"
+    )
+    
+    # Optional fields - can be empty/missing
     drug_classes: list[str] = Field(default_factory=list, description="Extracted drug classes")
     source: str = Field(default="abstract_title", description="Source of extraction")
     confidence_score: float = Field(default=0.0, description="Confidence score 0-1")
-    reasoning: str = Field(default="", description="Step-by-step explanation")
     extraction_details: list[ExplicitExtractionDetail] = Field(
         default_factory=list,
         description="Detailed extraction information for each class"
@@ -235,12 +273,21 @@ class ConsolidationLLMResponse(BaseModel):
     
     Matches the response format specified in DRUG_CLASS_CONSOLIDATION_PROMPT.
     Has nested structure: refined_explicit_drug_classes contains drug_classes and removed_classes.
+    
+    Required fields (no defaults) ensure LLM response matches expected structure.
+    If LLM returns malformed JSON, Pydantic will raise ValidationError.
     """
+    # Required field - must be present in LLM response
+    reasoning: str = Field(
+        ...,  # Required - no default
+        description="Explanation of consolidation decisions"
+    )
+    
+    # Optional fields - can be empty/missing
     refined_explicit_drug_classes: RefinedExplicitClasses = Field(
         default_factory=RefinedExplicitClasses,
         description="Nested structure with refined classes and removals"
     )
-    reasoning: str = Field(default="", description="Explanation of consolidation decisions")
     
     def to_step5_output(self) -> "Step5Output":
         """Convert LLM response to Step5Output for pipeline."""
